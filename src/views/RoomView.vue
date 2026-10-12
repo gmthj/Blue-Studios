@@ -84,7 +84,12 @@
 
     <!-- BOTTOM: shared gallery, grouped by shot -->
     <div class="col-12">
-      <h2 class="h5">Room gallery</h2>
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <h2 class="h5 mb-0">Room gallery</h2>
+        <router-link v-if="photos.length > 0" :to="'/room/' + code + '/strip'" class="btn btn-success">
+          Make photostrip &rarr;
+        </router-link>
+      </div>
       <p v-if="shots.length === 0" class="text-muted">No photos yet. The host starts the countdown and everyone's camera snaps at the same time.</p>
 
       <div v-for="shot in shots" :key="shot.shotNumber" class="mb-4">

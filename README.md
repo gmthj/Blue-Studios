@@ -21,13 +21,14 @@ Current status: **Photobooth Rooms MVP** (create/join room, QR code, live member
 index.html               page shell, loads src/main.js
 src/main.js              creates the Vue app, adds Bootstrap and the router
 src/App.vue              navbar + <router-view>
-src/router.js            URL -> page mapping ( / and /room/:code )
+src/router.js            URL -> page mapping ( /, /room/:code, /room/:code/strip )
 src/firebase.js          Firebase config (read from .env), exports db
 src/player.js            guest player id + name saved in localStorage
 src/views/HomeView.vue   create room / join room by code
 src/views/RoomView.vue   camera, countdown, members, live previews, gallery
+src/views/StripView.vue  pick 4 room photos for the strip, export as JPG
 api/token.js             Vercel serverless function: GET /api/token -> Agora token
-vercel.json              sends every page URL to index.html (except /api)
+vercel.json              sends page URLs (/room/..., /room/.../strip) to index.html (add new page routes here too)
 .env.example             list of environment variables needed (copy to .env)
 ```
 
@@ -48,6 +49,7 @@ rooms/{code}/photos/{auto}   { playerId, name, shotNumber, image, createdAt }
 5. **Shared gallery:** every device listens to `photos`, so new photos appear on everyone's screen. Photos are grouped by shot number.
 6. **Live previews:** each device asks our server for a token (`GET /api/token?channel=blue-studios-{code}&uid={playerId}`), then joins that Agora video channel and sends ("publishes") its camera. When Agora says another user published video (`user-published` event), we subscribe and play it in a box with their name. The full-quality photo is still taken from each device's own camera.
 7. **Switch camera:** after permission is given, we list all cameras with `enumerateDevices()`. If there is more than one, a button cycles through them and the new camera is re-published to Agora.
+8. **Photostrip:** "Make photostrip" opens `/room/{code}/strip`, which loads the room's photos once with `getDocs`. Tap a slot, then tap a photo to put it there (it then jumps to the next empty slot). "Download JPG" draws a white strip on a canvas: each photo is cropped to fill its 4:3 slot (like CSS `object-fit: cover`), then `canvas.toDataURL('image/jpeg')` is downloaded with a temporary `<a download>` link.
 
 ### Why a token server?
 
