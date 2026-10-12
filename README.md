@@ -38,7 +38,7 @@ Firestore data:
 
 ```
 rooms/{code}                 { hostId, hostName, shotNumber, createdAt }
-rooms/{code}/members/{id}    { name, joinedAt }
+rooms/{code}/members/{id}    { name, deviceType, joinedAt }
 rooms/{code}/photos/{auto}   { playerId, name, shotNumber, image, createdAt }
 ```
 
@@ -48,7 +48,7 @@ rooms/{code}/photos/{auto}   { playerId, name, shotNumber, image, createdAt }
 4. **Capture:** the current video frame is drawn on a canvas, turned into a small JPEG (data URL), and saved to `photos` with the shot number.
 5. **Shared gallery:** every device listens to `photos`, so new photos appear on everyone's screen. Photos are grouped by shot number.
 6. **Live previews:** each device asks our server for a token (`GET /api/token?channel=blue-studios-{code}&uid={playerId}`), then joins that Agora video channel and sends ("publishes") its camera. When Agora says another user published video (`user-published` event), we subscribe and play it in a box with their name. The full-quality photo is still taken from each device's own camera.
-7. **Switch camera:** after permission is given, we list all cameras with `enumerateDevices()`. If there is more than one, a button cycles through them and the new camera is re-published to Agora.
+7. **Switch camera:** after permission is given, we list all cameras with `enumerateDevices()`. If there is more than one, a button cycles through them and the new camera is re-published to Agora. On phones and tablets, the camera is also restarted when the device rotates (`screen.orientation` change event), so the picture matches portrait/landscape.
 8. **Photostrip:** "Make photostrip" opens `/room/{code}/strip`, which loads the room's photos once with `getDocs`. Tap a slot, then tap a photo to put it there (it then jumps to the next empty slot). "Download JPG" draws a white strip on a canvas: each photo is cropped to fill its 4:3 slot (like CSS `object-fit: cover`), then `canvas.toDataURL('image/jpeg')` is downloaded with a temporary `<a download>` link.
 
 ### Why a token server?

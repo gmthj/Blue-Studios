@@ -18,3 +18,22 @@ export function getPlayerName() {
 export function savePlayerName(name) {
   localStorage.setItem('playerName', name)
 }
+
+// Guess the device type from the browser's user agent text, e.g. "...iPhone..." or "...Android...Mobile..."
+// Returns 'Phone', 'Tablet' or 'Computer'
+export function getDeviceType() {
+  const ua = navigator.userAgent
+
+  // iPads (newer ones pretend to be a Mac, but Macs have no touch screen) and Android tablets
+  const isIpad = ua.includes('iPad') || (ua.includes('Macintosh') && navigator.maxTouchPoints > 1)
+  const isAndroidTablet = ua.includes('Android') && !ua.includes('Mobile')
+  if (isIpad || isAndroidTablet) {
+    return 'Tablet'
+  }
+
+  if (ua.includes('iPhone') || ua.includes('Android') || ua.includes('Mobile')) {
+    return 'Phone'
+  }
+
+  return 'Computer'
+}

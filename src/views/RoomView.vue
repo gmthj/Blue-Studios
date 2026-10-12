@@ -4,15 +4,36 @@
   </div>
 
   <div v-else class="row g-4">
-    <!-- LEFT: camera and countdown -->
+    <!-- Full-screen countdown and flash (position: fixed, so they cover the whole screen) -->
+    <div v-if="countdown > 0" class="countdown-overlay">{{ countdown }}</div>
+    <div v-if="flash" class="flash-overlay"></div>
+
+    <!-- TOP: how to join (always first, on every screen size) -->
+    <div class="col-12">
+      <div class="card">
+        <div class="card-body d-flex flex-column flex-md-row align-items-center gap-3 text-center text-md-start">
+          <img :src="qrCodeUrl" alt="QR code to join this room" width="140" height="140" />
+          <div>
+            <p class="fs-4 mb-2">
+              Join at <strong>{{ siteAddress }}</strong> with code
+              <strong class="room-code">{{ code }}</strong>
+            </p>
+            <p class="small text-muted mb-2">Or scan the QR code with your phone camera.</p>
+            <button class="btn btn-outline-primary btn-sm" @click="copyJoinLink">
+              {{ copied ? 'Link copied!' : 'Copy join link' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- LEFT: camera -->
     <div class="col-12 col-lg-7">
       <div class="card">
         <div class="card-body">
           <div class="camera-box">
             <!-- :class adds "mirrored" only for the front camera, so the back camera is not flipped -->
             <video ref="video" autoplay playsinline muted class="w-100 rounded" :class="{ mirrored: mirrored }"></video>
-            <div v-if="countdown > 0" class="countdown-number">{{ countdown }}</div>
-            <div v-if="flash" class="flash"></div>
 
             <!-- Only shown if the device has more than one camera (e.g. phones with front + back) -->
             <button
@@ -49,24 +70,18 @@
             <div v-for="uid in remoteUids" :key="uid" class="col-6 col-md-4">
               <!-- Agora puts the video inside this empty div (see the 'user-published' event) -->
               <div :id="'remote-' + uid" class="remote-video rounded"></div>
-              <p class="small text-center mb-0">{{ getMemberName(uid) }}</p>
+              <p class="small text-center mb-0">
+                {{ getMemberName(uid) }}
+                <span class="badge text-bg-light border">{{ getMemberDevice(uid) }}</span>
+              </p>
             </div>
           </div>
         </div>
       </div>
     </div>
 
-    <!-- RIGHT: room code, QR code and who is in the room -->
+    <!-- RIGHT: who is in the room -->
     <div class="col-12 col-lg-5">
-      <div class="card mb-3 text-center">
-        <div class="card-body">
-          <p class="text-muted mb-1">Room code</p>
-          <p class="display-5 fw-bold mb-2">{{ code }}</p>
-          <img :src="qrCodeUrl" alt="QR code to join this room" width="180" height="180" />
-          <p class="small text-muted mt-2 mb-0">Scan to join on your phone</p>
-        </div>
-      </div>
-
       <div class="card">
         <div class="card-body">
           <h2 class="h6">In this room ({{ members.length }})</h2>
@@ -113,7 +128,7 @@ import {
 import AgoraRTC from 'agora-rtc-sdk-ng'
 import axios from 'axios'
 import { db } from '../firebase.js'
-import { getPlayerId, getPlayerName } from '../player.js'
+import { getPlayerId, getPlayerName, getDeviceType } from '../player.js'
 
 // Only show Agora warnings and errors in the console (it prints a lot of info otherwise)
 AgoraRTC.setLogLevel(2)
@@ -129,8 +144,10 @@ export default {
       code: this.$route.params.code,
       playerId: getPlayerId(),
       playerName: getPlayerName(),
+      deviceType: getDeviceType(), // 'Phone', 'Tablet' or 'Computer'
+      copied: false,               // shows "Link copied!" for a moment after copying
 
-      room: null,     // the room document (hostId, hostName, shotNumber)
+      room: null,    // the room document (hostId, hostName, shotNumber)
       members: [],    // everyone in the room
       photos: [],     // every photo taken in the room
       notFound: false,
@@ -161,10 +178,19 @@ export default {
       return this.room !== null && this.room.hostId === this.playerId
     },
 
+    // The website address without "https://", e.g. "blue-studios.vercel.app"
+    siteAddress() {
+      return window.location.host
+    },
+
+    // The link that opens the home page with this room's code filled in
+    joinLink() {
+      return window.location.origin + '/?code=' + this.code
+    },
+
     // goqr.me API: returns a QR code image for any text we give it
     qrCodeUrl() {
-      const joinLink = window.location.origin + '/?code=' + this.code
-      return 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(joinLink)
+      return 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(this.joinLink)
     },
 
     // Group photos by shot number, so photos taken in the same countdown appear together.
@@ -200,6 +226,7 @@ export default {
     // 1. Add myself to the room's members list (document id = my player id)
     await setDoc(doc(db, 'rooms', this.code, 'members', this.playerId), {
       name: this.playerName,
+      deviceType: this.deviceType,
       joinedAt: Date.now(),
     })
 
@@ -240,6 +267,12 @@ export default {
     // 5. Turn on the camera, then join the live video call so others can see us
     await this.startCamera()
     await this.joinLiveVideo()
+
+    // 6. On phones and tablets, restart the camera when the device is rotated,
+    //    so the picture matches the new orientation (portrait / landscape)
+    if (this.deviceType !== 'Computer' && screen.orientation) {
+      screen.orientation.addEventListener('change', this.onRotate)
+    }
   },
 
   // Runs when we leave this page: stop listeners, timer, live video and camera
@@ -247,19 +280,49 @@ export default {
     if (this.stopRoomListener) this.stopRoomListener()
     if (this.stopMembersListener) this.stopMembersListener()
     if (this.stopPhotosListener) this.stopPhotosListener()
+    if (screen.orientation) screen.orientation.removeEventListener('change', this.onRotate)
     clearInterval(this.countdownTimer)
     this.leaveLiveVideo()
     this.stopCamera()
   },
 
   methods: {
-    // Agora tells us other guests by their player id, so we look up their name in the members list
+    // Agora tells us other guests by their player id, so we look up their details in the members list
     getMemberName(uid) {
       const member = this.members.find((m) => m.id === uid)
       if (member) {
         return member.name
       }
       return 'Guest'
+    },
+
+    getMemberDevice(uid) {
+      const member = this.members.find((m) => m.id === uid)
+      if (member && member.deviceType) {
+        return member.deviceType
+      }
+      return 'Unknown device'
+    },
+
+    async copyJoinLink() {
+      try {
+        await navigator.clipboard.writeText(this.joinLink)
+        this.copied = true
+        setTimeout(() => {
+          this.copied = false
+        }, 2000)
+      } catch (error) {
+        // Some browsers block the clipboard, so show the link for the user to copy themselves
+        console.error(error)
+        alert('Copy this link: ' + this.joinLink)
+      }
+    },
+
+    onRotate() {
+      // Wait half a second for the rotation to finish, then restart the camera
+      setTimeout(() => {
+        this.restartCamera()
+      }, 500)
     },
 
     async joinLiveVideo() {
@@ -293,7 +356,8 @@ export default {
           }
           // Wait for Vue to create the <div id="remote-..."> for this user, then play the video in it
           await this.$nextTick()
-          user.videoTrack.play('remote-' + user.uid)
+          // fit: 'contain' shows the whole picture, so portrait and landscape guests both look right
+          user.videoTrack.play('remote-' + user.uid, { fit: 'contain' })
         }
       })
 
@@ -387,8 +451,13 @@ export default {
 
     // Go to the next camera in the list, back to the first one after the last
     async switchCamera() {
-      this.stopCamera()
       this.cameraIndex = (this.cameraIndex + 1) % this.cameras.length
+      await this.restartCamera()
+    },
+
+    // Stop the camera and open it again (used after switching camera or rotating the phone)
+    async restartCamera() {
+      this.stopCamera()
       await this.startCamera()
       await this.publishCamera() // so the others see the new camera too
     },
@@ -469,8 +538,15 @@ export default {
   border-radius: 0.375rem;
 }
 
+/* A portrait phone camera is tall, so limit the height and show the whole picture */
 video {
   display: block;
+  max-height: 70vh;
+  object-fit: contain;
+}
+
+.room-code {
+  letter-spacing: 0.1em;
 }
 
 /* Mirror the preview so it feels like looking into a mirror */
@@ -491,22 +567,25 @@ video.mirrored {
   right: 10px;
 }
 
-.countdown-number {
-  position: absolute;
+/* position: fixed + inset: 0 covers the whole screen, z-index puts it above everything else */
+.countdown-overlay {
+  position: fixed;
   inset: 0;
+  z-index: 2000;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 8rem;
+  font-size: 40vmin; /* 40% of the shorter side of the screen */
   font-weight: bold;
   color: white;
-  text-shadow: 0 0 20px rgba(0, 0, 0, 0.6);
+  text-shadow: 0 0 30px rgba(0, 0, 0, 0.7);
+  pointer-events: none; /* clicks go through to the page underneath */
 }
 
-.flash {
-  position: absolute;
+.flash-overlay {
+  position: fixed;
   inset: 0;
+  z-index: 2001;
   background: white;
-  border-radius: 0.375rem;
 }
 </style>
