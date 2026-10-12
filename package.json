@@ -1,0 +1,24 @@
+{
+  "name": "blue-studios",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "agora-rtc-sdk-ng": "^4.24.8",
+    "agora-token": "^2.0.7",
+    "axios": "^1.20.0",
+    "bootstrap": "^5.3.8",
+    "firebase": "^13.0.0",
+    "vue": "^3.5.43",
+    "vue-router": "^5.4.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.10",
+    "vite": "^8.3.4"
+  }
+}
