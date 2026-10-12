@@ -154,3 +154,5 @@ To check the token API on its own, open `https://YOUR-URL.vercel.app/api/token?c
 ## Use of AI
 
 Initial scaffold and Rooms MVP code drafted with the help of Claude (AI assistant); reviewed and to be understood/modified by the team. (Update this section in README.txt as required by the course.)
+
+
