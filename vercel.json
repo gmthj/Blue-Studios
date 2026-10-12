@@ -1,5 +1,6 @@
 {
   "rewrites": [
-    { "source": "/((?!api/).*)", "destination": "/index.html" }
+    { "source": "/room/:code", "destination": "/index.html" },
+    { "source": "/room/:code/strip", "destination": "/index.html" }
   ]
 }
