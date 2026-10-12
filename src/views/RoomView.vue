@@ -39,7 +39,7 @@
             <button
               v-if="cameras.length > 1"
               class="btn btn-light btn-sm switch-camera-btn"
-              :disabled="countdown > 0"
+              :disabled="countdown > 0 || switchingCamera"
               @click="switchCamera"
             >
               Switch camera ({{ cameraIndex + 1 }}/{{ cameras.length }})
@@ -156,6 +156,7 @@ export default {
       cameraError: '',
       cameras: [],    // all cameras on this device
       cameraIndex: 0, // which camera in the list is being used
+      switchingCamera: false, // true while the switch camera button is working
       mirrored: true, // flip the picture like a mirror (front camera only)
 
       remoteUids: [], // player ids of the other guests whose live video we are showing
@@ -265,14 +266,9 @@ export default {
     })
 
     // 5. Turn on the camera, then join the live video call so others can see us
+    // (When a phone rotates, the browser rotates the camera picture by itself, so we do not need to do anything.)
     await this.startCamera()
     await this.joinLiveVideo()
-
-    // 6. On phones and tablets, restart the camera when the device is rotated,
-    //    so the picture matches the new orientation (portrait / landscape)
-    if (this.deviceType !== 'Computer' && screen.orientation) {
-      screen.orientation.addEventListener('change', this.onRotate)
-    }
   },
 
   // Runs when we leave this page: stop listeners, timer, live video and camera
@@ -280,7 +276,6 @@ export default {
     if (this.stopRoomListener) this.stopRoomListener()
     if (this.stopMembersListener) this.stopMembersListener()
     if (this.stopPhotosListener) this.stopPhotosListener()
-    if (screen.orientation) screen.orientation.removeEventListener('change', this.onRotate)
     clearInterval(this.countdownTimer)
     this.leaveLiveVideo()
     this.stopCamera()
@@ -316,13 +311,6 @@ export default {
         console.error(error)
         alert('Copy this link: ' + this.joinLink)
       }
-    },
-
-    onRotate() {
-      // Wait half a second for the rotation to finish, then restart the camera
-      setTimeout(() => {
-        this.restartCamera()
-      }, 500)
     },
 
     async joinLiveVideo() {
@@ -378,15 +366,9 @@ export default {
       }
     },
 
-    // Send our camera to everyone else in the channel
+    // Send our camera to everyone else in the channel (done once, after joining)
     async publishCamera() {
       if (!agoraClient || !this.stream) return
-
-      // If we were already sending a camera (e.g. before switching), stop sending it first
-      if (localVideoTrack) {
-        await agoraClient.unpublish(localVideoTrack)
-        localVideoTrack.close()
-      }
 
       // Use the camera stream we already opened, instead of letting Agora open the camera again
       localVideoTrack = AgoraRTC.createCustomVideoTrack({
@@ -430,6 +412,14 @@ export default {
         return
       }
 
+      // Some phones (especially iPhones) do not start playing a new stream by themselves,
+      // which leaves the preview black, so we tell the video to play
+      try {
+        await this.$refs.video.play()
+      } catch (error) {
+        console.error(error)
+      }
+
       // Information about the camera we got, e.g. its deviceId and facingMode
       const settings = this.stream.getVideoTracks()[0].getSettings()
 
@@ -451,15 +441,26 @@ export default {
 
     // Go to the next camera in the list, back to the first one after the last
     async switchCamera() {
-      this.cameraIndex = (this.cameraIndex + 1) % this.cameras.length
-      await this.restartCamera()
-    },
+      // Ignore extra taps while a switch is still happening (two switches at once can break the camera)
+      if (this.switchingCamera) return
+      this.switchingCamera = true
 
-    // Stop the camera and open it again (used after switching camera or rotating the phone)
-    async restartCamera() {
+      // Most phones cannot open two cameras at the same time, so turn the old one off first
       this.stopCamera()
+      this.cameraIndex = (this.cameraIndex + 1) % this.cameras.length
       await this.startCamera()
-      await this.publishCamera() // so the others see the new camera too
+
+      // Swap the new camera into the video we are already sending to Agora.
+      // The others keep seeing us, just with the new camera (we do not leave and come back).
+      if (localVideoTrack && this.stream) {
+        try {
+          await localVideoTrack.replaceTrack(this.stream.getVideoTracks()[0], false)
+        } catch (error) {
+          console.error(error)
+        }
+      }
+
+      this.switchingCamera = false
     },
 
     stopCamera() {
