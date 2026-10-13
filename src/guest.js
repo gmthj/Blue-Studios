@@ -1,22 +1,22 @@
 // Guests do not need an account to join a room, so we give each browser
-// a random player id and remember it (and their name) in localStorage.
+// a random guest id and remember it (and their name) in localStorage.
 // This means refreshing the page keeps the same id, so the host stays the host.
 
-export function getPlayerId() {
-  let id = localStorage.getItem('playerId')
+export function getGuestId() {
+  let id = localStorage.getItem('guestId')
   if (id === null) {
-    id = 'player-' + Date.now() + '-' + Math.floor(Math.random() * 100000)
-    localStorage.setItem('playerId', id)
+    id = 'guest-' + Date.now() + '-' + Math.floor(Math.random() * 100000)
+    localStorage.setItem('guestId', id)
   }
   return id
 }
 
-export function getPlayerName() {
-  return localStorage.getItem('playerName') || ''
+export function getGuestName() {
+  return localStorage.getItem('guestName') || ''
 }
 
-export function savePlayerName(name) {
-  localStorage.setItem('playerName', name)
+export function saveGuestName(name) {
+  localStorage.setItem('guestName', name)
 }
 
 // Guess the device type from the browser's user agent text, e.g. "...iPhone..." or "...Android...Mobile..."

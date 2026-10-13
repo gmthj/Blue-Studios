@@ -1,4 +1,4 @@
-// Vercel serverless function: GET /api/token?channel=blue-studios-1234&uid=player-123
+// Vercel serverless function: GET /api/token?channel=blue-studios-1234&uid=guest-123
 // Returns { appId, token } so the browser can join an Agora video channel.
 //
 // This code runs on Vercel's server, NOT in the browser. That is why it can safely use the
@@ -34,7 +34,7 @@ export default function handler(req, res) {
     return res.status(400).json({ error: 'invalid channel name' })
   }
 
-  // Our player ids are strings (e.g. "player-1728-4821"), so we use the "user account" version.
+  // Our guest ids are strings (e.g. "guest-1728-4821"), so we use the "user account" version.
   // PUBLISHER means this user is allowed to send video, not just watch.
   const token = RtcTokenBuilder.buildTokenWithUserAccount(
     appId,
