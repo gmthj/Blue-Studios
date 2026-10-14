@@ -177,7 +177,7 @@ async function copyJoinLink() {
     PAGE LAYOUT with Bootstrap's grid. The page is exactly one screen tall, so the join card,
     camera and video call are always visible. Only the gallery (and the call tiles, if needed) scroll.
 
-    xs  (phone upright):            one column: join, call, gallery (sideways), camera
+    xs  (phone upright):            one column: join (room code only), call, camera, gallery (sideways)
     sm / md / lg (phone sideways,   two columns: [join, call, gallery] | camera
                   tablet, laptop):
     xl  (1200px+, big screens):     three columns: [join, call] | camera | gallery
@@ -187,7 +187,13 @@ async function copyJoinLink() {
       <!-- LEFT: join card + video call (+ gallery below xl) -->
       <div class="col-12 col-sm-5 col-md-4 col-xl-3 side-col d-flex flex-column gap-2">
         <div class="card">
-          <div class="card-body d-flex align-items-center gap-3 p-2">
+          <!-- Phones upright: just the room code, to leave room for the camera -->
+          <div class="card-body p-2 d-sm-none">
+            Room: <strong class="room-code">{{ code }}</strong>
+          </div>
+
+          <!-- Bigger screens: QR code, join address and copy link button -->
+          <div class="card-body d-none d-sm-flex align-items-center gap-3 p-2">
             <img :src="qrCodeUrl" alt="QR code to join this room" class="join-qr" />
             <div>
               <p class="join-text mb-1">
@@ -195,7 +201,7 @@ async function copyJoinLink() {
                 <strong class="room-code">{{ code }}</strong>
               </p>
               <button class="btn btn-outline-primary btn-sm" @click="copyJoinLink">
-                {{ copied ? 'Link copied!' : 'Copy join link' }}
+                {{ copied ? 'Link copied!' : 'Copy link' }}
               </button>
             </div>
           </div>
@@ -204,8 +210,9 @@ async function copyJoinLink() {
         <!-- Everyone in the room: live video, mute, leave, close room -->
         <VideoCallCard class="side-call" layout="sidebar" />
 
-        <!-- Gallery here on smaller screens. d-xl-none hides it on xl, where it gets its own column. -->
-        <RoomGallery class="side-gallery d-xl-none" :countdown-running="countdown > 0" />
+        <!-- Gallery here on sm / md / lg. Hidden on xs (it goes below the camera) and on xl (its own column).
+             d-sm-flex, not d-sm-block, because the gallery card is a flex column. -->
+        <RoomGallery class="side-gallery d-none d-sm-flex d-xl-none" :countdown-running="countdown > 0" />
       </div>
 
       <!-- MIDDLE: my camera (flex-grow-1 makes it fill the rest of the screen on phones) -->
@@ -226,9 +233,14 @@ async function copyJoinLink() {
 
           <div v-if="cameraError" class="alert alert-danger camera-error m-2">{{ cameraError }}</div>
 
-          <!-- Shutter button: anyone can press it. It sits on top of the camera view. -->
-          <button class="shutter-btn" :disabled="countdown > 0" aria-label="Take a photo" @click="pressShutter"></button>
         </div>
+      </div>
+      
+      <!-- Shutter button: anyone can press it. It sits on top of the camera view. -->
+      <button class="shutter-btn" :disabled="countdown > 0" aria-label="Take a photo" @click="pressShutter"></button>
+      <!-- BOTTOM (xs only): the gallery as a sideways row below the camera -->
+      <div class="col-12 d-sm-none">
+        <RoomGallery :countdown-running="countdown > 0" />
       </div>
 
       <!-- RIGHT (xl only): the gallery in its own column. d-none d-xl-block = hidden until xl. -->
@@ -272,6 +284,21 @@ async function copyJoinLink() {
   }
 }
 
+/* Phones held sideways: the screen is too short to fit the join card, call and gallery,
+   so the call got squashed to almost nothing by the gallery. Instead, everything keeps its
+   natural height and the whole left column scrolls. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .side-col {
+    overflow-y: auto;
+  }
+
+  .side-call,
+  .side-gallery {
+    flex: 0 0 auto;
+    overflow-y: visible;
+  }
+}
+
 /* ---------- JOIN CARD ---------- */
 .join-qr {
   width: 64px;
@@ -285,7 +312,8 @@ async function copyJoinLink() {
 }
 
 .room-code {
-  letter-spacing: 0.1em;
+  letter-spacing: 0.15em;
+  font-size: 1.3rem;
 }
 
 /* Bootstrap "xl" and up (1200px+): bigger QR code and text */
@@ -326,7 +354,8 @@ async function copyJoinLink() {
    Placed on top of the camera view. The page never scrolls, so it always stays in the same place.
    Default: bottom middle of the camera (computers, tablets, phones upright). */
 .shutter-btn {
-  position: absolute;
+  position: fixed;
+  /* position: absolute; */
   z-index: 10;
   left: 50%;
   bottom: 16px;
