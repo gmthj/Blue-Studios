@@ -1,563 +1,339 @@
+<script setup>
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { collection, addDoc, runTransaction } from 'firebase/firestore'
+import { db } from '../firebase.js'
+import { getGuestId, getGuestName } from '../guest.js'
+import { useRoom } from '../composables/useRoom.js'
+import { useVideoCall } from '../composables/useVideoCall.js'
+import StreamVideo from '../components/StreamVideo.vue'
+import VideoCallCard from '../components/VideoCallCard.vue'
+import RoomGallery from '../components/RoomGallery.vue'
+
+// The camera page (a child of RoomLayout.vue, which has already joined the room and the call)
+
+const guestId = getGuestId()
+const guestName = getGuestName()
+
+const { code, room, roomRef } = useRoom()
+const { localStream, mirrored, cameras, cameraIndex, cameraError, switchingCamera, switchCamera } = useVideoCall()
+
+const mainVideo = ref(null) // the big camera preview (a StreamVideo component)
+const copied = ref(false)   // shows "Link copied!" for a moment after copying
+
+// ---------- FLASH SETTINGS: change these numbers to test and adjust the flash ----------
+const FLASH_BEFORE_MS = 700 // the flash starts fading in this long BEFORE the photo (e.g. 750, 1100)
+const FLASH_AFTER_MS = 500  // the flash starts fading out this long AFTER the photo (e.g. 750, 1100)
+const FLASH_FADE_MS = 350    // how long the fade in and the fade out each take
+const FLASH_OPACITY = 0.95    // how white the screen gets: 0 = invisible, 1 = fully white
+
+const COUNTDOWN_SECONDS = 3
+const countdown = ref(0)    // 3, 2, 1 shown on screen. 0 means no countdown running
+const flash = ref(false)    // true = flash on (fading in / fully on), false = off (fading out / gone)
+let countdownTimer = null
+let flashOnTimer = null
+let flashOffTimer = null
+
+// The flash overlay's style. It is always on the page; only its opacity changes.
+// The CSS "transition" makes the opacity change smoothly over FLASH_FADE_MS (a fade).
+const flashStyle = computed(() => {
+  return {
+    opacity: flash.value ? FLASH_OPACITY : 0,
+    transition: 'opacity ' + FLASH_FADE_MS + 'ms ease',
+  }
+})
+let lastShotNumber = room.value.shotNumber // the last shot this device has already handled
+
+// Join card: the website address without "https://", the join link, and its QR code (goqr.me API)
+const siteAddress = window.location.host
+const joinLink = window.location.origin + '/?code=' + code.value
+const qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(joinLink)
+
+// When anyone presses the shutter, shotNumber goes up, so every device starts its own 3-2-1 now
+watch(
+  () => room.value.shotNumber,
+  (shotNumber) => {
+    if (shotNumber > lastShotNumber) {
+      lastShotNumber = shotNumber
+      startCountdown()
+    }
+  }
+)
+
+onBeforeUnmount(() => {
+  clearInterval(countdownTimer)
+  clearTimeout(flashOnTimer)
+  clearTimeout(flashOffTimer)
+})
+
+// Anyone can press the shutter. If two people press at the same moment, only one countdown must start.
+// A Firestore TRANSACTION reads and writes the room as one step: it only adds 1 to shotNumber
+// if shotNumber is still the number I saw. If someone else got there first, it has already
+// changed, so my press is ignored (their countdown is already starting on every device).
+async function pressShutter() {
+  if (countdown.value > 0) return
+  const seenShotNumber = room.value.shotNumber
+
+  try {
+    await runTransaction(db, async (transaction) => {
+      const snapshot = await transaction.get(roomRef())
+      if (snapshot.data().shotNumber !== seenShotNumber) {
+        throw new Error('Someone else already started the countdown')
+      }
+      transaction.update(roomRef(), {
+        shotNumber: seenShotNumber + 1,
+        shotStartedBy: guestName,
+      })
+    })
+  } catch (error) {
+    console.log(error.message)
+  }
+}
+
+// 3 -> 2 -> 1 -> photo. The flash turns on FLASH_BEFORE_MS before the photo and turns off
+// FLASH_AFTER_MS after it. The devices are not perfectly in sync (each one hears about the
+// shutter a little later than the others), so a long flash makes sure every screen is still
+// lit up when every device takes its photo.
+function startCountdown() {
+  countdown.value = COUNTDOWN_SECONDS
+  const photoInMs = COUNTDOWN_SECONDS * 1000 // the photo is taken when the countdown reaches 0
+
+  // Flash on, FLASH_BEFORE_MS before the photo (Math.max: never less than 0 ms from now)
+  clearTimeout(flashOffTimer)
+  flashOnTimer = setTimeout(() => {
+    flash.value = true
+  }, Math.max(photoInMs - FLASH_BEFORE_MS, 0))
+
+  countdownTimer = setInterval(() => {
+    countdown.value = countdown.value - 1
+
+    if (countdown.value === 0) {
+      clearInterval(countdownTimer)
+      takePhoto()
+
+      // Flash off, FLASH_AFTER_MS after the photo
+      flashOffTimer = setTimeout(() => {
+        flash.value = false
+      }, FLASH_AFTER_MS)
+    }
+  }, 1000)
+}
+
+async function takePhoto() {
+  if (!localStream.value) return // no camera, nothing to take
+
+  // Draw the current video frame onto a canvas, at most 640px wide to keep the file small
+  const video = mainVideo.value.videoElem
+  const width = 640
+  const height = Math.round((video.videoHeight / video.videoWidth) * width)
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+
+  // Flip horizontally so the photo matches the mirrored preview (like a selfie)
+  if (mirrored.value) {
+    ctx.translate(width, 0)
+    ctx.scale(-1, 1)
+  }
+  ctx.drawImage(video, 0, 0, width, height)
+
+  // Turn the canvas into a JPEG image stored as text (a "data URL", about 50KB)
+  const image = canvas.toDataURL('image/jpeg', 0.7)
+
+  await addDoc(collection(db, 'rooms', code.value, 'photos'), {
+    guestId: guestId,
+    name: guestName,
+    shotNumber: lastShotNumber,
+    image: image,
+    createdAt: Date.now(),
+  })
+}
+
+async function copyJoinLink() {
+  try {
+    await navigator.clipboard.writeText(joinLink)
+    copied.value = true
+    setTimeout(() => {
+      copied.value = false
+    }, 2000)
+  } catch (error) {
+    // Some browsers block the clipboard, so show the link for the user to copy themselves
+    console.error(error)
+    alert('Copy this link: ' + joinLink)
+  }
+}
+</script>
+
 <template>
-  <div v-if="notFound" class="alert alert-warning">
-    Room {{ code }} does not exist. <router-link to="/">Go back</router-link>
+  <!-- Full-screen flash and countdown (position: fixed, so they cover the whole screen) -->
+  <!-- The flash is always here but invisible (opacity 0) until it fades in, see flashStyle -->
+  <div class="flash-overlay" :style="flashStyle"></div>
+  <div v-if="countdown > 0" class="countdown-overlay" :class="{ 'on-flash': flash }">
+    <div class="countdown-number">{{ countdown }}</div>
+    <div class="countdown-by">{{ room.shotStartedBy }} pressed the shutter</div>
   </div>
 
-  <div v-else class="row g-4">
-    <!-- Full-screen countdown and flash (position: fixed, so they cover the whole screen) -->
-    <div v-if="countdown > 0" class="countdown-overlay">{{ countdown }}</div>
-    <div v-if="flash" class="flash-overlay"></div>
+  <!--
+    PAGE LAYOUT with Bootstrap's grid. The page is exactly one screen tall, so the join card,
+    camera and video call are always visible. Only the gallery (and the call tiles, if needed) scroll.
 
-    <!-- TOP: how to join (always first, on every screen size) -->
-    <div class="col-12">
-      <div class="card">
-        <div class="card-body d-flex flex-column flex-md-row align-items-center gap-3 text-center text-md-start">
-          <img :src="qrCodeUrl" alt="QR code to join this room" width="140" height="140" />
-          <div>
-            <p class="fs-4 mb-2">
-              Join at <strong>{{ siteAddress }}</strong> with code
-              <strong class="room-code">{{ code }}</strong>
-            </p>
-            <p class="small text-muted mb-2">Or scan the QR code with your phone camera.</p>
-            <button class="btn btn-outline-primary btn-sm" @click="copyJoinLink">
-              {{ copied ? 'Link copied!' : 'Copy join link' }}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- LEFT: camera -->
-    <div class="col-12 col-lg-7">
-      <div class="card">
-        <div class="card-body">
-          <div class="camera-box">
-            <!-- :class adds "mirrored" only for the front camera, so the back camera is not flipped -->
-            <video ref="video" autoplay playsinline muted class="w-100 rounded" :class="{ mirrored: mirrored }"></video>
-
-            <!-- Only shown if the device has more than one camera (e.g. phones with front + back) -->
-            <button
-              v-if="cameras.length > 1"
-              class="btn btn-light btn-sm switch-camera-btn"
-              :disabled="countdown > 0"
-              @click="switchCamera"
-            >
-              Switch camera ({{ cameraIndex + 1 }}/{{ cameras.length }})
-            </button>
+    xs  (phone upright):            one column: join (room code only), call, camera, gallery (sideways)
+    sm / md / lg (phone sideways,   two columns: [join, call, gallery] | camera
+                  tablet, laptop):
+    xl  (1200px+, big screens):     three columns: [join, call] | camera | gallery
+  -->
+  <div class="room-page">
+    <div class="row g-2 h-100 flex-column flex-sm-row flex-nowrap">
+      <!-- LEFT: join card + video call (+ gallery below xl) -->
+      <div class="col-12 col-sm-5 col-md-4 col-xl-3 side-col d-flex flex-column gap-2">
+        <div class="card">
+          <!-- Phones upright: just the room code, to leave room for the camera -->
+          <div class="card-body p-2 d-sm-none">
+            Room: <strong class="room-code">{{ code }}</strong>
           </div>
 
-          <div v-if="cameraError" class="alert alert-danger mt-3 mb-0">{{ cameraError }}</div>
-
-          <div class="mt-3">
-            <button v-if="isHost" class="btn btn-primary btn-lg w-100" :disabled="countdown > 0" @click="startShot">
-              Start countdown
-            </button>
-            <p v-else-if="room" class="text-center text-muted mb-0">
-              Waiting for {{ room.hostName }} (host) to start the countdown...
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Live video of everyone else in the room (through Agora) -->
-      <div class="card mt-3">
-        <div class="card-body">
-          <h2 class="h6">Live previews</h2>
-          <p v-if="liveError" class="text-danger small mb-0">{{ liveError }}</p>
-          <p v-else-if="remoteUids.length === 0" class="text-muted small mb-0">Waiting for others to turn on their camera...</p>
-
-          <div class="row g-2">
-            <div v-for="uid in remoteUids" :key="uid" class="col-6 col-md-4">
-              <!-- Agora puts the video inside this empty div (see the 'user-published' event) -->
-              <div :id="'remote-' + uid" class="remote-video rounded"></div>
-              <p class="small text-center mb-0">
-                {{ getMemberName(uid) }}
-                <span class="badge text-bg-light border">{{ getMemberDevice(uid) }}</span>
+          <!-- Bigger screens: QR code, join address and copy link button -->
+          <div class="card-body d-none d-sm-flex align-items-center gap-3 p-2">
+            <img :src="qrCodeUrl" alt="QR code to join this room" class="join-qr" />
+            <div>
+              <p class="join-text mb-1">
+                Join at <strong>{{ siteAddress }}</strong> with code
+                <strong class="room-code">{{ code }}</strong>
               </p>
+              <button class="btn btn-outline-primary btn-sm" @click="copyJoinLink">
+                {{ copied ? 'Link copied!' : 'Copy link' }}
+              </button>
             </div>
           </div>
         </div>
-      </div>
-    </div>
 
-    <!-- RIGHT: who is in the room -->
-    <div class="col-12 col-lg-5">
-      <div class="card">
-        <div class="card-body">
-          <h2 class="h6">In this room ({{ members.length }})</h2>
-          <ul class="list-group list-group-flush">
-            <li v-for="member in members" :key="member.id" class="list-group-item px-0">
-              {{ member.name }}
-              <span v-if="room && member.id === room.hostId" class="badge bg-primary ms-1">host</span>
-              <span v-if="member.id === playerId" class="badge bg-secondary ms-1">you</span>
-            </li>
-          </ul>
-          <button class="btn btn-outline-danger btn-sm mt-3" @click="leaveRoom">Leave room</button>
+        <!-- Everyone in the room: live video, mute, leave, close room -->
+        <VideoCallCard class="side-call" layout="sidebar" />
+
+        <!-- Gallery here on sm / md / lg. Hidden on xs (it goes below the camera) and on xl (its own column).
+             d-sm-flex, not d-sm-block, because the gallery card is a flex column. -->
+        <RoomGallery class="side-gallery d-none d-sm-flex d-xl-none" :countdown-running="countdown > 0" />
+      </div>
+
+      <!-- MIDDLE: my camera (flex-grow-1 makes it fill the rest of the screen on phones) -->
+      <div class="col-12 col-sm-7 col-md-8 col-xl-6 flex-grow-1 camera-col d-flex">
+        <div class="camera-area flex-grow-1">
+          <!-- :mirrored flips only the front camera, so the back camera is not flipped -->
+          <StreamVideo ref="mainVideo" :stream="localStream" :mirrored="mirrored" />
+
+          <!-- Only shown if the device has more than one camera (e.g. phones with front + back) -->
+          <button
+            v-if="cameras.length > 1"
+            class="btn btn-light btn-sm switch-camera-btn"
+            :disabled="countdown > 0 || switchingCamera"
+            @click="switchCamera"
+          >
+            Switch camera ({{ cameraIndex + 1 }}/{{ cameras.length }})
+          </button>
+
+          <div v-if="cameraError" class="alert alert-danger camera-error m-2">{{ cameraError }}</div>
+
         </div>
       </div>
-    </div>
-
-    <!-- BOTTOM: shared gallery, grouped by shot -->
-    <div class="col-12">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <h2 class="h5 mb-0">Room gallery</h2>
-        <router-link v-if="photos.length > 0" :to="'/room/' + code + '/strip'" class="btn btn-success">
-          Make photostrip &rarr;
-        </router-link>
+      
+      <!-- Shutter button: anyone can press it. It sits on top of the camera view. -->
+      <button class="shutter-btn" :disabled="countdown > 0" aria-label="Take a photo" @click="pressShutter"></button>
+      <!-- BOTTOM (xs only): the gallery as a sideways row below the camera -->
+      <div class="col-12 d-sm-none">
+        <RoomGallery :countdown-running="countdown > 0" />
       </div>
-      <p v-if="shots.length === 0" class="text-muted">No photos yet. The host starts the countdown and everyone's camera snaps at the same time.</p>
 
-      <div v-for="shot in shots" :key="shot.shotNumber" class="mb-4">
-        <h3 class="h6 text-muted">Shot {{ shot.shotNumber }}</h3>
-        <div class="row g-2">
-          <div v-for="photo in shot.photos" :key="photo.id" class="col-6 col-md-4 col-lg-3">
-            <img :src="photo.image" :alt="'Photo by ' + photo.name" class="w-100 rounded" />
-            <p class="small text-center mb-0">{{ photo.name }}</p>
-          </div>
-        </div>
+      <!-- RIGHT (xl only): the gallery in its own column. d-none d-xl-block = hidden until xl. -->
+      <div class="d-none d-xl-block col-xl-3 h-100">
+        <RoomGallery class="h-100" :countdown-running="countdown > 0" />
       </div>
     </div>
   </div>
 </template>
 
-<script>
-import {
-  doc, getDoc, setDoc, updateDoc, deleteDoc,
-  collection, addDoc, onSnapshot, query, orderBy,
-} from 'firebase/firestore'
-import AgoraRTC from 'agora-rtc-sdk-ng'
-import axios from 'axios'
-import { db } from '../firebase.js'
-import { getPlayerId, getPlayerName, getDeviceType } from '../player.js'
-
-// Only show Agora warnings and errors in the console (it prints a lot of info otherwise)
-AgoraRTC.setLogLevel(2)
-
-// Agora objects are kept here instead of in data(), because Vue does not need to
-// watch them, and wrapping them in Vue's reactivity can break them.
-let agoraClient = null     // our connection to the Agora video call
-let localVideoTrack = null // our camera, as sent to the others
-
-export default {
-  data() {
-    return {
-      code: this.$route.params.code,
-      playerId: getPlayerId(),
-      playerName: getPlayerName(),
-      deviceType: getDeviceType(), // 'Phone', 'Tablet' or 'Computer'
-      copied: false,               // shows "Link copied!" for a moment after copying
-
-      room: null,    // the room document (hostId, hostName, shotNumber)
-      members: [],    // everyone in the room
-      photos: [],     // every photo taken in the room
-      notFound: false,
-
-      stream: null,   // the camera stream
-      cameraError: '',
-      cameras: [],    // all cameras on this device
-      cameraIndex: 0, // which camera in the list is being used
-      mirrored: true, // flip the picture like a mirror (front camera only)
-
-      remoteUids: [], // player ids of the other guests whose live video we are showing
-      liveError: '',
-
-      countdown: 0,          // 3, 2, 1 shown on screen. 0 means no countdown running
-      countdownTimer: null,
-      flash: false,
-      lastShotNumber: null,  // the last shot this device has already handled
-
-      // onSnapshot returns a function that stops listening. We keep them to call when leaving.
-      stopRoomListener: null,
-      stopMembersListener: null,
-      stopPhotosListener: null,
-    }
-  },
-
-  computed: {
-    isHost() {
-      return this.room !== null && this.room.hostId === this.playerId
-    },
-
-    // The website address without "https://", e.g. "blue-studios.vercel.app"
-    siteAddress() {
-      return window.location.host
-    },
-
-    // The link that opens the home page with this room's code filled in
-    joinLink() {
-      return window.location.origin + '/?code=' + this.code
-    },
-
-    // goqr.me API: returns a QR code image for any text we give it
-    qrCodeUrl() {
-      return 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(this.joinLink)
-    },
-
-    // Group photos by shot number, so photos taken in the same countdown appear together.
-    // Result looks like: [ { shotNumber: 2, photos: [...] }, { shotNumber: 1, photos: [...] } ]
-    shots() {
-      const groups = []
-      for (const photo of this.photos) {
-        let group = groups.find((g) => g.shotNumber === photo.shotNumber)
-        if (!group) {
-          group = { shotNumber: photo.shotNumber, photos: [] }
-          groups.push(group)
-        }
-        group.photos.push(photo)
-      }
-      return groups.reverse() // newest shot first
-    },
-  },
-
-  async mounted() {
-    // People who open a room link without a name are sent to the home page to type one
-    if (this.playerName === '') {
-      this.$router.push('/?code=' + this.code)
-      return
-    }
-
-    const roomRef = doc(db, 'rooms', this.code)
-    const roomSnap = await getDoc(roomRef)
-    if (!roomSnap.exists()) {
-      this.notFound = true
-      return
-    }
-
-    // 1. Add myself to the room's members list (document id = my player id)
-    await setDoc(doc(db, 'rooms', this.code, 'members', this.playerId), {
-      name: this.playerName,
-      deviceType: this.deviceType,
-      joinedAt: Date.now(),
-    })
-
-    // 2. Listen to the room document. This runs once now, and again every time it changes.
-    this.stopRoomListener = onSnapshot(roomRef, (snapshot) => {
-      this.room = snapshot.data()
-
-      if (this.lastShotNumber === null) {
-        // First time: just remember the current shot number, do not start a countdown
-        this.lastShotNumber = this.room.shotNumber
-      } else if (this.room.shotNumber > this.lastShotNumber) {
-        // The host pressed "Start countdown", so every device starts its own 3-2-1 now
-        this.lastShotNumber = this.room.shotNumber
-        this.startCountdown()
-      }
-    })
-
-    // 3. Listen to the members list
-    const membersQuery = query(collection(db, 'rooms', this.code, 'members'), orderBy('joinedAt'))
-    this.stopMembersListener = onSnapshot(membersQuery, (snapshot) => {
-      const list = []
-      snapshot.forEach((memberDoc) => {
-        list.push({ id: memberDoc.id, ...memberDoc.data() })
-      })
-      this.members = list
-    })
-
-    // 4. Listen to the photos, so new photos from anyone appear straight away
-    const photosQuery = query(collection(db, 'rooms', this.code, 'photos'), orderBy('createdAt'))
-    this.stopPhotosListener = onSnapshot(photosQuery, (snapshot) => {
-      const list = []
-      snapshot.forEach((photoDoc) => {
-        list.push({ id: photoDoc.id, ...photoDoc.data() })
-      })
-      this.photos = list
-    })
-
-    // 5. Turn on the camera, then join the live video call so others can see us
-    await this.startCamera()
-    await this.joinLiveVideo()
-
-    // 6. On phones and tablets, restart the camera when the device is rotated,
-    //    so the picture matches the new orientation (portrait / landscape)
-    if (this.deviceType !== 'Computer' && screen.orientation) {
-      screen.orientation.addEventListener('change', this.onRotate)
-    }
-  },
-
-  // Runs when we leave this page: stop listeners, timer, live video and camera
-  beforeUnmount() {
-    if (this.stopRoomListener) this.stopRoomListener()
-    if (this.stopMembersListener) this.stopMembersListener()
-    if (this.stopPhotosListener) this.stopPhotosListener()
-    if (screen.orientation) screen.orientation.removeEventListener('change', this.onRotate)
-    clearInterval(this.countdownTimer)
-    this.leaveLiveVideo()
-    this.stopCamera()
-  },
-
-  methods: {
-    // Agora tells us other guests by their player id, so we look up their details in the members list
-    getMemberName(uid) {
-      const member = this.members.find((m) => m.id === uid)
-      if (member) {
-        return member.name
-      }
-      return 'Guest'
-    },
-
-    getMemberDevice(uid) {
-      const member = this.members.find((m) => m.id === uid)
-      if (member && member.deviceType) {
-        return member.deviceType
-      }
-      return 'Unknown device'
-    },
-
-    async copyJoinLink() {
-      try {
-        await navigator.clipboard.writeText(this.joinLink)
-        this.copied = true
-        setTimeout(() => {
-          this.copied = false
-        }, 2000)
-      } catch (error) {
-        // Some browsers block the clipboard, so show the link for the user to copy themselves
-        console.error(error)
-        alert('Copy this link: ' + this.joinLink)
-      }
-    },
-
-    onRotate() {
-      // Wait half a second for the rotation to finish, then restart the camera
-      setTimeout(() => {
-        this.restartCamera()
-      }, 500)
-    },
-
-    async joinLiveVideo() {
-      // Every room is its own Agora "channel". We use our player id as our Agora user id.
-      const channel = 'blue-studios-' + this.code
-
-      // Ask our own server function (api/token.js) for a token that lets us join this channel.
-      // The response looks like: { appId: '...', token: '...' }
-      let appId = ''
-      let token = ''
-      try {
-        const response = await axios.get('/api/token', {
-          params: { channel: channel, uid: this.playerId },
-        })
-        appId = response.data.appId
-        token = response.data.token
-      } catch (error) {
-        console.error(error)
-        this.liveError = 'Could not connect to live previews.'
-        return
-      }
-
-      agoraClient = AgoraRTC.createClient({ mode: 'rtc', codec: 'vp8' })
-
-      // Someone else turned on their camera: subscribe to it and show it
-      agoraClient.on('user-published', async (user, mediaType) => {
-        await agoraClient.subscribe(user, mediaType)
-        if (mediaType === 'video') {
-          if (!this.remoteUids.includes(user.uid)) {
-            this.remoteUids.push(user.uid)
-          }
-          // Wait for Vue to create the <div id="remote-..."> for this user, then play the video in it
-          await this.$nextTick()
-          // fit: 'contain' shows the whole picture, so portrait and landscape guests both look right
-          user.videoTrack.play('remote-' + user.uid, { fit: 'contain' })
-        }
-      })
-
-      // Someone turned off their camera or left: remove their preview
-      agoraClient.on('user-unpublished', (user) => {
-        this.remoteUids = this.remoteUids.filter((uid) => uid !== user.uid)
-      })
-      agoraClient.on('user-left', (user) => {
-        this.remoteUids = this.remoteUids.filter((uid) => uid !== user.uid)
-      })
-
-      try {
-        await agoraClient.join(appId, channel, token, this.playerId)
-        await this.publishCamera()
-      } catch (error) {
-        console.error(error)
-        this.liveError = 'Could not connect to live previews.'
-      }
-    },
-
-    // Send our camera to everyone else in the channel
-    async publishCamera() {
-      if (!agoraClient || !this.stream) return
-
-      // If we were already sending a camera (e.g. before switching), stop sending it first
-      if (localVideoTrack) {
-        await agoraClient.unpublish(localVideoTrack)
-        localVideoTrack.close()
-      }
-
-      // Use the camera stream we already opened, instead of letting Agora open the camera again
-      localVideoTrack = AgoraRTC.createCustomVideoTrack({
-        mediaStreamTrack: this.stream.getVideoTracks()[0],
-      })
-      await agoraClient.publish(localVideoTrack)
-    },
-
-    leaveLiveVideo() {
-      if (localVideoTrack) {
-        localVideoTrack.close()
-        localVideoTrack = null
-      }
-      if (agoraClient) {
-        agoraClient.leave()
-        agoraClient = null
-      }
-    },
-
-    async startCamera() {
-      // Browsers only allow the camera on https:// pages (or localhost)
-      if (!navigator.mediaDevices) {
-        this.cameraError = 'Camera not available. The page must be opened with https://'
-        return
-      }
-      // First time: ask for the front camera. After switching: ask for that exact camera.
-      let videoOptions = { facingMode: 'user' }
-      if (this.cameras.length > 0) {
-        videoOptions = { deviceId: { exact: this.cameras[this.cameraIndex].deviceId } }
-      }
-
-      try {
-        this.stream = await navigator.mediaDevices.getUserMedia({
-          video: videoOptions,
-          audio: false,
-        })
-        this.$refs.video.srcObject = this.stream
-      } catch (error) {
-        console.error(error)
-        this.cameraError = 'Could not open the camera. Please allow camera permission and refresh.'
-        return
-      }
-
-      // Information about the camera we got, e.g. its deviceId and facingMode
-      const settings = this.stream.getVideoTracks()[0].getSettings()
-
-      // Back cameras report facingMode 'environment'. Everything else (front cameras, laptop webcams) is mirrored.
-      this.mirrored = settings.facingMode !== 'environment'
-
-      // Get the list of cameras once. (Camera names are only available after permission is given.)
-      if (this.cameras.length === 0) {
-        const devices = await navigator.mediaDevices.enumerateDevices()
-        this.cameras = devices.filter((device) => device.kind === 'videoinput')
-
-        // Remember which camera in the list we are using now
-        const currentIndex = this.cameras.findIndex((camera) => camera.deviceId === settings.deviceId)
-        if (currentIndex !== -1) {
-          this.cameraIndex = currentIndex
-        }
-      }
-    },
-
-    // Go to the next camera in the list, back to the first one after the last
-    async switchCamera() {
-      this.cameraIndex = (this.cameraIndex + 1) % this.cameras.length
-      await this.restartCamera()
-    },
-
-    // Stop the camera and open it again (used after switching camera or rotating the phone)
-    async restartCamera() {
-      this.stopCamera()
-      await this.startCamera()
-      await this.publishCamera() // so the others see the new camera too
-    },
-
-    stopCamera() {
-      if (this.stream) {
-        this.stream.getTracks().forEach((track) => track.stop())
-      }
-    },
-
-    // Only the host sees this button. Increasing shotNumber tells every device to start.
-    async startShot() {
-      await updateDoc(doc(db, 'rooms', this.code), {
-        shotNumber: this.room.shotNumber + 1,
-      })
-    },
-
-    startCountdown() {
-      this.countdown = 3
-      this.countdownTimer = setInterval(() => {
-        this.countdown = this.countdown - 1
-        if (this.countdown === 0) {
-          clearInterval(this.countdownTimer)
-          this.takePhoto()
-        }
-      }, 1000)
-    },
-
-    async takePhoto() {
-      if (!this.stream) return // no camera, nothing to take
-
-      // Show a quick white flash
-      this.flash = true
-      setTimeout(() => {
-        this.flash = false
-      }, 200)
-
-      // Draw the current video frame onto a canvas, at most 640px wide to keep the file small
-      const video = this.$refs.video
-      const width = 640
-      const height = Math.round((video.videoHeight / video.videoWidth) * width)
-      const canvas = document.createElement('canvas')
-      canvas.width = width
-      canvas.height = height
-      const ctx = canvas.getContext('2d')
-
-      // Flip horizontally so the photo matches the mirrored preview (like a selfie)
-      if (this.mirrored) {
-        ctx.translate(width, 0)
-        ctx.scale(-1, 1)
-      }
-      ctx.drawImage(video, 0, 0, width, height)
-
-      // Turn the canvas into a JPEG image stored as text (a "data URL", about 50KB)
-      const image = canvas.toDataURL('image/jpeg', 0.7)
-
-      await addDoc(collection(db, 'rooms', this.code, 'photos'), {
-        playerId: this.playerId,
-        name: this.playerName,
-        shotNumber: this.lastShotNumber,
-        image: image,
-        createdAt: Date.now(),
-      })
-    },
-
-    async leaveRoom() {
-      await deleteDoc(doc(db, 'rooms', this.code, 'members', this.playerId))
-      this.$router.push('/')
-    },
-  },
-}
-</script>
-
 <style scoped>
-.camera-box {
-  position: relative;
-  background: #000;
-  border-radius: 0.375rem;
+/* ---------- PAGE HEIGHT ----------
+   The page is exactly one screen tall (the Bootstrap columns inside use h-100 to fill it) */
+.room-page {
+  height: calc(100vh - 100px);  /* for older browsers */
+  height: calc(100dvh - 100px); /* 100dvh = the visible screen height. 100px = navbar + spacing */
 }
 
-/* A portrait phone camera is tall, so limit the height and show the whole picture */
-video {
-  display: block;
-  max-height: 70vh;
-  object-fit: contain;
+/* min-height: 0 lets a column be shorter than its content, so the content scrolls inside it */
+.side-col,
+.camera-col {
+  min-height: 0;
+}
+
+/* Bootstrap "sm" and up (576px+): the left column is full height.
+   The call card takes the space it needs (scrolls if too tall), the gallery takes the rest. */
+@media (min-width: 576px) {
+  .side-col {
+    height: 100%;
+  }
+
+  .side-call {
+    flex: 0 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .side-gallery {
+    flex: 1 1 0;
+    min-height: 120px;
+  }
+}
+
+/* Phones held sideways: the screen is too short to fit the join card, call and gallery,
+   so the call got squashed to almost nothing by the gallery. Instead, everything keeps its
+   natural height and the whole left column scrolls. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .side-col {
+    overflow-y: auto;
+  }
+
+  .side-call,
+  .side-gallery {
+    flex: 0 0 auto;
+    overflow-y: visible;
+  }
+}
+
+/* ---------- JOIN CARD ---------- */
+.join-qr {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+}
+
+.join-text {
+  font-size: 0.9rem;
+  overflow-wrap: anywhere; /* long website addresses wrap instead of overflowing */
 }
 
 .room-code {
-  letter-spacing: 0.1em;
+  letter-spacing: 0.15em;
+  font-size: 1.3rem;
 }
 
-/* Mirror the preview so it feels like looking into a mirror */
-video.mirrored {
-  transform: scaleX(-1);
+/* Bootstrap "xl" and up (1200px+): bigger QR code and text */
+@media (min-width: 1200px) {
+  .join-qr {
+    width: 110px;
+    height: 110px;
+  }
+
+  .join-text {
+    font-size: 1.1rem;
+  }
 }
 
-.remote-video {
-  width: 100%;
-  aspect-ratio: 4 / 3;
+/* ---------- CAMERA ---------- */
+.camera-area {
+  position: relative;
+  min-height: 0;
   background: #000;
+  border-radius: 0.375rem;
   overflow: hidden;
 }
 
@@ -567,25 +343,85 @@ video.mirrored {
   right: 10px;
 }
 
-/* position: fixed + inset: 0 covers the whole screen, z-index puts it above everything else */
-.countdown-overlay {
+.camera-error {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+}
+
+/* ---------- SHUTTER BUTTON ----------
+   Placed on top of the camera view. The page never scrolls, so it always stays in the same place.
+   Default: bottom middle of the camera (computers, tablets, phones upright). */
+.shutter-btn {
+  position: fixed;
+  /* position: absolute; */
+  z-index: 10;
+  left: 50%;
+  bottom: 16px;
+  transform: translateX(-50%);
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  border: 6px solid #ffffff;
+  background: var(--bs-primary);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.25), 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.shutter-btn:disabled {
+  opacity: 0.5;
+}
+
+/* Phones held sideways: on the right edge, in the middle (like a camera app).
+   Bootstrap's breakpoints only look at the screen WIDTH, so this one uses orientation + height. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .shutter-btn {
+    left: auto;
+    right: 12px;
+    bottom: auto;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 60px;
+    height: 60px;
+  }
+}
+
+/* ---------- FULL-SCREEN FLASH AND COUNTDOWN ----------
+   position: fixed + inset: 0 covers the whole screen, z-index puts it above everything else */
+.flash-overlay {
   position: fixed;
   inset: 0;
   z-index: 2000;
+  background: #ffffff;
+  pointer-events: none; /* it is always on the page, so clicks must go through it */
+}
+
+.countdown-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2001; /* above the flash, so the "1" still shows on the white screen */
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  font-size: 40vmin; /* 40% of the shorter side of the screen */
-  font-weight: bold;
-  color: white;
+  color: #ffffff;
   text-shadow: 0 0 30px rgba(0, 0, 0, 0.7);
   pointer-events: none; /* clicks go through to the page underneath */
 }
 
-.flash-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 2001;
-  background: white;
+/* While the flash is on, show the countdown in light grey so the screen stays bright */
+.countdown-overlay.on-flash {
+  color: #cccccc;
+  text-shadow: none;
+}
+
+.countdown-number {
+  font-size: 40vmin; /* 40% of the shorter side of the screen */
+  font-weight: bold;
+  line-height: 1;
+}
+
+.countdown-by {
+  font-size: 1.25rem;
 }
 </style>

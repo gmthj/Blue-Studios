@@ -2,17 +2,18 @@
 
 An online photobooth where friends join one room from their own devices and take photos together.
 
-Current status: **Photobooth Rooms MVP** (create/join room, QR code, live member list, live video previews, synchronised countdown, shared gallery).
+Current status: **Photobooth Rooms MVP** (create/join room, QR code, video call with mute/unmute, synchronised countdown, shared gallery, collaborative photostrip, close room).
 
 ## Tech stack
 
-- Vue 3 (Options API) + Vue Router, built with Vite
+- Vue 3 (`<script setup>` with `ref()` / `computed()`, and composables for shared logic) + Vue Router, built with Vite
+- `.vue` files are ordered: `<script setup>`, then `<template>`, then `<style scoped>`
 - Bootstrap 5 for layout and responsive design
 - Firebase Cloud Firestore for real-time data (`onSnapshot` listeners)
 - Vercel for hosting (https is needed for phone cameras) + a Vercel serverless function for Agora tokens
 - MediaDevices API (`getUserMedia`) for the camera, Canvas API to capture photos
 - goqr.me API to generate the join QR code
-- Agora Web SDK (`agora-rtc-sdk-ng`) for live video previews, `agora-token` to create tokens on the server
+- Agora Web SDK (`agora-rtc-sdk-ng`) for the video call (video + audio), `agora-token` to create tokens on the server
 - axios to call our token API
 
 ## Project structure
@@ -21,12 +22,24 @@ Current status: **Photobooth Rooms MVP** (create/join room, QR code, live member
 index.html               page shell, loads src/main.js
 src/main.js              creates the Vue app, adds Bootstrap and the router
 src/App.vue              navbar + <router-view>
-src/router.js            URL -> page mapping ( /, /room/:code, /room/:code/strip )
+src/router.js            URL -> page mapping ( /, and /room/:code with child pages '' and 'strip' )
 src/firebase.js          Firebase config (read from .env), exports db
-src/player.js            guest player id + name saved in localStorage
-src/views/HomeView.vue   create room / join room by code
-src/views/RoomView.vue   camera, countdown, members, live previews, gallery
-src/views/StripView.vue  pick 4 room photos for the strip, export as JPG
+src/guest.js             guest id + name saved in localStorage, device type (Phone/Tablet/Computer)
+src/room.js              6-person room limit, "is this member still here?" check
+
+src/composables/useRoom.js        SHARED room state: room document, members (+ heartbeat), photos
+src/composables/useVideoCall.js   SHARED video call (Agora): camera, mic, others' video/audio, switch camera
+
+src/components/VideoCallCard.vue  the call card: everyone's tiles + Mute/Unmute, Leave, Close room
+src/components/VideoTile.vue      one person: live video, name, device type, mute icon (all tiles the same size)
+src/components/RoomGallery.vue    the shared gallery (grouped by shot) + Make photostrip button
+src/components/StreamVideo.vue    a <video> showing a camera stream (my camera)
+
+src/views/HomeView.vue    create room / join room by code
+src/views/RoomLayout.vue  parent page for a room: joins the room + call once, shows a child page
+src/views/RoomView.vue    (child) camera, shutter, countdown, join card, call card, gallery
+src/views/StripView.vue   (child) call card, collaborative photostrip, export as JPG
+
 api/token.js             Vercel serverless function: GET /api/token -> Agora token
 vercel.json              sends page URLs (/room/..., /room/.../strip) to index.html (add new page routes here too)
 .env.example             list of environment variables needed (copy to .env)
@@ -37,20 +50,34 @@ vercel.json              sends page URLs (/room/..., /room/.../strip) to index.h
 Firestore data:
 
 ```
-rooms/{code}                 { hostId, hostName, shotNumber, createdAt }
-rooms/{code}/members/{id}    { name, deviceType, joinedAt }
-rooms/{code}/photos/{auto}   { playerId, name, shotNumber, image, createdAt }
+rooms/{code}                 { hostId, hostName, shotNumber, shotStartedBy, stage, stripSlots, closed, createdAt }
+rooms/{code}/members/{id}    { name, deviceType, joinedAt, lastSeen }
+rooms/{code}/photos/{auto}   { guestId, name, shotNumber, image, createdAt }
 ```
 
-1. **Create:** the host picks a random 4-digit code that is not in use and creates `rooms/{code}`.
-2. **Join:** each person adds a document to `members`. Every device listens to `members` with `onSnapshot`, so the list updates live.
-3. **Synchronised countdown:** the host clicks "Start countdown", which adds 1 to `shotNumber`. Every device listens to the room document. When it sees `shotNumber` go up, it starts its own 3-2-1 countdown. Because all devices receive the change within a fraction of a second, they all snap at about the same time.
-4. **Capture:** the current video frame is drawn on a canvas, turned into a small JPEG (data URL), and saved to `photos` with the shot number.
-5. **Shared gallery:** every device listens to `photos`, so new photos appear on everyone's screen. Photos are grouped by shot number.
-6. **Live previews:** each device asks our server for a token (`GET /api/token?channel=blue-studios-{code}&uid={playerId}`), then joins that Agora video channel and sends ("publishes") its camera. When Agora says another user published video (`user-published` event), we subscribe and play it in a box with their name. The full-quality photo is still taken from each device's own camera.
-7. **Switch camera:** after permission is given, we list all cameras with `enumerateDevices()`. If there is more than one, a button cycles through them and the new camera is re-published to Agora. On phones and tablets, the camera is also restarted when the device rotates (`screen.orientation` change event), so the picture matches portrait/landscape.
-8. **Photostrip:** "Make photostrip" opens `/room/{code}/strip`, which loads the room's photos once with `getDocs`. Tap a slot, then tap a photo to put it there (it then jumps to the next empty slot). "Download JPG" draws a white strip on a canvas: each photo is cropped to fill its 4:3 slot (like CSS `object-fit: cover`), then `canvas.toDataURL('image/jpeg')` is downloaded with a temporary `<a download>` link.
-
+1. **Create:** the host picks a random code from `0000` to `9999` that is not in use and creates `rooms/{code}`.
+2. **Join:** the Join button only turns on (and becomes the main button) once 4 digits are typed. `RoomLayout.vue` checks the room exists, is not closed and is not full, then joins it **once** for all the room's pages:
+   - **Members:** each person has a document in `members`. Every device listens with `onSnapshot`, so the list updates live.
+   - **Heartbeat:** every 15 seconds each device updates its `lastSeen` time. A member not seen for 45 seconds (closed the tab) is no longer shown or counted.
+   - **Room limit:** at most 6 people at once (1 host + 5 guests). Before joining, we count the active members (`isRoomFull` in `room.js`). Someone already in the room (e.g. refreshing) is always let back in.
+3. **Shared state (composables):** `useRoom.js` and `useVideoCall.js` create their `ref()`s once, outside the function, so every page and component that calls them shares the same room and the same call.
+4. **Video call:** each device asks our server for a token (`GET /api/token?channel=blue-studios-{code}&uid={guestId}`), joins that Agora channel and sends ("publishes") its camera. When Agora says someone published video or audio (`user-published` event), we subscribe; `VideoTile.vue` plays their video, and audio just plays.
+   - **Everyone starts muted:** the microphone is not opened when joining. "Unmute" opens the mic and publishes it; "Mute" unpublishes and closes it (so the mic is fully off).
+   - **Stays connected between pages:** the call is started by `RoomLayout.vue`, the parent of the camera and strip pages, so switching pages does not drop the call.
+   - **Adding it to another page:** make the page a child route of `/room/:code` in `router.js`, and put `<VideoCallCard />` on it.
+5. **Synchronised countdown (anyone can press the shutter):** pressing the round shutter button adds 1 to `shotNumber` using a Firestore **transaction**: it only adds 1 if `shotNumber` is still the number this device saw. If two people press at the same moment, the second transaction sees the number has already changed and does nothing, so only one countdown starts. Every device watches `shotNumber` and starts its own 3-2-1 when it goes up.
+6. **Capture:** the current video frame is drawn on a canvas, turned into a small JPEG (data URL), and saved to `photos` with the shot number. A white flash fades in shortly before the photo and fades out shortly after it. Devices hear about the shutter at slightly different times, so this makes sure every screen is still lit up when every device takes its photo. The timing, fade length and brightness are the `FLASH_*` settings at the top of `RoomView.vue`.
+7. **Shared gallery:** every device listens to `photos`, so new photos appear on everyone's screen. Photos are grouped by shot number.
+8. **Switch camera:** after permission is given, we list all cameras with `enumerateDevices()`. If there is more than one, a button cycles through them. Switching swaps the new camera into the track already being sent (`replaceTrack`), so others never see us leave and rejoin. When a phone rotates, the browser rotates the camera picture by itself; tiles use `fit: 'contain'` so portrait and landscape both show fully.
+9. **Pages move together (`stage`):** "Make photostrip" sets the room's `stage` to `'strip'`; "Back to camera" sets it to `'camera'`. `RoomLayout.vue` watches `stage` and sends everyone to the matching page.
+10. **Collaborative photostrip:** the 4 chosen photo ids are stored in the room document (`stripSlots`), so everyone sees the same strip. Each slot is saved on its own (`updateDoc(room, { 'stripSlots.2': photoId })`), so two people changing different slots at once do not overwrite each other. Which slot you are filling is personal. "Download JPG" draws the strip on a canvas: each photo is cropped to fill its 4:3 slot (like CSS `object-fit: cover`), then downloaded with a temporary `<a download>` link.
+11. **Close room:** the host (or anyone, if the host has left) can close the room. This sets `closed: true`; every device sees it, ends the video call and goes back to the home page. Closed rooms cannot be joined. This stops Agora minutes being used by forgotten open tabs.
+12. **Layout (Bootstrap grid):** the camera page is a Bootstrap `row` with `col-*` classes, exactly one screen tall (`100dvh`), so the join card, camera and call are always visible and only the gallery scrolls. Room pages use `container-fluid` (full width) so big screens get a bigger camera and bigger call tiles.
+    - **xs** (phone upright): one column (`flex-column`): join card, call (sideways row), gallery (sideways row), camera fills the rest (`flex-grow-1`).
+    - **sm / md / lg** (phone sideways, tablet, laptop): `col-sm-5 col-md-4` on the left with join card, call and gallery (scrolls); camera on the right.
+    - **xl** (1200px+): `col-xl-3 | col-xl-6 | col-xl-3`: join card + call on the left, camera in the middle, gallery on the right. The gallery is shown twice in the code, with `d-xl-none` (in the left column) and `d-none d-xl-block` (own column), so only one is visible at a time.
+    - **Call tiles are all the same size:** fixed width (or two equal `minmax(0, 1fr)` columns), badges sit on top of the video, and the name is one line cut off with `text-truncate`.
+    - **Shutter button:** sits on the camera view: bottom middle, or on the right edge when a phone is held sideways. Bootstrap breakpoints only check width, so that one case uses `(orientation: landscape) and (max-height: 500px)`.
 ### Why a token server?
 
 Agora projects have an **App Certificate** (a secret). To join a channel, the browser needs a **token** made with that certificate. If the certificate were in the frontend code, anyone could read it in the browser. So `api/token.js` runs on Vercel's server, reads the certificate from an environment variable, and only sends the browser a token for one channel + one user that expires after 3 hours.
@@ -113,7 +140,7 @@ vercel dev
 
 **B. Quick frontend only:** `npm run dev`, then open http://localhost:5173. Everything works except live previews, which show "Could not connect to live previews" because Vite alone does not run `/api/token`.
 
-To test with "two people" on one laptop: open a second Chrome window in **Incognito** (Ctrl+Shift+N) at the same address. Incognito has its own localStorage, so it acts as a different player.
+To test with "two people" on one laptop: open a second Chrome window in **Incognito** (Ctrl+Shift+N) at the same address. Incognito has its own localStorage, so it acts as a different guest.
 
 The QR code points to `localhost`, which your phone cannot open. Phones need the deployed https version (Step 4).
 
@@ -137,8 +164,8 @@ From now on, every push to `main` redeploys automatically. If you change an envi
 1. On your laptop, open the `.vercel.app` URL, type your name, **Create room**, and allow the camera.
 2. On your phone, scan the QR code with the camera app and open the link.
 3. Type a name on the phone, press **Join room**, and allow the camera.
-4. Check: both names appear in "In this room", each device shows the other in **Live previews**, and **Switch camera** appears on the phone.
-5. On the laptop (host), press **Start countdown**. Both devices count 3-2-1 and both photos appear in the gallery under the same shot.
+4. Check: both names appear in "In this room" (scroll down), each device shows the other in **Live previews**, and **Switch camera** appears on the phone.
+5. On the laptop (host), press the round **shutter button** (anyone can). Both devices count 3-2-1 and both photos appear in the gallery under the same shot.
 
 To check the token API on its own, open `https://YOUR-URL.vercel.app/api/token?channel=blue-studios-1234&uid=test` in a browser. You should see `{"appId":"...","token":"007..."}`. If you see an error about `AGORA_APP_ID` or `AGORA_APP_CERTIFICATE`, the environment variables are missing in Vercel (then Redeploy).
 
@@ -146,15 +173,19 @@ To check the token API on its own, open `https://YOUR-URL.vercel.app/api/token?c
 
 ## Known limitations (MVP)
 
-- Members who close the tab without pressing "Leave room" stay in the list.
+- Members who close the tab without pressing "Leave room" disappear from the list only after about 45 seconds (heartbeat timeout).
+- The 6-person limit is checked when joining, not enforced by the database: two people joining at the exact same moment could both get in.
 - Countdown sync depends on network speed (usually within half a second).
 - Photos are stored as small JPEG text in Firestore (each document max 1MB) instead of Firebase Storage, to keep setup simple and free.
 - No Firestore security rules yet (test mode).
 - `/api/token` gives a token to anyone who asks for a `blue-studios-...` channel. Fine for a prototype; a real app would check the user is logged in first.
-- Two normal tabs in the same browser share one player id, so Agora treats them as the same user. Use an Incognito window for the second player.
+- Two normal tabs in the same browser share one guest id, so Agora treats them as the same user. Use an Incognito window for the second guest.
+- Testing several unmuted devices in the same physical room causes echo/feedback. Keep all but one muted, or use earphones.
+- If a page is opened by refreshing (no tap on the page yet), the browser may block others' audio until you tap anywhere on the page.
+- Agora minutes are used by every connected device until it leaves or the room is closed. Close the room when finished testing.
 
 ## Use of AI
 
-Initial scaffold and Rooms MVP code drafted with the help of Claude (AI assistant); reviewed and to be understood/modified by the team. (Update this section in README.txt as required by the course.)
+-
 
 
