@@ -3,9 +3,11 @@ import HomeView from './views/HomeView.vue'
 import RoomLayout from './views/RoomLayout.vue'
 import RoomView from './views/RoomView.vue'
 import StripView from './views/StripView.vue'
+import TemplateEditorView from './views/TemplateEditorView.vue'
 
 const routes = [
   { path: '/', component: HomeView },
+  { path: '/template-editor', component: TemplateEditorView },
   {
     // :code is a route parameter, e.g. /room/4821 gives route.params.code = '4821'
     // RoomLayout joins the room + video call once, and shows one of its "children" inside it.
