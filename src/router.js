@@ -3,6 +3,7 @@ import HomeView from './views/HomeView.vue'
 import RoomLayout from './views/RoomLayout.vue'
 import RoomView from './views/RoomView.vue'
 import StripView from './views/StripView.vue'
+import MusicView from './views/MusicView.vue'
 
 const routes = [
   { path: '/', component: HomeView },
@@ -14,6 +15,7 @@ const routes = [
     children: [
       { path: '', component: RoomView },       // /room/4821       (camera)
       { path: 'strip', component: StripView }, // /room/4821/strip (photostrip)
+      { path: 'music', component: MusicView },  // /room/4821/music   (music mixer)
     ],
   },
 ]
