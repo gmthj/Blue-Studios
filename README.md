@@ -17,6 +17,7 @@ Current status: **Photobooth Rooms MVP** (create/join room, QR code, video call 
 - Agora Web SDK (`agora-rtc-sdk-ng`) for the video call (video + audio), `agora-token` to create tokens on the server
 - axios to call our token API
 - Firebase Admin SDK (`firebase-admin`) on the server, to check who is calling our API
+  - `package.json` has `"overrides": { "jwks-rsa": { "jose": "^5.10.0" } }`. Do not remove it: `firebase-admin` uses `jwks-rsa`, which loads `jose` with `require()`, but `jose` 6 only works with `import`, and Vercel's server cannot `require()` it (`ERR_REQUIRE_ESM`, the API crashes). `jose` 5 works with both.
 - Firestore security rules (`firestore.rules`), tested with the Firebase emulator
 
 ## Project structure
