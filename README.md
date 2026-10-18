@@ -31,7 +31,7 @@ src/firebase.js          Firebase config (read from .env), exports db and auth
 src/guest.js             guest name saved in localStorage, device type (Phone/Tablet/Computer)
 src/room.js              6-person room limit, "is this member still here?" check
 
-src/composables/useAuth.js        SHARED login state: who is signed in (guests are signed in anonymously)
+src/composables/useAuth.js        SHARED login state: who is signed in (guests are signed in anonymously), sign up, log in, Google, log out
 src/composables/useRoom.js        SHARED room state: room document, members (+ heartbeat), photos
 src/composables/useVideoCall.js   SHARED video call (Agora): camera, mic, others' video/audio, switch camera
 
@@ -41,6 +41,7 @@ src/components/RoomGallery.vue    the shared gallery (grouped by shot) + Make ph
 src/components/StreamVideo.vue    a <video> showing a camera stream (my camera)
 
 src/views/HomeView.vue    create room / join room by code
+src/views/LoginView.vue   log in / sign up (email + password, or Google), forgot password
 src/views/RoomLayout.vue  parent page for a room: joins the room + call once, shows a child page
 src/views/RoomView.vue    (child) camera, shutter, countdown, join card, call card, gallery
 src/views/StripView.vue   (child) call card, collaborative photostrip, export as JPG
@@ -66,6 +67,8 @@ rooms/{code}/photos/{auto}   { ownerId, name, shotNumber, image, createdAt }
 ```
 
 **Who is who:** when the app opens, `main.js` waits for `startAuth()` (in `useAuth.js`). If nobody is signed in, it signs in **anonymously**: Firebase gives the browser a real user id (`uid`) with no email or password, and remembers it, so a refresh keeps the same uid. The `uid` is used as the member document id, the room's `hostId`, a photo's `ownerId` and the Agora user id. Because Firebase itself checks the uid, the Firestore security rules can trust it (a random id in localStorage could be faked).
+
+**Accounts:** on `/login`, a guest can sign up with email + password or Google. Firebase **links** the new login to the guest user, so the uid does not change and anything made as a guest stays theirs. A new account gets a public profile `users/{uid}` and a verification email (a reminder shows until they click the link). Logging out signs the device back in as a new guest. Log in / log out is hidden inside a room, because changing user in a room would drop you from it. Security: Firebase stores and hashes passwords (we never see them), login errors never say whether an email has an account, "Forgot password" shows the same message either way, and `?redirect=` after login only goes to pages on our own site.
 
 1. **Create:** the host picks a random code from `0000` to `9999` that is not in use and creates `rooms/{code}`.
 2. **Join:** the Join button only turns on (and becomes the main button) once 4 digits are typed. `RoomLayout.vue` checks the room exists, is not closed and is not full, then joins it **once** for all the room's pages:
@@ -103,6 +106,7 @@ Agora projects have an **App Certificate** (a secret). To join a channel, the br
 - **Rooms:** anyone signed in can look up one room by code (not list them). Only the host can create it, as themselves. Members can press the shutter (`shotNumber` + 1 only), change `stage`, change strip slots 0-3, and close the room. A closed room cannot be changed or reopened. Nobody can delete a room.
 - **Members:** you can only join, update (heartbeat) and leave as yourself, only into an open room, and every field is checked.
 - **Photos:** only members can see them. You can only add a photo as yourself (`ownerId`), for a shot that has happened, as a JPEG under about 900KB. Photos cannot be edited.
+- **User profiles** (`users/{uid}` `{ displayName, createdAt }`): anyone signed in can read one profile (not list them). Only accounts (not guests) can create one, only their own, and they can only change `displayName` (1-30 characters). The email is not stored in Firestore.
 - **Any other collection is blocked.** If you add a new collection (e.g. templates), add rules for it in `firestore.rules` and tests in `tests/firestore.rules.test.js`, or every read/write will fail with "Missing or insufficient permissions".
 
 Run the tests with `npm run test:rules` (needs Java). It starts a local copy of Firestore, so it never touches the real data. Deploy the rules with `firebase deploy --only firestore:rules,storage`.
@@ -213,6 +217,22 @@ To check the token API is protected, open `https://YOUR-URL.vercel.app/api/token
 
 ## Use of AI
 
--
+### Fixing "Live video unavailable" after adding Firebase Admin (Gabriel, 18 Oct 2026)
+
+**Tool:** Claude Code (Claude Opus 5.5)
+
+**Problem:** after `api/token.js` started using `firebase-admin` to check who is calling, live previews stopped working on the Vercel preview ("Live video unavailable").
+
+**What the AI did:**
+- Read the Vercel runtime logs (`vercel logs`). Every call to `/api/token` crashed when it started, with `ERR_REQUIRE_ESM`: `jwks-rsa` (a library used inside `firebase-admin`) loads `jose` with `require()`, but `jose` 6 only supports `import`.
+- Explained why it only failed on Vercel: Node 24 on our laptops can `require()` such packages, but Vercel's server cannot.
+- Reproduced the crash locally by running Node with that feature turned off (`node --no-experimental-require-module`).
+- Checked that `jwks-rsa` only uses two `jose` functions (`importJWK`, `exportSPKI`), which also exist in `jose` 5. `jose` 5 supports both `require()` and `import`.
+- Added `"overrides": { "jwks-rsa": { "jose": "^5.10.0" } }` to `package.json`, so npm installs `jose` 5 for `jwks-rsa` only.
+- Re-tested `/api/token` with a temporary test user and room (deleted afterwards), with the `require()` feature still turned off. Every case gave the expected result: wrong method 405, bad code 400, no or fake sign-in 401, not a member or room closed 403, member of an open room 200 with a token.
+
+**What I did:** reported the bug from the Vercel preview, reviewed the fix, and tested it on the preview with two devices.
+
+**What I learned:** a package can work locally but fail on the server when the Node setup is different, so the server logs (Vercel > Logs) are the first place to look. Some npm packages now only support `import` (ES modules), and `overrides` in `package.json` can pin one dependency's version without changing the others.
 
 

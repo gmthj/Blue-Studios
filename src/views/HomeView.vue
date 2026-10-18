@@ -4,13 +4,16 @@ import { useRoute, useRouter } from 'vue-router'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { getGuestName, saveGuestName } from '../guest.js'
-import { getUid } from '../composables/useAuth.js'
+import { getUid, useAuth } from '../composables/useAuth.js'
 import { isRoomFull, MAX_PEOPLE } from '../room.js'
 
 const route = useRoute()
 const router = useRouter()
 
-const name = ref(getGuestName())
+const { user } = useAuth()
+
+// The name shown in the room: the one typed last time, or an account's name (rooms allow up to 20 characters)
+const name = ref(getGuestName() || user.value.displayName.slice(0, 20))
 // If the user scanned the QR code, the link is /?code=1234, so we pre-fill the code
 const joinCode = ref(route.query.code || '')
 const errorMessage = ref('')

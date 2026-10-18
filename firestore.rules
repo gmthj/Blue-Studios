@@ -21,6 +21,11 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    // People with an account (email or Google). Guests are signed in "anonymously".
+    function isAccount() {
+      return signedIn() && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
     // Admins get a special "admin" mark on their login, set only by our server (never by the browser)
     function isAdmin() {
       return signedIn() && request.auth.token.admin == true;
@@ -38,6 +43,11 @@ service cloud.firestore {
     // Only these fields changed in this update
     function onlyChanged(fields) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+    }
+
+    // Account names can be a bit longer than room names
+    function isDisplayName(value) {
+      return value is string && value.size() >= 1 && value.size() <= 30;
     }
 
     function isName(value) {
@@ -159,6 +169,30 @@ service cloud.firestore {
         allow update: if false;
         allow delete: if isAdmin();
       }
+    }
+
+    // ---------- User profiles ----------
+    // users/{uid}  { displayName, createdAt }   public profile. The email is NOT stored here.
+
+    match /users/{userId} {
+      // Anyone signed in can see one profile (e.g. the name on a marketplace item), but not list them all
+      allow get: if signedIn();
+      allow list: if false;
+
+      // Only accounts (not guests) have a profile, and only their own
+      allow create: if isAccount()
+        && userId == request.auth.uid
+        && request.resource.data.keys().hasOnly(['displayName', 'createdAt'])
+        && isDisplayName(request.resource.data.displayName)
+        && request.resource.data.createdAt is int;
+
+      // Change my name (nothing else)
+      allow update: if isAccount()
+        && userId == request.auth.uid
+        && onlyChanged(['displayName'])
+        && isDisplayName(request.resource.data.displayName);
+
+      allow delete: if false;
     }
 
     // Everything else (any other collection) is blocked until a rule above allows it.

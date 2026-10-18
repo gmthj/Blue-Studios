@@ -30,6 +30,14 @@ after(async () => {
 function dbAs(uid) {
   return testEnv.authenticatedContext(uid).firestore()
 }
+// Someone with an account (email or Google), not a guest
+function dbAsAccount(uid) {
+  return testEnv.authenticatedContext(uid, { firebase: { sign_in_provider: 'password' } }).firestore()
+}
+// A guest (signed in anonymously)
+function dbAsGuest(uid) {
+  return testEnv.authenticatedContext(uid, { firebase: { sign_in_provider: 'anonymous' } }).firestore()
+}
 function dbAsAdmin() {
   return testEnv.authenticatedContext('admin1', { admin: true }).firestore()
 }
@@ -207,9 +215,45 @@ test('only members can see photos, and nobody can edit them', async () => {
   await assertSucceeds(deleteDoc(doc(dbAsAdmin(), 'rooms/1234/photos/p1')))
 })
 
+// ---------- User profiles ----------
+
+test('an account can create and rename its own profile', async () => {
+  await assertSucceeds(setDoc(doc(dbAsAccount('alice'), 'users/alice'), { displayName: 'Alice', createdAt: Date.now() }))
+  await assertSucceeds(updateDoc(doc(dbAsAccount('alice'), 'users/alice'), { displayName: 'Alice Tan' }))
+})
+
+test('guests cannot create a profile', async () => {
+  await assertFails(setDoc(doc(dbAsGuest('g1'), 'users/g1'), { displayName: 'Guest', createdAt: Date.now() }))
+})
+
+test('nobody can write someone else\'s profile', async () => {
+  await seed('users/alice', { displayName: 'Alice', createdAt: 1 })
+  await assertFails(setDoc(doc(dbAsAccount('bob'), 'users/alice'), { displayName: 'Hacked', createdAt: 1 }))
+  await assertFails(updateDoc(doc(dbAsAccount('bob'), 'users/alice'), { displayName: 'Hacked' }))
+})
+
+test('profiles cannot have extra fields (e.g. making yourself admin or unbanning yourself)', async () => {
+  await assertFails(setDoc(doc(dbAsAccount('alice'), 'users/alice'), { displayName: 'Alice', createdAt: 1, admin: true }))
+  await seed('users/alice', { displayName: 'Alice', createdAt: 1, banned: true })
+  await assertFails(updateDoc(doc(dbAsAccount('alice'), 'users/alice'), { banned: false }))
+  await assertFails(updateDoc(doc(dbAsAccount('alice'), 'users/alice'), { createdAt: 2 }))
+})
+
+test('profile names must be 1-30 characters', async () => {
+  await assertFails(setDoc(doc(dbAsAccount('alice'), 'users/alice'), { displayName: '', createdAt: 1 }))
+  await assertFails(setDoc(doc(dbAsAccount('alice'), 'users/alice'), { displayName: 'x'.repeat(31), createdAt: 1 }))
+})
+
+test('signed-in users can read one profile but not list all users', async () => {
+  await seed('users/alice', { displayName: 'Alice', createdAt: 1 })
+  await assertSucceeds(getDoc(doc(dbAsGuest('g1'), 'users/alice')))
+  await assertFails(getDocs(collection(dbAsGuest('g1'), 'users')))
+  await assertFails(getDoc(doc(dbSignedOut(), 'users/alice')))
+})
+
 // ---------- Everything else ----------
 
 test('any other collection is blocked', async () => {
   await assertFails(setDoc(doc(dbAs('host'), 'anything/else'), { a: 1 }))
-  await assertFails(getDoc(doc(dbAs('host'), 'users/host')))
+  await assertFails(getDoc(doc(dbAs('host'), 'secrets/x')))
 })
