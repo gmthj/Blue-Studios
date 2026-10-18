@@ -10,11 +10,14 @@ Current status: **Photobooth Rooms MVP** (create/join room, QR code, video call 
 - `.vue` files are ordered: `<script setup>`, then `<template>`, then `<style scoped>`
 - Bootstrap 5 for layout and responsive design
 - Firebase Cloud Firestore for real-time data (`onSnapshot` listeners)
+- Firebase Authentication: everyone gets a user id (uid), guests are signed in anonymously
 - Vercel for hosting (https is needed for phone cameras) + a Vercel serverless function for Agora tokens
 - MediaDevices API (`getUserMedia`) for the camera, Canvas API to capture photos
 - goqr.me API to generate the join QR code
 - Agora Web SDK (`agora-rtc-sdk-ng`) for the video call (video + audio), `agora-token` to create tokens on the server
 - axios to call our token API
+- Firebase Admin SDK (`firebase-admin`) on the server, to check who is calling our API
+- Firestore security rules (`firestore.rules`), tested with the Firebase emulator
 
 ## Project structure
 
@@ -23,10 +26,11 @@ index.html               page shell, loads src/main.js
 src/main.js              creates the Vue app, adds Bootstrap and the router
 src/App.vue              navbar + <router-view>
 src/router.js            URL -> page mapping ( /, and /room/:code with child pages '' and 'strip' )
-src/firebase.js          Firebase config (read from .env), exports db
-src/guest.js             guest id + name saved in localStorage, device type (Phone/Tablet/Computer)
+src/firebase.js          Firebase config (read from .env), exports db and auth
+src/guest.js             guest name saved in localStorage, device type (Phone/Tablet/Computer)
 src/room.js              6-person room limit, "is this member still here?" check
 
+src/composables/useAuth.js        SHARED login state: who is signed in (guests are signed in anonymously)
 src/composables/useRoom.js        SHARED room state: room document, members (+ heartbeat), photos
 src/composables/useVideoCall.js   SHARED video call (Agora): camera, mic, others' video/audio, switch camera
 
@@ -40,7 +44,12 @@ src/views/RoomLayout.vue  parent page for a room: joins the room + call once, sh
 src/views/RoomView.vue    (child) camera, shutter, countdown, join card, call card, gallery
 src/views/StripView.vue   (child) call card, collaborative photostrip, export as JPG
 
-api/token.js             Vercel serverless function: GET /api/token -> Agora token
+api/token.js             Vercel serverless function: GET /api/token?code=1234 -> Agora token (members only)
+api/_lib/firebaseAdmin.js  server-only Firebase Admin setup + getCaller(req) (who is calling). "_" = not a web address
+firestore.rules          Firestore security rules: who can read/write what (deploy with the Firebase CLI)
+storage.rules            Firebase Storage rules (everything locked until a feature needs Storage)
+firebase.json, .firebaserc  Firebase CLI settings (which project, which rules files)
+tests/firestore.rules.test.js  tests for firestore.rules (npm run test:rules)
 vercel.json              sends page URLs (/room/..., /room/.../strip) to index.html (add new page routes here too)
 .env.example             list of environment variables needed (copy to .env)
 ```
@@ -52,8 +61,10 @@ Firestore data:
 ```
 rooms/{code}                 { hostId, hostName, shotNumber, shotStartedBy, stage, stripSlots, closed, createdAt }
 rooms/{code}/members/{id}    { name, deviceType, joinedAt, lastSeen }
-rooms/{code}/photos/{auto}   { guestId, name, shotNumber, image, createdAt }
+rooms/{code}/photos/{auto}   { ownerId, name, shotNumber, image, createdAt }
 ```
+
+**Who is who:** when the app opens, `main.js` waits for `startAuth()` (in `useAuth.js`). If nobody is signed in, it signs in **anonymously**: Firebase gives the browser a real user id (`uid`) with no email or password, and remembers it, so a refresh keeps the same uid. The `uid` is used as the member document id, the room's `hostId`, a photo's `ownerId` and the Agora user id. Because Firebase itself checks the uid, the Firestore security rules can trust it (a random id in localStorage could be faked).
 
 1. **Create:** the host picks a random code from `0000` to `9999` that is not in use and creates `rooms/{code}`.
 2. **Join:** the Join button only turns on (and becomes the main button) once 4 digits are typed. `RoomLayout.vue` checks the room exists, is not closed and is not full, then joins it **once** for all the room's pages:
@@ -61,7 +72,7 @@ rooms/{code}/photos/{auto}   { guestId, name, shotNumber, image, createdAt }
    - **Heartbeat:** every 15 seconds each device updates its `lastSeen` time. A member not seen for 45 seconds (closed the tab) is no longer shown or counted.
    - **Room limit:** at most 6 people at once (1 host + 5 guests). Before joining, we count the active members (`isRoomFull` in `room.js`). Someone already in the room (e.g. refreshing) is always let back in.
 3. **Shared state (composables):** `useRoom.js` and `useVideoCall.js` create their `ref()`s once, outside the function, so every page and component that calls them shares the same room and the same call.
-4. **Video call:** each device asks our server for a token (`GET /api/token?channel=blue-studios-{code}&uid={guestId}`), joins that Agora channel and sends ("publishes") its camera. When Agora says someone published video or audio (`user-published` event), we subscribe; `VideoTile.vue` plays their video, and audio just plays.
+4. **Video call:** each device asks our server for a token (`GET /api/token?channel=blue-studios-{code}&uid={uid}`), joins that Agora channel and sends ("publishes") its camera. When Agora says someone published video or audio (`user-published` event), we subscribe; `VideoTile.vue` plays their video, and audio just plays.
    - **Everyone starts muted:** the microphone is not opened when joining. "Unmute" opens the mic and publishes it; "Mute" unpublishes and closes it (so the mic is fully off).
    - **Stays connected between pages:** the call is started by `RoomLayout.vue`, the parent of the camera and strip pages, so switching pages does not drop the call.
    - **Adding it to another page:** make the page a child route of `/room/:code` in `router.js`, and put `<VideoCallCard />` on it.
@@ -82,6 +93,19 @@ rooms/{code}/photos/{auto}   { guestId, name, shotNumber, image, createdAt }
 
 Agora projects have an **App Certificate** (a secret). To join a channel, the browser needs a **token** made with that certificate. If the certificate were in the frontend code, anyone could read it in the browser. So `api/token.js` runs on Vercel's server, reads the certificate from an environment variable, and only sends the browser a token for one channel + one user that expires after 3 hours.
 
+**Who gets a token:** the browser sends its Firebase **ID token** (proof of who is signed in) in the `Authorization: Bearer ...` header. The server asks Firebase to check it (`getCaller` in `api/_lib/firebaseAdmin.js`), then only gives a token if the room exists, is open, and the caller has a member document in it. The Agora user id is the **checked** uid from the ID token, so nobody can join a call pretending to be someone else.
+
+### Security rules
+
+`firestore.rules` is checked by Firebase on its own servers for every read and write, so it protects the data even if someone edits the code in their browser. Everything is blocked unless a rule allows it. In short:
+
+- **Rooms:** anyone signed in can look up one room by code (not list them). Only the host can create it, as themselves. Members can press the shutter (`shotNumber` + 1 only), change `stage`, change strip slots 0-3, and close the room. A closed room cannot be changed or reopened. Nobody can delete a room.
+- **Members:** you can only join, update (heartbeat) and leave as yourself, only into an open room, and every field is checked.
+- **Photos:** only members can see them. You can only add a photo as yourself (`ownerId`), for a shot that has happened, as a JPEG under about 900KB. Photos cannot be edited.
+- **Any other collection is blocked.** If you add a new collection (e.g. templates), add rules for it in `firestore.rules` and tests in `tests/firestore.rules.test.js`, or every read/write will fail with "Missing or insufficient permissions".
+
+Run the tests with `npm run test:rules` (needs Java). It starts a local copy of Firestore, so it never touches the real data. Deploy the rules with `firebase deploy --only firestore:rules,storage`.
+
 ## Environment variables
 
 All keys live in environment variables, not in the code.
@@ -91,6 +115,7 @@ All keys live in environment variables, not in the code.
 | `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID` | Frontend (`src/firebase.js`) | Firebase console > gear icon > Project settings > Your apps > Config |
 | `AGORA_APP_ID` | Server (`api/token.js`) | Agora console > Projects |
 | `AGORA_APP_CERTIFICATE` | Server (`api/token.js`), **secret** | Agora console > Projects > your project > Primary Certificate |
+| `FIREBASE_SERVICE_ACCOUNT` | Server (`api/_lib/firebaseAdmin.js`), **secret** | Firebase console > Project settings > Service accounts > Generate new private key, then the .json file as one line of base64 (ask Gabriel) |
 
 - Locally they go in a file called `.env` (copy `.env.example` and fill it in). `.env` is in `.gitignore` and must never be committed.
 - On Vercel they go in Project > Settings > Environment Variables.
@@ -109,7 +134,9 @@ You need [Node.js](https://nodejs.org) (LTS) installed. Check with `node -v` in 
 3. Copy the values from the `firebaseConfig` code block into `.env` (the `VITE_FIREBASE_...` lines).
 4. Left menu: **Build > Firestore Database > Create database**, location `asia-southeast1 (Singapore)`, **Start in test mode**.
 
-Test mode allows anyone to read/write for 30 days. Before it expires, update the date in the **Rules** tab (proper rules to be written later).
+The database is protected by `firestore.rules` (see **Security rules** above), deployed with the Firebase CLI. Do not edit the rules in the console's Rules tab: the next deploy would overwrite them.
+
+Also enable **Build > Authentication > Sign-in method > Anonymous** (guests are signed in anonymously).
 
 ### Step 2: Agora App ID and App Certificate
 
@@ -167,19 +194,18 @@ From now on, every push to `main` redeploys automatically. If you change an envi
 4. Check: both names appear in "In this room" (scroll down), each device shows the other in **Live previews**, and **Switch camera** appears on the phone.
 5. On the laptop (host), press the round **shutter button** (anyone can). Both devices count 3-2-1 and both photos appear in the gallery under the same shot.
 
-To check the token API on its own, open `https://YOUR-URL.vercel.app/api/token?channel=blue-studios-1234&uid=test` in a browser. You should see `{"appId":"...","token":"007..."}`. If you see an error about `AGORA_APP_ID` or `AGORA_APP_CERTIFICATE`, the environment variables are missing in Vercel (then Redeploy).
+To check the token API is protected, open `https://YOUR-URL.vercel.app/api/token?code=1234` in a browser. You should see `{"error":"Please sign in again"}` (the browser address bar sends no sign-in token). If live video says "Live video unavailable", check Vercel > Logs: a missing `AGORA_...` or `FIREBASE_SERVICE_ACCOUNT` variable is logged there (then add it and Redeploy).
 
 ---
 
 ## Known limitations (MVP)
 
 - Members who close the tab without pressing "Leave room" disappear from the list only after about 45 seconds (heartbeat timeout).
-- The 6-person limit is checked when joining, not enforced by the database: two people joining at the exact same moment could both get in.
+- The 6-person limit is checked when joining, not enforced by the security rules (rules cannot count documents): two people joining at the exact same moment could both get in.
 - Countdown sync depends on network speed (usually within half a second).
 - Photos are stored as small JPEG text in Firestore (each document max 1MB) instead of Firebase Storage, to keep setup simple and free.
-- No Firestore security rules yet (test mode).
-- `/api/token` gives a token to anyone who asks for a `blue-studios-...` channel. Fine for a prototype; a real app would check the user is logged in first.
-- Two normal tabs in the same browser share one guest id, so Agora treats them as the same user. Use an Incognito window for the second guest.
+- Room codes are only 4 digits, so anyone signed in could guess a code and join an open room. Photos are only visible to people who have joined.
+- Two normal tabs in the same browser share one user id (uid), so Agora treats them as the same user. Use an Incognito window for the second guest.
 - Testing several unmuted devices in the same physical room causes echo/feedback. Keep all but one muted, or use earphones.
 - If a page is opened by refreshing (no tap on the page yet), the browser may block others' audio until you tap anywhere on the page.
 - Agora minutes are used by every connected device until it leaves or the room is closed. Close the room when finished testing.

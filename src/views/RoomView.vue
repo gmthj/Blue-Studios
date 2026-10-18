@@ -2,7 +2,8 @@
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { collection, addDoc, runTransaction } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { getGuestId, getGuestName } from '../guest.js'
+import { getGuestName } from '../guest.js'
+import { getUid } from '../composables/useAuth.js'
 import { useRoom } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
 import StreamVideo from '../components/StreamVideo.vue'
@@ -11,7 +12,7 @@ import RoomGallery from '../components/RoomGallery.vue'
 
 // The camera page (a child of RoomLayout.vue, which has already joined the room and the call)
 
-const guestId = getGuestId()
+const uid = getUid()
 const guestName = getGuestName()
 
 const { code, room, roomRef } = useRoom()
@@ -141,7 +142,7 @@ async function takePhoto() {
   const image = canvas.toDataURL('image/jpeg', 0.7)
 
   await addDoc(collection(db, 'rooms', code.value, 'photos'), {
-    guestId: guestId,
+    ownerId: uid, // my Firebase user id: who took this photo
     name: guestName,
     shotNumber: lastShotNumber,
     image: image,

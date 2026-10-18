@@ -3,7 +3,8 @@ import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { doc, getDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { getGuestId, getGuestName, getDeviceType } from '../guest.js'
+import { getGuestName, getDeviceType } from '../guest.js'
+import { getUid } from '../composables/useAuth.js'
 import { isRoomFull, MAX_PEOPLE } from '../room.js'
 import { useRoom } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
@@ -17,7 +18,7 @@ const route = useRoute()
 const router = useRouter()
 
 const code = route.params.code
-const guestId = getGuestId()
+const uid = getUid()
 const guestName = getGuestName()
 
 // 'loading' | 'ready' | 'notFound' | 'full' | 'closed'
@@ -42,18 +43,18 @@ onMounted(async () => {
     status.value = 'closed'
     return
   }
-  if (await isRoomFull(code, guestId)) {
+  if (await isRoomFull(code, uid)) {
     status.value = 'full'
     return
   }
 
   // Join the room (members list, heartbeat, room + photos listeners), then show the child page
-  await enterRoom(code, guestId, guestName, getDeviceType())
+  await enterRoom(code, uid, guestName, getDeviceType())
   status.value = 'ready'
   followStage() // e.g. if the group is already making the photostrip, go straight there
 
   // Start the video call (not awaited, so the page shows while the call connects)
-  startCall(code, guestId)
+  startCall(code, uid)
 })
 
 // Leaving the room (Leave button, closed room, or going to another website page): end the call

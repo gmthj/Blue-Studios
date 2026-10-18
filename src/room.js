@@ -16,7 +16,7 @@ export function isActive(member, now) {
 
 // Returns true if the room already has 6 active people and I am not one of them
 // (if I am already in the room, e.g. after a refresh, I am always allowed back in)
-export async function isRoomFull(code, guestId) {
+export async function isRoomFull(code, uid) {
   const snapshot = await getDocs(collection(db, 'rooms', code, 'members'))
   const now = Date.now()
 
@@ -25,7 +25,7 @@ export async function isRoomFull(code, guestId) {
   snapshot.forEach((memberDoc) => {
     if (isActive(memberDoc.data(), now)) {
       activeCount = activeCount + 1
-      if (memberDoc.id === guestId) {
+      if (memberDoc.id === uid) {
         alreadyInRoom = true
       }
     }

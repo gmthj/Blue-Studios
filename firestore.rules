@@ -1,0 +1,166 @@
+rules_version = '2';
+
+// Firestore security rules: Firebase checks these on its own servers for EVERY read and write,
+// so they still protect the data even if someone changes the code in their browser.
+//
+// The basic idea:
+//   - Everything is blocked unless a rule below allows it.
+//   - request.auth.uid is the user id that Firebase itself checked (see composables/useAuth.js),
+//     so it cannot be faked. We compare it with hostId / member ids / ownerId.
+//   - Every write is checked field by field, so nobody can add extra fields or wrong types.
+//
+// Deploy with:  firebase deploy --only firestore:rules
+// Test with:    npm run test:rules
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- Helpers ----------
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // Admins get a special "admin" mark on their login, set only by our server (never by the browser)
+    function isAdmin() {
+      return signedIn() && request.auth.token.admin == true;
+    }
+
+    function roomPath(code) {
+      return /databases/$(database)/documents/rooms/$(code);
+    }
+
+    // Am I in this room? (I have a document in rooms/{code}/members)
+    function isMember(code) {
+      return exists(/databases/$(database)/documents/rooms/$(code)/members/$(request.auth.uid));
+    }
+
+    // Only these fields changed in this update
+    function onlyChanged(fields) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+    }
+
+    function isName(value) {
+      return value is string && value.size() >= 1 && value.size() <= 20;
+    }
+
+    // ---------- Rooms ----------
+    // rooms/{code}  { hostId, hostName, shotNumber, shotStartedBy, stage, stripSlots, closed, createdAt }
+
+    match /rooms/{code} {
+      // Anyone with the app can look up ONE room by its code (to join it).
+      // Listing every room is not allowed.
+      allow get: if signedIn();
+      allow list: if false;
+
+      // Create: I must be the host, and the room must start empty
+      allow create: if signedIn()
+        && code.matches('^[0-9]{4}$')
+        && request.resource.data.keys().hasOnly(['hostId', 'hostName', 'shotNumber', 'stage', 'stripSlots', 'closed', 'createdAt'])
+        && request.resource.data.hostId == request.auth.uid
+        && isName(request.resource.data.hostName)
+        && request.resource.data.shotNumber == 0
+        && request.resource.data.stage == 'camera'
+        && request.resource.data.stripSlots == {}
+        && request.resource.data.closed == false
+        && request.resource.data.createdAt is int;
+
+      // Update: only people in the room, only while it is open, and only these kinds of change
+      allow update: if signedIn()
+        && isMember(code)
+        && resource.data.closed == false
+        && (pressShutter() || changeStage() || changeStripSlot() || closeRoom());
+
+      // Admins can close any room (e.g. one left open by mistake)
+      allow update: if isAdmin()
+        && onlyChanged(['closed'])
+        && request.resource.data.closed == true;
+
+      allow delete: if false;
+
+      // Shutter: shotNumber goes up by exactly 1 (see pressShutter() in RoomView.vue)
+      function pressShutter() {
+        return onlyChanged(['shotNumber', 'shotStartedBy'])
+          && request.resource.data.shotNumber == resource.data.shotNumber + 1
+          && isName(request.resource.data.shotStartedBy);
+      }
+
+      // Move the whole room to another page
+      function changeStage() {
+        return onlyChanged(['stage'])
+          && request.resource.data.stage in ['camera', 'strip'];
+      }
+
+      // Change the photostrip: slots 0 to 3, each a photo id or null
+      function changeStripSlot() {
+        return onlyChanged(['stripSlots'])
+          && request.resource.data.stripSlots is map
+          && request.resource.data.stripSlots.keys().hasOnly(['0', '1', '2', '3']);
+      }
+
+      // Close the room for everyone (closed can only go from false to true)
+      function closeRoom() {
+        return onlyChanged(['closed'])
+          && request.resource.data.closed == true;
+      }
+
+      // ---------- Members ----------
+      // rooms/{code}/members/{uid}  { name, deviceType, joinedAt, lastSeen }
+
+      match /members/{memberId} {
+        // Signed-in users can see who is in a room (needed to check if the room is full before joining)
+        allow read: if signedIn();
+
+        // Join: only as myself, only into an open room
+        allow create: if signedIn()
+          && memberId == request.auth.uid
+          && exists(roomPath(code))
+          && get(roomPath(code)).data.closed == false
+          && request.resource.data.keys().hasOnly(['name', 'deviceType', 'joinedAt', 'lastSeen'])
+          && isName(request.resource.data.name)
+          && request.resource.data.deviceType in ['Phone', 'Tablet', 'Computer']
+          && request.resource.data.joinedAt is int
+          && request.resource.data.lastSeen is int;
+
+        // Heartbeat / rejoin: only my own document, and joinedAt never changes
+        allow update: if signedIn()
+          && memberId == request.auth.uid
+          && onlyChanged(['name', 'deviceType', 'lastSeen'])
+          && isName(request.resource.data.name)
+          && request.resource.data.deviceType in ['Phone', 'Tablet', 'Computer']
+          && request.resource.data.lastSeen is int;
+
+        // Leave: only myself (or an admin)
+        allow delete: if signedIn() && (memberId == request.auth.uid || isAdmin());
+      }
+
+      // ---------- Photos ----------
+      // rooms/{code}/photos/{photoId}  { ownerId, name, shotNumber, image, createdAt }
+
+      match /photos/{photoId} {
+        // Only people in the room can see its photos
+        allow read: if signedIn() && (isMember(code) || isAdmin());
+
+        // Take a photo: only in a room I am in, only as myself, and only a JPEG under about 900KB
+        allow create: if signedIn()
+          && isMember(code)
+          && request.resource.data.keys().hasOnly(['ownerId', 'name', 'shotNumber', 'image', 'createdAt'])
+          && request.resource.data.ownerId == request.auth.uid
+          && isName(request.resource.data.name)
+          && request.resource.data.shotNumber is int
+          && request.resource.data.shotNumber >= 1
+          && request.resource.data.shotNumber <= get(roomPath(code)).data.shotNumber
+          && request.resource.data.image is string
+          && request.resource.data.image.size() < 900000
+          && request.resource.data.image.matches('^data:image/jpeg;base64,.*')
+          && request.resource.data.createdAt is int;
+
+        // Photos cannot be changed. Admins can remove them (moderation).
+        allow update: if false;
+        allow delete: if isAdmin();
+      }
+    }
+
+    // Everything else (any other collection) is blocked until a rule above allows it.
+  }
+}

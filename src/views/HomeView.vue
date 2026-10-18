@@ -3,7 +3,8 @@ import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
-import { getGuestId, getGuestName, saveGuestName } from '../guest.js'
+import { getGuestName, saveGuestName } from '../guest.js'
+import { getUid } from '../composables/useAuth.js'
 import { isRoomFull, MAX_PEOPLE } from '../room.js'
 
 const route = useRoute()
@@ -50,7 +51,7 @@ async function createRoom() {
 
     // Create the room document. The room code is used as the document id.
     await setDoc(doc(db, 'rooms', code), {
-      hostId: getGuestId(),
+      hostId: getUid(),
       hostName: name.value.trim(),
       shotNumber: 0,   // goes up by 1 every time someone presses the shutter
       stage: 'camera', // 'camera' or 'strip': which page the whole room is on
@@ -80,7 +81,7 @@ async function joinRoom() {
       errorMessage.value = 'Room ' + code + ' does not exist.'
     } else if (roomSnap.data().closed) {
       errorMessage.value = 'Room ' + code + ' has been closed.'
-    } else if (await isRoomFull(code, getGuestId())) {
+    } else if (await isRoomFull(code, getUid())) {
       errorMessage.value = 'Room ' + code + ' is full (' + MAX_PEOPLE + ' people max).'
     } else {
       router.push('/room/' + code)
