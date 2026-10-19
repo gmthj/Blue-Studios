@@ -2,6 +2,10 @@
   "rewrites": [
     { "source": "/login", "destination": "/index.html" },
     { "source": "/studio", "destination": "/index.html" },
+    { "source": "/marketplace", "destination": "/index.html" },
+    { "source": "/marketplace/:type/:id", "destination": "/index.html" },
+    { "source": "/test-upload", "destination": "/index.html" },
+    { "source": "/admin", "destination": "/index.html" },
     { "source": "/room/:code", "destination": "/index.html" },
     { "source": "/room/:code/strip", "destination": "/index.html" }
   ]

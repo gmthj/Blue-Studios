@@ -9,11 +9,17 @@
 import { initializeApp, getApps, cert } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
 import { getFirestore } from 'firebase-admin/firestore'
+import { getStorage } from 'firebase-admin/storage'
 
 // Set up Firebase Admin once (Vercel can reuse the same server for many requests)
 function getAdminApp() {
   if (getApps().length > 0) {
     return getApps()[0]
+  }
+  // Tests only (tests/admin.api.test.js): the local Firebase emulators need no secret key.
+  // FIREBASE_AUTH_EMULATOR_HOST is never set on Vercel, so the real project always uses the key below.
+  if (process.env.FIREBASE_AUTH_EMULATOR_HOST) {
+    return initializeApp({ projectId: process.env.GCLOUD_PROJECT })
   }
   if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
     throw new Error('FIREBASE_SERVICE_ACCOUNT is not set')
@@ -28,6 +34,11 @@ export function adminAuth() {
 
 export function adminDb() {
   return getFirestore(getAdminApp())
+}
+
+// Firebase Storage (used by scripts/set-cors.mjs)
+export function adminStorage() {
+  return getStorage(getAdminApp())
 }
 
 // Who is calling? The browser sends its Firebase ID token in the header

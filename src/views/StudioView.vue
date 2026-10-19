@@ -2,13 +2,18 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
-import { listMyItems, setVisibility, deleteItem } from '../studio.js'
+import { listMyItems, setVisibility, deleteItem, categoryLabel } from '../studio.js'
+import { listMySaved, unsaveItem } from '../marketplace.js'
 import StorageImage from '../components/StorageImage.vue'
+import ItemDetailsForm from '../components/ItemDetailsForm.vue'
+import MarketplaceCard from '../components/MarketplaceCard.vue'
 
 // My Studio (/studio): everything this account has saved. Accounts only (see router.js).
 //   - shortcuts: design a frame, start a room, join a room
 //   - my photostrips, my templates, my stickers
-//   - templates and stickers can be made public (shown in the marketplace) or private
+//   - templates and stickers can be made public (shown in the marketplace) or private,
+//     renamed, and given categories
+//   - things I saved from the marketplace
 
 const router = useRouter()
 const { user } = useAuth()
@@ -16,6 +21,8 @@ const { user } = useAuth()
 const strips = ref([])
 const templates = ref([])
 const stickers = ref([])
+const saved = ref([]) // from the marketplace: { id, type, savedAt, item } (item is null if no longer available)
+const editingId = ref('') // the template or sticker whose name and categories are being edited
 const loading = ref(true)
 const errorMessage = ref('')
 const busyId = ref('') // the item being changed right now (its buttons are disabled)
@@ -34,10 +41,11 @@ async function loadAll() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const results = await Promise.all([listMyItems('strips'), listMyItems('templates'), listMyItems('stickers')])
+    const results = await Promise.all([listMyItems('strips'), listMyItems('templates'), listMyItems('stickers'), listMySaved()])
     strips.value = results[0]
     templates.value = results[1]
     stickers.value = results[2]
+    saved.value = results[3]
   } catch (error) {
     console.error(error)
     errorMessage.value = 'Could not load your studio. Check your internet connection and refresh.'
@@ -50,6 +58,13 @@ async function toggleVisibility(item) {
   if (!user.value.emailVerified) return
   busyId.value = item.id
   const newVisibility = item.visibility === 'public' ? 'private' : 'public'
+  // Everything in the marketplace needs a category (so people can find it)
+  if (!item.categories || item.categories.length === 0) {
+    busyId.value = ''
+    editingId.value = item.id
+    errorMessage.value = 'Pick at least 1 category for "' + item.name + '" first.'
+    return
+  }
   try {
     await setVisibility(item, newVisibility)
     item.visibility = newVisibility
@@ -74,6 +89,29 @@ async function remove(item) {
   } catch (error) {
     console.error(error)
     errorMessage.value = 'Could not delete "' + name + '". Please try again.'
+  }
+  busyId.value = ''
+}
+
+function detailsSaved(item, details) {
+  item.name = details.name
+  item.categories = details.categories
+  editingId.value = ''
+}
+
+// Is it showing in the marketplace right now?
+function isListed(item) {
+  return item.visibility === 'public' && item.status === 'active'
+}
+
+async function unsave(savedItem) {
+  busyId.value = savedItem.id
+  try {
+    await unsaveItem(savedItem.type, savedItem.id)
+    saved.value = saved.value.filter((other) => other.id !== savedItem.id)
+  } catch (error) {
+    console.error(error)
+    errorMessage.value = 'Could not remove it. Please try again.'
   }
   busyId.value = ''
 }
@@ -165,22 +203,33 @@ function formatDate(time) {
             <div class="col-8">
               <div class="card-body">
                 <p class="fw-semibold text-truncate mb-0">{{ template.name }}</p>
-                <p class="small text-muted mb-2">{{ template.slotCount }} slots &middot; {{ template.saveCount }} saves</p>
-                <span v-if="template.status === 'hidden'" class="badge text-bg-warning mb-2">Hidden by a moderator</span>
-                <div class="form-check form-switch">
-                  <input
-                    :id="'vis-' + template.id"
-                    class="form-check-input"
-                    type="checkbox"
-                    :checked="template.visibility === 'public'"
-                    :disabled="!user.emailVerified || busyId === template.id"
-                    @change="toggleVisibility(template)"
-                  />
-                  <label class="form-check-label small" :for="'vis-' + template.id">
-                    {{ template.visibility === 'public' ? 'Public' : 'Private' }}
-                  </label>
+                <p class="small text-muted mb-1">{{ template.slotCount }} slots &middot; {{ template.saveCount }} saves</p>
+                <div class="d-flex flex-wrap gap-1 mb-2">
+                  <span v-for="c in template.categories" :key="c" class="badge rounded-pill text-bg-light border">{{ categoryLabel(c) }}</span>
                 </div>
-                <button class="btn btn-sm btn-link text-danger px-0" :disabled="busyId === template.id" @click="remove(template)">Delete</button>
+                <span v-if="template.status === 'hidden'" class="badge text-bg-warning mb-2">Hidden by a moderator</span>
+
+                <ItemDetailsForm v-if="editingId === template.id" :item="template" @saved="detailsSaved(template, $event)" @cancel="editingId = ''" />
+                <template v-else>
+                  <div class="form-check form-switch">
+                    <input
+                      :id="'vis-' + template.id"
+                      class="form-check-input"
+                      type="checkbox"
+                      :checked="template.visibility === 'public'"
+                      :disabled="!user.emailVerified || busyId === template.id"
+                      @change="toggleVisibility(template)"
+                    />
+                    <label class="form-check-label small" :for="'vis-' + template.id">
+                      {{ template.visibility === 'public' ? 'Public' : 'Private' }}
+                    </label>
+                  </div>
+                  <div class="d-flex flex-wrap gap-3">
+                    <button class="btn btn-sm btn-link px-0" @click="editingId = template.id">Edit</button>
+                    <router-link v-if="isListed(template)" :to="'/marketplace/templates/' + template.id" class="btn btn-sm btn-link px-0">View</router-link>
+                    <button class="btn btn-sm btn-link text-danger px-0" :disabled="busyId === template.id" @click="remove(template)">Delete</button>
+                  </div>
+                </template>
               </div>
             </div>
           </div>
@@ -197,23 +246,51 @@ function formatDate(time) {
           <div class="card-body p-2">
             <p class="small fw-semibold text-truncate mb-0">{{ sticker.name }}</p>
             <p class="small text-muted mb-1">{{ sticker.kind }}</p>
-            <span v-if="sticker.status === 'hidden'" class="badge text-bg-warning mb-1">Hidden by a moderator</span>
-            <div class="form-check form-switch">
-              <input
-                :id="'vis-' + sticker.id"
-                class="form-check-input"
-                type="checkbox"
-                :checked="sticker.visibility === 'public'"
-                :disabled="!user.emailVerified || busyId === sticker.id"
-                @change="toggleVisibility(sticker)"
-              />
-              <label class="form-check-label small" :for="'vis-' + sticker.id">
-                {{ sticker.visibility === 'public' ? 'Public' : 'Private' }}
-              </label>
+            <div class="d-flex flex-wrap gap-1 mb-1">
+              <span v-for="c in sticker.categories" :key="c" class="badge rounded-pill text-bg-light border">{{ categoryLabel(c) }}</span>
             </div>
-            <button class="btn btn-sm btn-link text-danger px-0" :disabled="busyId === sticker.id" @click="remove(sticker)">Delete</button>
+            <span v-if="sticker.status === 'hidden'" class="badge text-bg-warning mb-1">Hidden by a moderator</span>
+
+            <ItemDetailsForm v-if="editingId === sticker.id" :item="sticker" @saved="detailsSaved(sticker, $event)" @cancel="editingId = ''" />
+            <template v-else>
+              <div class="form-check form-switch">
+                <input
+                  :id="'vis-' + sticker.id"
+                  class="form-check-input"
+                  type="checkbox"
+                  :checked="sticker.visibility === 'public'"
+                  :disabled="!user.emailVerified || busyId === sticker.id"
+                  @change="toggleVisibility(sticker)"
+                />
+                <label class="form-check-label small" :for="'vis-' + sticker.id">
+                  {{ sticker.visibility === 'public' ? 'Public' : 'Private' }}
+                </label>
+              </div>
+              <div class="d-flex flex-wrap column-gap-3">
+                <button class="btn btn-sm btn-link px-0" @click="editingId = sticker.id">Edit</button>
+                <router-link v-if="isListed(sticker)" :to="'/marketplace/stickers/' + sticker.id" class="btn btn-sm btn-link px-0">View</router-link>
+                <button class="btn btn-sm btn-link text-danger px-0" :disabled="busyId === sticker.id" @click="remove(sticker)">Delete</button>
+              </div>
+            </template>
           </div>
         </div>
+      </div>
+    </div>
+
+    <!-- Saved from the marketplace -->
+    <h2 class="h4 mb-3">Saved from the marketplace</h2>
+    <p v-if="saved.length === 0" class="text-muted small mb-5">
+      Nothing saved yet. <router-link to="/marketplace">Browse the marketplace</router-link> and save templates and stickers you like.
+    </p>
+    <div v-else class="row g-3 mb-5">
+      <div v-for="savedItem in saved" :key="savedItem.id" class="col-6 col-md-3 col-xl-2 d-flex flex-column">
+        <MarketplaceCard v-if="savedItem.item" :item="savedItem.item" />
+        <div v-else class="card h-100">
+          <div class="card-body p-2 d-flex align-items-center justify-content-center text-center">
+            <p class="small text-muted mb-0">No longer available: the maker made it private or removed it.</p>
+          </div>
+        </div>
+        <button class="btn btn-sm btn-link text-danger" :disabled="busyId === savedItem.id" @click="unsave(savedItem)">Remove</button>
       </div>
     </div>
   </template>

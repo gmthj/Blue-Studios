@@ -5,6 +5,10 @@ import RoomLayout from './views/RoomLayout.vue'
 import RoomView from './views/RoomView.vue'
 import StripView from './views/StripView.vue'
 import StudioView from './views/StudioView.vue'
+import MarketplaceView from './views/MarketplaceView.vue'
+import MarketplaceItemView from './views/MarketplaceItemView.vue'
+import TestUploadView from './views/TestUploadView.vue'
+import AdminView from './views/AdminView.vue'
 import { useAuth } from './composables/useAuth.js'
 
 const routes = [
@@ -12,6 +16,14 @@ const routes = [
   { path: '/login', component: LoginView }, // /login?mode=signup shows the sign up tab
   // meta.requiresAccount: guests are sent to the log in page first (see beforeEach below)
   { path: '/studio', component: StudioView, meta: { requiresAccount: true } },
+  // Anyone can browse the marketplace, guests too. /marketplace?type=stickers&category=cute&sort=popular
+  { path: '/marketplace', component: MarketplaceView },
+  // One item, e.g. /marketplace/templates/aZ3kQ9 (type can only be templates or stickers)
+  { path: '/marketplace/:type(templates|stickers)/:id', component: MarketplaceItemView },
+  // TEMPORARY: make test templates/stickers until the editors are merged (remove before submission)
+  { path: '/test-upload', component: TestUploadView, meta: { requiresAccount: true } },
+  // Moderators only (accounts with the admin mark, see scripts/set-admin.mjs). /admin?tab=reports|hidden|accounts|rooms|log
+  { path: '/admin', component: AdminView, meta: { requiresAdmin: true } },
   {
     // :code is a route parameter, e.g. /room/4821 gives route.params.code = '4821'
     // RoomLayout joins the room + video call once, and shows one of its "children" inside it.
@@ -33,9 +45,12 @@ const router = createRouter({
 // (This only decides which page to show. The real protection is the security rules,
 //  which block guests from reading or saving account data even if they skip this check.)
 router.beforeEach((to) => {
-  const { isAccount } = useAuth()
-  if (to.meta.requiresAccount && !isAccount.value) {
+  const { isAccount, isAdmin } = useAuth()
+  if ((to.meta.requiresAccount || to.meta.requiresAdmin) && !isAccount.value) {
     return { path: '/login', query: { redirect: to.fullPath } }
+  }
+  if (to.meta.requiresAdmin && !isAdmin.value) {
+    return { path: '/' }
   }
 })
 

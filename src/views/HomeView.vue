@@ -184,7 +184,8 @@ async function joinRoom() {
       <div class="card h-100">
         <div class="card-body">
           <h2 class="h6">Stickers, video and music</h2>
-          <p class="text-muted small mb-0">Make stickers, cut a video strip, mix a track, and share templates in the marketplace.</p>
+          <p class="text-muted small mb-2">Make stickers, cut a video strip, mix a track, and share templates in the marketplace.</p>
+          <router-link to="/marketplace" class="small">Browse the marketplace &rarr;</router-link>
         </div>
       </div>
     </div>

@@ -70,7 +70,6 @@ test('uploads must be the right type, name and size', async () => {
   await assertFails(uploadBytes(ref(storage, 'templates/alice/t1/evil.exe'), PNG, png))
   const tooBig = new Uint8Array(3 * 1024 * 1024)
   await assertFails(uploadBytes(ref(storage, 'templates/alice/t1/thumbnail.png'), tooBig, png))
-  await assertFails(uploadBytes(ref(storage, 'anywhere/else.png'), PNG, png))
 })
 
 test('private template files: only the owner (and admins) can download', async () => {
@@ -108,4 +107,16 @@ test('only the owner or an admin can delete files', async () => {
   await seedFile('templates/alice/t1/thumbnail.png', png)
   await assertFails(deleteObject(ref(storageAs('bob'), 'templates/alice/t1/thumbnail.png')))
   await assertSucceeds(deleteObject(ref(storageAs('alice'), 'templates/alice/t1/thumbnail.png')))
+})
+
+// DEV: new folders are open to signed-in users while teammates build (delete this test at lockdown)
+test('DEV: new folders are open to signed-in users (under 50 MB), but not the strict folders', async () => {
+  const guest = testEnv.authenticatedContext('g1', { firebase: { sign_in_provider: 'anonymous' } }).storage()
+  await assertSucceeds(uploadBytes(ref(guest, 'clips/1234/c1.webm'), PNG, { contentType: 'video/webm' }))
+  await assertSucceeds(getBytes(ref(storageAsGuest('g2'), 'clips/1234/c1.webm')))
+  await assertFails(getBytes(ref(testEnv.unauthenticatedContext().storage(), 'clips/1234/c1.webm')))
+  await assertFails(uploadBytes(ref(guest, 'templates/g1/t1/thumbnail.png'), PNG, png))
+  // no web pages or scripts (they could be used for phishing from a Firebase address)
+  await assertFails(uploadBytes(ref(guest, 'clips/1234/page.html'), PNG, { contentType: 'text/html' }))
+  await assertFails(uploadBytes(ref(guest, 'clips/1234/x.svg'), PNG, { contentType: 'image/svg+xml' }))
 })

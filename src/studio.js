@@ -13,14 +13,46 @@ import { db, storage, auth } from './firebase.js'
 // must send exactly the fields below.
 //
 // For the template editor (Joash) and sticker maker (Rae):
-//   await saveTemplate({ name, slotCount, thumbnail: pngBlob, projectData })          -> new id
-//   await saveTemplate({ id, name, slotCount, thumbnail: pngBlob, projectData })      -> update
-//   await saveSticker({ name, kind: 'static' | 'animated' | 'dynamic', image: blob }) -> new id
-//   const project = await loadTemplateProject(template)                               -> projectData
+//   await saveTemplate({ name, slotCount, categories, thumbnail: pngBlob, projectData })          -> new id
+//   await saveTemplate({ id, name, slotCount, categories, thumbnail: pngBlob, projectData })      -> update
+//   await saveSticker({ name, kind: 'static' | 'animated' | 'dynamic', categories, image: blob }) -> new id
+//   const project = await loadTemplateProject(template)                                           -> projectData
+// categories: 1 to 3 ids from CATEGORIES below, e.g. ['birthday', 'cute']
 // Only accounts can save (guests get an error): check useAuth().isAccount first.
 
 // The 3 kinds of item, and their Firestore collection
 export const ITEM_TYPES = ['templates', 'stickers', 'strips']
+
+// Marketplace categories for templates and stickers. The ids must match isCategories() in firestore.rules.
+export const CATEGORIES = [
+  { id: 'birthday', label: 'Birthday' },
+  { id: 'friends', label: 'Friends' },
+  { id: 'love', label: 'Love' },
+  { id: 'graduation', label: 'Graduation' },
+  { id: 'holiday', label: 'Holiday' },
+  { id: 'cute', label: 'Cute' },
+  { id: 'minimal', label: 'Minimal' },
+  { id: 'other', label: 'Other' },
+]
+export const MAX_CATEGORIES = 3
+
+export function categoryLabel(id) {
+  const category = CATEGORIES.find((c) => c.id === id)
+  return category ? category.label : id
+}
+
+// Stop early with a clear message (the rules would reject it anyway, with a less helpful error)
+function checkCategories(categories) {
+  const ids = CATEGORIES.map((c) => c.id)
+  const valid = Array.isArray(categories)
+    && categories.length >= 1
+    && categories.length <= MAX_CATEGORIES
+    && new Set(categories).size === categories.length
+    && categories.every((id) => ids.includes(id))
+  if (!valid) {
+    throw new Error('Pick 1 to ' + MAX_CATEGORIES + ' categories from CATEGORIES in studio.js')
+  }
+}
 
 // A new random document id (the same kind Firestore uses), e.g. 'aZ3kQ9...'
 function newId(collectionName) {
@@ -43,8 +75,9 @@ async function myName() {
 // ---------- Saving ----------
 
 // Save a template from the editor. Leave out id to make a new one.
-export async function saveTemplate({ id, name, slotCount, thumbnail, projectData }) {
+export async function saveTemplate({ id, name, slotCount, categories, thumbnail, projectData }) {
   const uid = myUid()
+  checkCategories(categories)
   const isNew = !id
   const itemId = id || newId('templates')
   const folder = 'templates/' + uid + '/' + itemId + '/'
@@ -62,6 +95,7 @@ export async function saveTemplate({ id, name, slotCount, thumbnail, projectData
       ownerName: ownerName,
       name: name,
       slotCount: slotCount,
+      categories: categories,
       visibility: 'private', // new things are always private; the owner can publish them in My Studio
       status: 'active',
       saveCount: 0,
@@ -71,14 +105,21 @@ export async function saveTemplate({ id, name, slotCount, thumbnail, projectData
       updatedAt: now,
     })
   } else {
-    await updateDoc(doc(db, 'templates', itemId), { ownerName: ownerName, name: name, slotCount: slotCount, updatedAt: now })
+    await updateDoc(doc(db, 'templates', itemId), {
+      ownerName: ownerName,
+      name: name,
+      slotCount: slotCount,
+      categories: categories,
+      updatedAt: now,
+    })
   }
   return itemId
 }
 
 // Save a sticker from the sticker maker
-export async function saveSticker({ name, kind, image }) {
+export async function saveSticker({ name, kind, categories, image }) {
   const uid = myUid()
+  checkCategories(categories)
   const itemId = newId('stickers')
   const imagePath = 'stickers/' + uid + '/' + itemId + '/image'
 
@@ -90,6 +131,7 @@ export async function saveSticker({ name, kind, image }) {
     ownerName: await myName(),
     name: name,
     kind: kind,
+    categories: categories,
     visibility: 'private',
     status: 'active',
     saveCount: 0,
@@ -152,6 +194,17 @@ export async function setVisibility(item, visibility) {
     ownerName: await myName(),
     name: item.name,
     visibility: visibility,
+    updatedAt: Date.now(),
+  })
+}
+
+// Rename a template or sticker, or change its categories (from My Studio)
+export async function updateDetails(item, { name, categories }) {
+  checkCategories(categories)
+  await updateDoc(doc(db, item.type, item.id), {
+    ownerName: await myName(),
+    name: name,
+    categories: categories,
     updatedAt: Date.now(),
   })
 }

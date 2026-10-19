@@ -28,7 +28,7 @@ import { auth, db } from '../firebase.js'
 // "links" the email/Google login to the guest user. So anything they made as a guest stays theirs.
 //
 // Usage in a page:
-//   const { user, isAccount, signUp, logIn, logInWithGoogle, logOut } = useAuth()
+//   const { user, isAccount, isAdmin, signUp, logIn, logInWithGoogle, logOut } = useAuth()
 //   user.value.uid, user.value.displayName, user.value.email, user.value.emailVerified
 //   getUid()   my uid as a plain string (outside templates)
 
@@ -40,13 +40,33 @@ const authError = ref('') // shown by App.vue if we could not sign in at all
 // true for people with an account (email or Google), false for guests
 const isAccount = computed(() => user.value !== null && !user.value.isAnonymous)
 
-function copyUser(firebaseUser) {
+// true for moderators (see scripts/set-admin.mjs). Only shows or hides the admin page:
+// the security rules and /api/admin check the admin mark again on Firebase's side.
+const isAdmin = computed(() => user.value !== null && user.value.isAdmin)
+
+// isAdmin: leave it out to keep what we knew before for the same user
+function copyUser(firebaseUser, isAdminUser) {
+  const sameUser = user.value !== null && user.value.uid === firebaseUser.uid
   user.value = {
     uid: firebaseUser.uid,
     isAnonymous: firebaseUser.isAnonymous,
     displayName: firebaseUser.displayName || '',
     email: firebaseUser.email || '',
     emailVerified: firebaseUser.emailVerified,
+    isAdmin: isAdminUser === undefined ? sameUser && user.value.isAdmin : isAdminUser,
+  }
+}
+
+// Does this account have the admin mark? The mark is inside the login token, so we ask Firebase for
+// a fresh token (true) in case it was given or taken away since this browser last logged in.
+async function readAdminMark(firebaseUser) {
+  if (firebaseUser.isAnonymous) return false
+  try {
+    const token = await firebaseUser.getIdTokenResult(true)
+    return token.claims.admin === true
+  } catch (error) {
+    console.error(error)
+    return false
   }
 }
 
@@ -82,7 +102,7 @@ export function startAuth() {
         }
       }
 
-      copyUser(firebaseUser)
+      copyUser(firebaseUser, await readAdminMark(firebaseUser))
       if (!started) {
         started = true
         resolve()
@@ -215,5 +235,5 @@ export function authErrorMessage(error) {
 }
 
 export function useAuth() {
-  return { user, isAccount, authError, signUp, logIn, logInWithGoogle, logOut, resetPassword, resendVerification }
+  return { user, isAccount, isAdmin, authError, signUp, logIn, logInWithGoogle, logOut, resetPassword, resendVerification }
 }

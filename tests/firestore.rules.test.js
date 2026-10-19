@@ -6,8 +6,11 @@
 
 import { test, before, beforeEach, after } from 'node:test'
 import fs from 'node:fs'
+import assert from 'node:assert/strict'
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing'
-import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, collection, query, where } from 'firebase/firestore'
+import {
+  doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, collection, query, where, orderBy, limit, writeBatch, increment,
+} from 'firebase/firestore'
 
 let testEnv
 
@@ -120,13 +123,26 @@ test('people who are not in the room cannot change it', async () => {
   await assertFails(updateDoc(doc(dbAs('stranger'), 'rooms/1234'), { closed: true }))
 })
 
-test('members can change stage and strip slots, but not the host', async () => {
+// DEV: room fields are open to members while teammates build their features (see devRoomChange in firestore.rules)
+test('members can change other room fields (DEV), but not the host, creation time, shutter counter or closed', async () => {
   await seedRoom()
-  await assertSucceeds(updateDoc(doc(dbAs('guest'), 'rooms/1234'), { stage: 'strip' }))
-  await assertFails(updateDoc(doc(dbAs('guest'), 'rooms/1234'), { stage: 'hacked' }))
-  await assertSucceeds(updateDoc(doc(dbAs('guest'), 'rooms/1234'), { 'stripSlots.2': 'photoA' }))
-  await assertFails(updateDoc(doc(dbAs('guest'), 'rooms/1234'), { 'stripSlots.9': 'photoA' }))
-  await assertFails(updateDoc(doc(dbAs('guest'), 'rooms/1234'), { hostId: 'guest' }))
+  const db = dbAs('guest')
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { stage: 'decorate' }))
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { 'stripSlots.9': 'photoA', stripLayoutId: 'film-3-cut' }))
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { stripStickers: [{ id: 1, src: 'data:image/svg+xml,x' }] }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { hostId: 'guest' }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { createdAt: 0 }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { shotNumber: 10 }))
+  await assertFails(updateDoc(doc(dbAs('stranger'), 'rooms/1234'), { stage: 'decorate' }))
+})
+
+test('DEV: other lists inside a room are open to its members only', async () => {
+  await seedRoom()
+  await assertSucceeds(setDoc(doc(dbAs('guest'), 'rooms/1234/clips/c1'), { anything: true }))
+  await assertSucceeds(getDoc(doc(dbAs('host'), 'rooms/1234/clips/c1')))
+  await assertFails(getDoc(doc(dbAs('stranger'), 'rooms/1234/clips/c1')))
+  // members and photos keep their own strict rules
+  await assertFails(updateDoc(doc(dbAs('guest'), 'rooms/1234/members/host'), { name: 'Hacked' }))
 })
 
 test('members can close a room, but a closed room cannot be reopened or changed', async () => {
@@ -264,6 +280,7 @@ function newTemplate(uid, id, changes = {}) {
     ownerName: 'Alice',
     name: 'Retro 4-cut',
     slotCount: 4,
+    categories: ['cute'],
     visibility: 'private',
     status: 'active',
     saveCount: 0,
@@ -281,6 +298,7 @@ function newSticker(uid, id, changes = {}) {
     ownerName: 'Alice',
     name: 'main character energy',
     kind: 'static',
+    categories: ['cute'],
     visibility: 'private',
     status: 'active',
     saveCount: 0,
@@ -390,9 +408,237 @@ test('listing: I can list my own templates and public ones, but not everyone\'s'
   await assertFails(getDocs(collection(aliceDb, 'templates')))
 })
 
+// ---------- Categories ----------
+
+test('templates and stickers need 1 to 3 categories from the list, no repeats', async () => {
+  await seedAlice()
+  const db = dbAsAccount('alice')
+  await assertSucceeds(setDoc(doc(db, 'templates/t1'), newTemplate('alice', 't1', { categories: ['birthday', 'friends', 'cute'] })))
+  await assertFails(setDoc(doc(db, 'templates/t2'), newTemplate('alice', 't2', { categories: [] })))
+  await assertFails(setDoc(doc(db, 'templates/t3'), newTemplate('alice', 't3', { categories: ['birthday', 'friends', 'cute', 'love'] })))
+  await assertFails(setDoc(doc(db, 'templates/t4'), newTemplate('alice', 't4', { categories: ['cute', 'cute'] })))
+  await assertFails(setDoc(doc(db, 'templates/t5'), newTemplate('alice', 't5', { categories: ['not-a-category'] })))
+  await assertFails(setDoc(doc(db, 'stickers/s1'), newSticker('alice', 's1', { categories: 'cute' })))
+})
+
+test('the owner can rename and change categories', async () => {
+  await seedAlice()
+  await seed('templates/t1', newTemplate('alice', 't1'))
+  const db = dbAsAccount('alice')
+  await assertSucceeds(updateDoc(doc(db, 'templates/t1'), { ownerName: 'Alice', name: 'New', categories: ['love'], updatedAt: 2 }))
+  await assertFails(updateDoc(doc(db, 'templates/t1'), { categories: ['virus'], updatedAt: 3 }))
+  await assertFails(updateDoc(doc(dbAsAccount('bob'), 'templates/t1'), { categories: ['love'], updatedAt: 3 }))
+})
+
+// ---------- Marketplace: browsing ----------
+
+test('guests can browse the marketplace (public, active), filtered by category and sorted', async () => {
+  await seed('templates/t1', newTemplate('alice', 't1', { visibility: 'public' }))
+  const guestDb = dbAsGuest('g1')
+  const marketplace = [where('visibility', '==', 'public'), where('status', '==', 'active')]
+  await assertSucceeds(getDocs(query(collection(guestDb, 'templates'), ...marketplace, orderBy('createdAt', 'desc'), limit(24))))
+  await assertSucceeds(getDocs(query(collection(guestDb, 'stickers'), ...marketplace, where('categories', 'array-contains', 'cute'), orderBy('saveCount', 'desc'), limit(24))))
+  // Without both filters the results could include private or hidden items, so it is refused
+  await assertFails(getDocs(query(collection(guestDb, 'templates'), where('visibility', '==', 'public'))))
+  await assertFails(getDocs(query(collection(dbSignedOut(), 'templates'), ...marketplace)))
+})
+
+// ---------- Marketplace: saving ----------
+
+// Save item {type}/{id} as {uid}: the bookmark and saveCount + {change}, in one batch
+function saveBatch(db, uid, type, id, change = 1) {
+  const batch = writeBatch(db)
+  batch.set(doc(db, 'users/' + uid + '/saved/' + id), { type: type, savedAt: Date.now() })
+  batch.update(doc(db, type + '/' + id), { saveCount: increment(change) })
+  return batch.commit()
+}
+
+function unsaveBatch(db, uid, type, id) {
+  const batch = writeBatch(db)
+  batch.delete(doc(db, 'users/' + uid + '/saved/' + id))
+  batch.update(doc(db, type + '/' + id), { saveCount: increment(-1) })
+  return batch.commit()
+}
+
+async function savedCount(type, id) {
+  let count
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    count = (await getDoc(doc(context.firestore(), type + '/' + id))).data().saveCount
+  })
+  return count
+}
+
+test('an account can save a public item: the bookmark and saveCount + 1 together', async () => {
+  await seed('templates/t1', newTemplate('alice', 't1', { visibility: 'public' }))
+  await assertSucceeds(saveBatch(dbAsAccount('bob'), 'bob', 'templates', 't1'))
+  assert.equal(await savedCount('templates', 't1'), 1)
+  await assertSucceeds(getDoc(doc(dbAsAccount('bob'), 'users/bob/saved/t1')))
+})
+
+test('saveCount cannot be faked: no change without the bookmark, no +2, no bookmark without +1', async () => {
+  await seed('templates/t1', newTemplate('alice', 't1', { visibility: 'public' }))
+  const db = dbAsAccount('bob')
+  await assertFails(updateDoc(doc(db, 'templates/t1'), { saveCount: increment(1) }))
+  await assertFails(updateDoc(doc(db, 'templates/t1'), { saveCount: 999 }))
+  await assertFails(saveBatch(db, 'bob', 'templates', 't1', 2))
+  await assertFails(setDoc(doc(db, 'users/bob/saved/t1'), { type: 'templates', savedAt: 1 }))
+  await assertFails(saveBatch(db, 'bob', 'stickers', 't1')) // wrong type for this item
+})
+
+test('the same account cannot save an item twice', async () => {
+  await seed('templates/t1', newTemplate('alice', 't1', { visibility: 'public' }))
+  const db = dbAsAccount('bob')
+  await assertSucceeds(saveBatch(db, 'bob', 'templates', 't1'))
+  await assertFails(saveBatch(db, 'bob', 'templates', 't1'))
+  assert.equal(await savedCount('templates', 't1'), 1)
+})
+
+test('cannot save private or hidden items, as a guest, as a banned account, or into someone else\'s list', async () => {
+  await seed('templates/private1', newTemplate('alice', 'private1'))
+  await seed('templates/hidden1', newTemplate('alice', 'hidden1', { visibility: 'public', status: 'hidden' }))
+  await seed('templates/t1', newTemplate('alice', 't1', { visibility: 'public' }))
+  await seed('users/banned1', { displayName: 'Banned', createdAt: 1, banned: true })
+  await assertFails(saveBatch(dbAsAccount('bob'), 'bob', 'templates', 'private1'))
+  await assertFails(saveBatch(dbAsAccount('bob'), 'bob', 'templates', 'hidden1'))
+  await assertFails(saveBatch(dbAsGuest('g1'), 'g1', 'templates', 't1'))
+  await assertFails(saveBatch(dbAsAccount('banned1'), 'banned1', 'templates', 't1'))
+  await assertFails(saveBatch(dbAsAccount('bob'), 'carol', 'templates', 't1'))
+})
+
+test('unsave: the bookmark goes and saveCount - 1 together', async () => {
+  await seed('stickers/s1', newSticker('alice', 's1', { visibility: 'public', saveCount: 5 }))
+  await seed('users/bob/saved/s1', { type: 'stickers', savedAt: 1 })
+  const db = dbAsAccount('bob')
+  await assertFails(deleteDoc(doc(db, 'users/bob/saved/s1'))) // without taking 1 off
+  await assertSucceeds(unsaveBatch(db, 'bob', 'stickers', 's1'))
+  assert.equal(await savedCount('stickers', 's1'), 4)
+  // Someone who never saved it cannot take 1 off
+  await assertFails(updateDoc(doc(dbAsAccount('carol'), 'stickers/s1'), { saveCount: increment(-1) }))
+})
+
+test('unsave still works after the owner made the item private or deleted it', async () => {
+  await seed('templates/t1', newTemplate('alice', 't1', { saveCount: 1 })) // now private
+  await seed('users/bob/saved/t1', { type: 'templates', savedAt: 1 })
+  await seed('users/bob/saved/gone', { type: 'templates', savedAt: 1 })
+  const db = dbAsAccount('bob')
+  await assertSucceeds(unsaveBatch(db, 'bob', 'templates', 't1'))
+  await assertSucceeds(deleteDoc(doc(db, 'users/bob/saved/gone')))
+})
+
+test('my saved list is private to me', async () => {
+  await seed('users/bob/saved/t1', { type: 'templates', savedAt: 1 })
+  await assertSucceeds(getDocs(collection(dbAsAccount('bob'), 'users/bob/saved')))
+  await assertFails(getDocs(collection(dbAsAccount('carol'), 'users/bob/saved')))
+  await assertFails(updateDoc(doc(dbAsAccount('bob'), 'users/bob/saved/t1'), { savedAt: 2 }))
+})
+
+// ---------- Marketplace: reports ----------
+
+function newReport(reporterId, changes = {}) {
+  return {
+    type: 'templates',
+    itemId: 't1',
+    ownerId: 'alice',
+    reporterId: reporterId,
+    reason: 'inappropriate',
+    details: 'Rude words in the frame',
+    status: 'open',
+    createdAt: 1,
+    ...changes,
+  }
+}
+
+test('an account can report a marketplace item once', async () => {
+  await seed('templates/t1', newTemplate('alice', 't1', { visibility: 'public' }))
+  const db = dbAsAccount('bob')
+  await assertSucceeds(setDoc(doc(db, 'reports/t1_bob'), newReport('bob')))
+  await assertFails(setDoc(doc(db, 'reports/t1_bob'), newReport('bob', { reason: 'spam' })))
+  await assertSucceeds(getDoc(doc(db, 'reports/t1_bob')))
+})
+
+test('reports: no faking the reporter or id, no guests, no own items, no private items, fields checked', async () => {
+  await seed('templates/t1', newTemplate('alice', 't1', { visibility: 'public' }))
+  await seed('templates/private1', newTemplate('alice', 'private1'))
+  const db = dbAsAccount('bob')
+  await assertFails(setDoc(doc(db, 'reports/t1_carol'), newReport('carol')))
+  await assertFails(setDoc(doc(db, 'reports/t1_bob'), newReport('carol')))
+  await assertFails(setDoc(doc(db, 'reports/anything'), newReport('bob')))
+  await assertFails(setDoc(doc(dbAsGuest('g1'), 'reports/t1_g1'), newReport('g1')))
+  await assertFails(setDoc(doc(dbAsAccount('alice'), 'reports/t1_alice'), newReport('alice')))
+  await assertFails(setDoc(doc(db, 'reports/private1_bob'), newReport('bob', { itemId: 'private1' })))
+  await assertFails(setDoc(doc(db, 'reports/t1_bob'), newReport('bob', { ownerId: 'someone' })))
+  await assertFails(setDoc(doc(db, 'reports/t1_bob'), newReport('bob', { reason: 'bored' })))
+  await assertFails(setDoc(doc(db, 'reports/t1_bob'), newReport('bob', { details: 'x'.repeat(301) })))
+  await assertFails(setDoc(doc(db, 'reports/t1_bob'), newReport('bob', { status: 'resolved' })))
+})
+
+test('only the reporter and admins can see a report; only admins can list and close them', async () => {
+  await seed('reports/t1_bob', newReport('bob'))
+  await assertFails(getDoc(doc(dbAsAccount('alice'), 'reports/t1_bob')))
+  await assertFails(getDocs(collection(dbAsAccount('bob'), 'reports')))
+  await assertSucceeds(getDocs(collection(dbAsAdmin(), 'reports')))
+  await assertFails(updateDoc(doc(dbAsAccount('bob'), 'reports/t1_bob'), { status: 'dismissed' }))
+  await assertSucceeds(updateDoc(doc(dbAsAdmin(), 'reports/t1_bob'), { status: 'resolved' }))
+  // Checking "did I already report this?" works even before there is a report
+  await assertSucceeds(getDoc(doc(dbAsAccount('carol'), 'reports/t1_carol')))
+})
+
 // ---------- Everything else ----------
 
-test('any other collection is blocked', async () => {
-  await assertFails(setDoc(doc(dbAs('host'), 'anything/else'), { a: 1 }))
-  await assertFails(getDoc(doc(dbAs('host'), 'secrets/x')))
+// ---------- Admin ----------
+
+function newLog(adminId, changes = {}) {
+  return { adminId: adminId, action: 'hide', targetType: 'templates', targetId: 't1', reason: 'Rude words', createdAt: 1, ...changes }
+}
+
+test('only admins can list user profiles (e.g. banned accounts)', async () => {
+  await seed('users/alice', { displayName: 'Alice', createdAt: 1, banned: true })
+  await assertSucceeds(getDocs(query(collection(dbAsAdmin(), 'users'), where('banned', '==', true))))
+  await assertFails(getDocs(query(collection(dbAsAccount('bob'), 'users'), where('banned', '==', true))))
+})
+
+test('admins can hide an item, close its reports and log it in one batch', async () => {
+  await seed('templates/t1', newTemplate('alice', 't1', { visibility: 'public' }))
+  await seed('reports/t1_bob', newReport('bob'))
+  const db = dbAsAdmin()
+  const batch = writeBatch(db)
+  batch.update(doc(db, 'templates/t1'), { status: 'hidden' })
+  batch.update(doc(db, 'reports/t1_bob'), { status: 'resolved' })
+  batch.set(doc(db, 'adminLog/log1'), newLog('admin1'))
+  await assertSucceeds(batch.commit())
+})
+
+test('the admin log: only admins write it, as themselves, and nobody can change or delete it', async () => {
+  await assertFails(setDoc(doc(dbAsAccount('bob'), 'adminLog/x'), newLog('bob')))
+  await assertFails(setDoc(doc(dbAsAdmin(), 'adminLog/x'), newLog('someoneElse')))
+  await assertFails(setDoc(doc(dbAsAdmin(), 'adminLog/x'), newLog('admin1', { action: 'ban' }))) // bans are logged by the server
+  await assertFails(setDoc(doc(dbAsAdmin(), 'adminLog/x'), newLog('admin1', { extra: true })))
+  await seed('adminLog/old', newLog('admin1'))
+  await assertSucceeds(getDocs(collection(dbAsAdmin(), 'adminLog')))
+  await assertFails(getDocs(collection(dbAsAccount('bob'), 'adminLog')))
+  await assertFails(updateDoc(doc(dbAsAdmin(), 'adminLog/old'), { reason: 'changed' }))
+  await assertFails(deleteDoc(doc(dbAsAdmin(), 'adminLog/old')))
+})
+
+test('a banned account cannot save, report or create items', async () => {
+  await seed('users/bob', { displayName: 'Bob', createdAt: 1, banned: true })
+  await seed('templates/t1', newTemplate('alice', 't1', { visibility: 'public' }))
+  await assertFails(saveBatch(dbAsAccount('bob'), 'bob', 'templates', 't1'))
+  await assertFails(setDoc(doc(dbAsAccount('bob'), 'reports/t1_bob'), newReport('bob')))
+  await assertFails(setDoc(doc(dbAsAccount('bob'), 'stickers/s1'), newSticker('bob', 's1', { ownerName: 'Bob' })))
+})
+
+// DEV: new collections are open to signed-in users while teammates build (delete these tests at lockdown)
+test('DEV: new collections are open to signed-in users, but not to signed-out visitors', async () => {
+  await assertSucceeds(setDoc(doc(dbAsGuest('g1'), 'musicMixes/m1'), { a: 1 }))
+  await assertSucceeds(getDoc(doc(dbAsGuest('g2'), 'musicMixes/m1')))
+  await assertFails(getDoc(doc(dbSignedOut(), 'musicMixes/m1')))
+})
+
+test('DEV: the open rules do not open the strict collections', async () => {
+  await seed('templates/t1', newTemplate('alice', 't1'))
+  await assertFails(getDoc(doc(dbAsAccount('bob'), 'templates/t1')))
+  await assertFails(setDoc(doc(dbAsGuest('g1'), 'users/g1'), { anything: true }))
+  await assertFails(setDoc(doc(dbAsAccount('bob'), 'reports/x'), { anything: true }))
+  await assertFails(setDoc(doc(dbAsAccount('bob'), 'users/bob/saved/t1'), { anything: true }))
 })
