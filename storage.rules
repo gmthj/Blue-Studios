@@ -1,0 +1,105 @@
+rules_version = '2';
+
+// Firebase Storage rules (files: images and template project files).
+// Like firestore.rules, Firebase checks these on its own servers for every upload and download.
+//
+// Every file lives in a folder named after its owner's uid, e.g. templates/{uid}/{id}/thumbnail.png,
+// so "is this my file?" is just: is the uid in the path mine?
+// Public files are readable only while their Firestore document says public AND not hidden
+// (firestore.get below reads the document).
+//
+// DEV MODE (19 Oct 2026): while the team is still building, room fields, room sub-lists and any NEW
+// collection or Storage folder are open to signed-in users (search for "DEV" below), so teammates are
+// not blocked. Accounts, My Studio, marketplace and reports stay strict. Tighten these before submission.
+//
+// Deploy with:  firebase deploy --only storage
+// Test with:    npm run test:rules
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAccount() {
+      return signedIn() && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    function isAdmin() {
+      return signedIn() && request.auth.token.get('admin', false) == true;
+    }
+
+    // Only the owner (an account) can upload into their own folder
+    function isOwner(uid) {
+      return isAccount() && request.auth.uid == uid;
+    }
+
+    // Is the Firestore item (templates/{id} or stickers/{id}) public and not hidden by an admin?
+    function isPublicItem(collection, itemId) {
+      let path = /databases/(default)/documents/$(collection)/$(itemId);
+      return firestore.exists(path)
+        && firestore.get(path).data.visibility == 'public'
+        && firestore.get(path).data.status == 'active';
+    }
+
+    // Size limit in megabytes, and the file type the browser says it is
+    function isImageUnder(megabytes) {
+      return request.resource.size < megabytes * 1024 * 1024
+        && request.resource.contentType.matches('image/(png|jpeg|webp|gif)');
+    }
+
+    // ---------- Templates ----------
+    // templates/{uid}/{itemId}/thumbnail.png   (the preview picture)
+    // templates/{uid}/{itemId}/project.json    (everything needed to open it in the editor)
+
+    match /templates/{uid}/{itemId}/{fileName} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin() || isPublicItem('templates', itemId));
+
+      allow create, update: if isOwner(uid) && (
+        (fileName == 'thumbnail.png' && isImageUnder(2))
+        || (fileName == 'project.json'
+            && request.resource.size < 5 * 1024 * 1024
+            && request.resource.contentType == 'application/json'));
+
+      allow delete: if isOwner(uid) || isAdmin();
+    }
+
+    // ---------- Stickers ----------
+    // stickers/{uid}/{itemId}/image   (PNG, GIF or WebP)
+
+    match /stickers/{uid}/{itemId}/image {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin() || isPublicItem('stickers', itemId));
+      allow create, update: if isOwner(uid) && isImageUnder(2);
+      allow delete: if isOwner(uid) || isAdmin();
+    }
+
+    // ---------- Strips (always private) ----------
+    // strips/{uid}/{stripId}.jpg
+
+    match /strips/{uid}/{fileName} {
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
+      allow create, update: if isOwner(uid)
+        && fileName.matches('[A-Za-z0-9]+[.]jpg')
+        && request.resource.size < 5 * 1024 * 1024
+        && request.resource.contentType == 'image/jpeg';
+      allow delete: if isOwner(uid) || isAdmin();
+    }
+
+    // ---------- DEV: new folders for teammates' features ----------
+    // While we are still building, anyone signed in (guests too) can read and write files in any NEW
+    // top-level folder (e.g. clips/, music/, exports/), up to 50 MB per file (no web pages or scripts),
+    // so teammates are not blocked.
+    // TODO lockdown: replace with real rules for each new folder, then delete this block.
+
+    match /{folder}/{allPaths=**} {
+      allow read: if signedIn() && !(folder in ['templates', 'stickers', 'strips']);
+      allow write: if signedIn()
+        && !(folder in ['templates', 'stickers', 'strips'])
+        && (request.resource == null || (
+              request.resource.size < 50 * 1024 * 1024
+              // no web pages or scripts: they could be used for phishing from a Firebase address
+              && !request.resource.contentType.matches('(?i).*(html|svg|javascript|xml).*')));
+    }
+  }
+}

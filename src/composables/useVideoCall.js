@@ -1,6 +1,7 @@
 import { ref } from 'vue'
 import AgoraRTC from 'agora-rtc-sdk-ng'
 import axios from 'axios'
+import { auth } from '../firebase.js'
 
 // SHARED video call (through Agora) for every page inside a room.
 // Like useRoom.js, the refs are created once outside the function, so all pages share ONE call.
@@ -23,7 +24,7 @@ const cameraError = ref('')
 const switchingCamera = ref(false)
 const micOn = ref(false)        // everyone always starts muted
 const micBusy = ref(false)      // true while the mic is being turned on/off
-const remoteUsers = ref([])     // the others: [{ uid: 'guest-...', hasVideo: true, hasAudio: false }]
+const remoteUsers = ref([])     // the others: [{ uid: 'Xk3v9...', hasVideo: true, hasAudio: false }]
 
 // ---------- Agora objects (normal variables: pages never show them directly,
 //            and wrapping them in Vue's reactivity can break them) ----------
@@ -135,7 +136,7 @@ function attachRemoteVideo(uid, element) {
 
 // ---------- Joining and leaving ----------
 
-async function startCall(code, guestId) {
+async function startCall(code, uid) {
   if (agoraClient) return // already in the call
   wantCall = true
   callError.value = ''
@@ -144,16 +145,19 @@ async function startCall(code, guestId) {
   await openCamera()
   if (!wantCall) return endCall() // left the room while the camera was opening
 
-  // Every room is its own Agora "channel". We use our guest id as our Agora user id.
+  // Every room is its own Agora "channel". We use our Firebase uid as our Agora user id.
   const channel = 'blue-studios-' + code
 
   // Ask our own server function (api/token.js) for a token that lets us join this channel.
+  // We send our Firebase ID token (proof of who we are), so the server can check we are in this room.
   // The response looks like: { appId: '...', token: '...' }
   let appId = ''
   let token = ''
   try {
+    const idToken = await auth.currentUser.getIdToken()
     const response = await axios.get('/api/token', {
-      params: { channel: channel, uid: guestId },
+      params: { code: code },
+      headers: { Authorization: 'Bearer ' + idToken },
     })
     appId = response.data.appId
     token = response.data.token
@@ -196,7 +200,7 @@ async function startCall(code, guestId) {
   })
 
   try {
-    await agoraClient.join(appId, channel, token, guestId)
+    await agoraClient.join(appId, channel, token, uid)
     if (!wantCall) return endCall() // left the room while joining
 
     // Send our camera to the others. We use the camera we already opened,
