@@ -5,15 +5,17 @@ import WaveformBars from './WaveformBars.vue'
 
 // Data passed IN from MusicView
 const props = defineProps({
-  label: String,    // 'Deck A' or 'Deck B'
-  color: String,    // '#14a39a' (teal) or '#7c3aed' (purple)
-  track: Object,    // the Jamendo song, or null if no song is loaded
-  speed: Number,    // 0.5 to 1.5
-  volume: Number,   // 0 to 100
+  label: String,      // 'Deck A' or 'Deck B'
+  color: String,      // '#14a39a' (teal) or '#7c3aed' (purple)
+  track: Object,      // the Jamendo song, or null if no song is loaded
+  speed: Number,      // 0.5 to 1.5
+  volume: Number,     // 0 to 100
+  playing: Boolean,   // NEW: is this deck playing right now?
+  loading: Boolean,   // NEW: is the song still downloading?
 })
 
 // Messages sent OUT to MusicView (a component must not change its own props)
-const emit = defineEmits(['change-speed', 'change-volume'])
+const emit = defineEmits(['change-speed', 'change-volume', 'toggle-play', 'cue'])
 
 // event.target is the slider that moved (Week 3 DOM). Its value is text, so turn it into a number.
 function onSpeedInput(event) {
@@ -46,7 +48,8 @@ const bars = computed(function () {
           {{ track.musicinfo.speed }}
         </span>
       </div>
-      <p v-if="track" class="small text-muted mb-0">{{ track.artist_name }}</p>
+      <p v-if="loading" class="small text-muted mb-0">Loading song...</p>
+      <p v-else-if="track" class="small text-muted mb-0">{{ track.artist_name }}</p>
       <p v-else class="small text-muted mb-0">Press {{ label.slice(-1) }} on a song to load it here.</p>
 
       <div class="vinyl my-4 mx-auto">
@@ -66,8 +69,16 @@ const bars = computed(function () {
       <input :value="volume" type="range" class="form-range" min="0" max="100" @input="onVolumeInput" />
 
       <div class="d-flex gap-2 mt-2">
-        <button class="btn rounded-circle text-white" :style="{ background: color }" :disabled="!track">▶</button>
-        <button class="btn btn-outline-secondary" :disabled="!track">Cue</button>
+        <!-- Shows ❚❚ (pause) while playing, ▶ (play) when stopped -->
+        <button
+          class="btn rounded-circle text-white"
+          :style="{ background: color }"
+          :disabled="!track || loading"
+          @click="emit('toggle-play')"
+        >
+          {{ playing ? '❚❚' : '▶' }}
+        </button>
+        <button class="btn btn-outline-secondary" :disabled="!track || loading" @click="emit('cue')">Cue</button>
       </div>
     </div>
   </div>

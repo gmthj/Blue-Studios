@@ -1,15 +1,16 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { getPeaks } from '../waveform.js'
-import WaveformBars from '../components/WaveformBars.vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import axios from 'axios'
+import * as Tone from 'tone'   // NEW: not in syllabus (your X-factor)
 import { useRoom } from '../composables/useRoom.js'
+import { getPeaks } from '../waveform.js'
 import DeckCard from '../components/DeckCard.vue'
+import WaveformBars from '../components/WaveformBars.vue'
 
 // RoomLayout already joined the room, so we just ask for the room code
 const { code } = useRoom()
 
-// ---------- Decks ----------
+// ---------- Decks (what the page shows) ----------
 const trackA = ref(null)    // the song loaded in Deck A (null = empty)
 const trackB = ref(null)
 const speedA = ref(1)       // 0.5 to 1.5 (1 = normal speed)
@@ -17,8 +18,169 @@ const volumeA = ref(80)     // 0 to 100 (%)
 const speedB = ref(1)
 const volumeB = ref(55)
 const crossfade = ref(0.5)  // 0 = only Deck A, 1 = only Deck B
+const playingA = ref(false)
+const playingB = ref(false)
+const loadingA = ref(false)
+const loadingB = ref(false)
 
-// The "Your mix" waveform: blends Deck A and Deck B using the volume and crossfader sliders.
+// ---------- Audio (Tone.js) ----------
+// playerA → gainA → crossFade.a ┐
+//                               ├→ crossFade → speakers
+// playerB → gainB → crossFade.b ┘
+const crossFadeNode = new Tone.CrossFade(0.5).toDestination()
+const gainA = new Tone.Gain(0.8).connect(crossFadeNode.a)    // Gain 0 to 1 = volume 0% to 100%
+const gainB = new Tone.Gain(0.55).connect(crossFadeNode.b)
+
+// Plain variables, NOT ref(): Vue doesn't need to watch Tone objects, and wrapping them can break them
+let playerA = null
+let playerB = null
+
+// Downloads a song and gets a Tone player ready (connected to that deck's volume)
+async function makePlayer(track, gainNode, speed) {
+  const player = new Tone.Player().connect(gainNode)
+  await player.load(track.audio)
+  player.loop = true
+  player.playbackRate = speed
+  return player
+}
+
+// Stops a player and frees its memory
+function stopAndRemove(player) {
+  if (player) {
+    player.stop()
+    player.dispose()
+  }
+}
+
+// ----- Deck A -----
+async function loadDeckA(track) {
+  stopAndRemove(playerA)
+  playerA = null
+  playingA.value = false
+  trackA.value = track
+  loadingA.value = true
+
+  try {
+    const player = await makePlayer(track, gainA, speedA.value)
+    // If another song was picked while this one was downloading, throw this one away
+    if (trackA.value !== track) {
+      player.dispose()
+      return
+    }
+    playerA = player
+  } catch (error) {
+    console.error(error)
+    trackA.value = null
+    errorMessage.value = 'Could not load that song, please pick another.'
+  }
+  loadingA.value = false
+}
+
+async function togglePlayA() {
+  await Tone.start()   // browsers only allow sound after a click
+  if (!playerA) return
+  if (playingA.value) {
+    playerA.stop()
+    playingA.value = false
+  } else {
+    playerA.start()
+    playingA.value = true
+  }
+}
+
+// Cue = jump back to the start of the song
+function cueA() {
+  if (!playerA) return
+  playerA.stop()
+  if (playingA.value) {
+    playerA.start()
+  }
+}
+
+function setSpeedA(value) {
+  speedA.value = value
+  if (playerA) {
+    playerA.playbackRate = value
+  }
+}
+
+function setVolumeA(value) {
+  volumeA.value = value
+  gainA.gain.value = value / 100
+}
+
+// ----- Deck B (same as Deck A) -----
+async function loadDeckB(track) {
+  stopAndRemove(playerB)
+  playerB = null
+  playingB.value = false
+  trackB.value = track
+  loadingB.value = true
+
+  try {
+    const player = await makePlayer(track, gainB, speedB.value)
+    if (trackB.value !== track) {
+      player.dispose()
+      return
+    }
+    playerB = player
+  } catch (error) {
+    console.error(error)
+    trackB.value = null
+    errorMessage.value = 'Could not load that song, please pick another.'
+  }
+  loadingB.value = false
+}
+
+async function togglePlayB() {
+  await Tone.start()
+  if (!playerB) return
+  if (playingB.value) {
+    playerB.stop()
+    playingB.value = false
+  } else {
+    playerB.start()
+    playingB.value = true
+  }
+}
+
+function cueB() {
+  if (!playerB) return
+  playerB.stop()
+  if (playingB.value) {
+    playerB.start()
+  }
+}
+
+function setSpeedB(value) {
+  speedB.value = value
+  if (playerB) {
+    playerB.playbackRate = value
+  }
+}
+
+function setVolumeB(value) {
+  volumeB.value = value
+  gainB.gain.value = value / 100
+}
+
+// ----- Crossfader -----
+function setCrossfade(value) {
+  crossfade.value = value
+  crossFadeNode.fade.value = value
+}
+
+// Leaving the page: stop the music and free everything, otherwise it keeps playing on other pages!
+onBeforeUnmount(function () {
+  stopAndRemove(playerA)
+  stopAndRemove(playerB)
+  gainA.dispose()
+  gainB.dispose()
+  crossFadeNode.dispose()
+})
+
+// ---------- "Your mix" waveform ----------
+// Blends Deck A and Deck B using the volume and crossfader sliders.
 // Each bar is coloured by whichever deck is louder at that moment.
 const mixBars = computed(function () {
   if (!trackA.value && !trackB.value) {
@@ -64,7 +226,7 @@ async function loadTracks() {
         format: 'json',
         limit: 10,
         tags: genre.value,
-        include: 'musicinfo',   // NEW: adds musicinfo.speed (low / medium / high) for the deck badge
+        include: 'musicinfo',   // adds musicinfo.speed (low / medium / high) for the deck badge
         offset: Math.floor(Math.random() * 50),
       },
     })
@@ -105,7 +267,7 @@ onMounted(loadTracks)
     <div class="col-12 col-lg-9">
       <div class="row g-3">
 
-        <!-- DECK A: $event is the number that DeckCard emitted -->
+        <!-- DECK A: each @event calls a function above with the value DeckCard emitted -->
         <div class="col-12 col-md-5">
           <DeckCard
             label="Deck A"
@@ -113,8 +275,12 @@ onMounted(loadTracks)
             :track="trackA"
             :speed="speedA"
             :volume="volumeA"
-            @change-speed="speedA = $event"
-            @change-volume="volumeA = $event"
+            :playing="playingA"
+            :loading="loadingA"
+            @change-speed="setSpeedA"
+            @change-volume="setVolumeA"
+            @toggle-play="togglePlayA"
+            @cue="cueA"
           />
         </div>
 
@@ -124,7 +290,15 @@ onMounted(loadTracks)
             <div class="card-body d-flex flex-column justify-content-end text-center">
               <h2 class="h6">Mixer</h2>
               <p class="mixer-label text-muted mt-auto mb-1">CROSSFADER</p>
-              <input v-model.number="crossfade" type="range" class="form-range" min="0" max="1" step="0.01" />
+              <input
+                :value="crossfade"
+                type="range"
+                class="form-range"
+                min="0"
+                max="1"
+                step="0.01"
+                @input="setCrossfade(Number($event.target.value))"
+              />
               <div class="d-flex justify-content-between small fw-bold">
                 <span class="text-deck-a">A</span><span class="text-deck-b">B</span>
               </div>
@@ -140,8 +314,12 @@ onMounted(loadTracks)
             :track="trackB"
             :speed="speedB"
             :volume="volumeB"
-            @change-speed="speedB = $event"
-            @change-volume="volumeB = $event"
+            :playing="playingB"
+            :loading="loadingB"
+            @change-speed="setSpeedB"
+            @change-volume="setVolumeB"
+            @toggle-play="togglePlayB"
+            @cue="cueB"
           />
         </div>
 
@@ -196,9 +374,9 @@ onMounted(loadTracks)
               <p class="mb-0 fw-semibold small">{{ track.name }}</p>
               <p class="mb-0 text-muted small">{{ track.artist_name }} · {{ formatTime(track.duration) }}</p>
             </div>
-            <!-- Clicking A or B puts this song into that deck -->
-            <button class="btn btn-sm btn-deck-a" @click="trackA = track">A</button>
-            <button class="btn btn-sm btn-deck-b" @click="trackB = track">B</button>
+            <!-- Clicking A or B downloads this song into that deck -->
+            <button class="btn btn-sm btn-deck-a" @click="loadDeckA(track)">A</button>
+            <button class="btn btn-sm btn-deck-b" @click="loadDeckB(track)">B</button>
           </div>
         </div>
       </div>
