@@ -4,6 +4,7 @@ import LoginView from './views/LoginView.vue'
 import RoomLayout from './views/RoomLayout.vue'
 import RoomView from './views/RoomView.vue'
 import StripView from './views/StripView.vue'
+import DecorateView from './views/DecorateView.vue'
 import StudioView from './views/StudioView.vue'
 import MarketplaceView from './views/MarketplaceView.vue'
 import MarketplaceItemView from './views/MarketplaceItemView.vue'
@@ -30,8 +31,9 @@ const routes = [
     path: '/room/:code',
     component: RoomLayout,
     children: [
-      { path: '', component: RoomView },       // /room/4821       (camera)
-      { path: 'strip', component: StripView }, // /room/4821/strip (photostrip)
+      { path: '', component: RoomView },             // /room/4821          (camera)
+      { path: 'strip', component: StripView },       // /room/4821/strip    (choose photos for the strip)
+      { path: 'decorate', component: DecorateView }, // /room/4821/decorate (filters and stickers)
     ],
   },
 ]
