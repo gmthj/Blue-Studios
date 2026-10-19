@@ -7,7 +7,7 @@
 import { test, before, beforeEach, after } from 'node:test'
 import fs from 'node:fs'
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing'
-import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, collection } from 'firebase/firestore'
+import { doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, collection, query, where } from 'firebase/firestore'
 
 let testEnv
 
@@ -249,6 +249,145 @@ test('signed-in users can read one profile but not list all users', async () => 
   await assertSucceeds(getDoc(doc(dbAsGuest('g1'), 'users/alice')))
   await assertFails(getDocs(collection(dbAsGuest('g1'), 'users')))
   await assertFails(getDoc(doc(dbSignedOut(), 'users/alice')))
+})
+
+// ---------- Templates, stickers, strips ----------
+
+// An account with a confirmed (verified) email
+function dbAsVerified(uid) {
+  return testEnv.authenticatedContext(uid, { email_verified: true, firebase: { sign_in_provider: 'password' } }).firestore()
+}
+
+function newTemplate(uid, id, changes = {}) {
+  return {
+    ownerId: uid,
+    ownerName: 'Alice',
+    name: 'Retro 4-cut',
+    slotCount: 4,
+    visibility: 'private',
+    status: 'active',
+    saveCount: 0,
+    thumbnailPath: 'templates/' + uid + '/' + id + '/thumbnail.png',
+    dataPath: 'templates/' + uid + '/' + id + '/project.json',
+    createdAt: 1,
+    updatedAt: 1,
+    ...changes,
+  }
+}
+
+function newSticker(uid, id, changes = {}) {
+  return {
+    ownerId: uid,
+    ownerName: 'Alice',
+    name: 'main character energy',
+    kind: 'static',
+    visibility: 'private',
+    status: 'active',
+    saveCount: 0,
+    imagePath: 'stickers/' + uid + '/' + id + '/image',
+    createdAt: 1,
+    updatedAt: 1,
+    ...changes,
+  }
+}
+
+async function seedAlice(changes = {}) {
+  await seed('users/alice', { displayName: 'Alice', createdAt: 1, ...changes })
+}
+
+test('an account can save a private template', async () => {
+  await seedAlice()
+  await assertSucceeds(setDoc(doc(dbAsAccount('alice'), 'templates/t1'), newTemplate('alice', 't1')))
+})
+
+test('guests cannot save templates', async () => {
+  await assertFails(setDoc(doc(dbAsGuest('g1'), 'templates/t1'), newTemplate('g1', 't1', { ownerName: 'G' })))
+})
+
+test('templates: cannot post as someone else or under a fake name', async () => {
+  await seedAlice()
+  await seed('users/bob', { displayName: 'Bob', createdAt: 1 })
+  await assertFails(setDoc(doc(dbAsAccount('bob'), 'templates/t1'), newTemplate('alice', 't1')))
+  await assertFails(setDoc(doc(dbAsAccount('bob'), 'templates/t1'), newTemplate('bob', 't1', { ownerName: 'Alice' })))
+})
+
+test('templates: must start active with 0 saves, and files must be in my own folder', async () => {
+  await seedAlice()
+  const db = dbAsAccount('alice')
+  await assertFails(setDoc(doc(db, 'templates/t1'), newTemplate('alice', 't1', { status: 'hidden' })))
+  await assertFails(setDoc(doc(db, 'templates/t1'), newTemplate('alice', 't1', { saveCount: 999 })))
+  await assertFails(setDoc(doc(db, 'templates/t1'), newTemplate('alice', 't1', { thumbnailPath: 'templates/bob/t1/thumbnail.png' })))
+  await assertFails(setDoc(doc(db, 'templates/t1'), newTemplate('alice', 't1', { slotCount: 50 })))
+})
+
+test('only verified emails can make something public', async () => {
+  await seedAlice()
+  await assertFails(setDoc(doc(dbAsAccount('alice'), 'templates/t1'), newTemplate('alice', 't1', { visibility: 'public' })))
+  await assertSucceeds(setDoc(doc(dbAsVerified('alice'), 'templates/t1'), newTemplate('alice', 't1', { visibility: 'public' })))
+})
+
+test('the owner can make a template public/private, but not change status, saveCount or owner', async () => {
+  await seedAlice()
+  await seed('templates/t1', newTemplate('alice', 't1'))
+  const db = dbAsVerified('alice')
+  await assertSucceeds(updateDoc(doc(db, 'templates/t1'), { visibility: 'public', updatedAt: 2 }))
+  await assertFails(updateDoc(doc(db, 'templates/t1'), { status: 'active', saveCount: 50 }))
+  await assertFails(updateDoc(doc(db, 'templates/t1'), { ownerId: 'bob' }))
+})
+
+test('banned accounts cannot save or change templates', async () => {
+  await seedAlice({ banned: true })
+  await seed('templates/t1', newTemplate('alice', 't1'))
+  await assertFails(setDoc(doc(dbAsAccount('alice'), 'templates/t2'), newTemplate('alice', 't2')))
+  await assertFails(updateDoc(doc(dbAsAccount('alice'), 'templates/t1'), { name: 'New name', updatedAt: 2 }))
+})
+
+test('who can see a template: owner always, others only if public and not hidden', async () => {
+  await seed('templates/private1', newTemplate('alice', 'private1'))
+  await seed('templates/public1', newTemplate('alice', 'public1', { visibility: 'public' }))
+  await seed('templates/hidden1', newTemplate('alice', 'hidden1', { visibility: 'public', status: 'hidden' }))
+  await assertSucceeds(getDoc(doc(dbAsAccount('alice'), 'templates/private1')))
+  await assertFails(getDoc(doc(dbAsAccount('bob'), 'templates/private1')))
+  await assertSucceeds(getDoc(doc(dbAsGuest('g1'), 'templates/public1')))
+  await assertFails(getDoc(doc(dbAsGuest('g1'), 'templates/hidden1')))
+  await assertSucceeds(getDoc(doc(dbAsAccount('alice'), 'templates/hidden1')))
+  await assertSucceeds(getDoc(doc(dbAsAdmin(), 'templates/hidden1')))
+  await assertFails(getDoc(doc(dbSignedOut(), 'templates/public1')))
+})
+
+test('only admins can hide a template; only the owner or an admin can delete it', async () => {
+  await seed('templates/t1', newTemplate('alice', 't1', { visibility: 'public' }))
+  await assertFails(updateDoc(doc(dbAsAccount('bob'), 'templates/t1'), { status: 'hidden' }))
+  await assertSucceeds(updateDoc(doc(dbAsAdmin(), 'templates/t1'), { status: 'hidden' }))
+  await assertFails(deleteDoc(doc(dbAsAccount('bob'), 'templates/t1')))
+  await assertSucceeds(deleteDoc(doc(dbAsAccount('alice'), 'templates/t1')))
+})
+
+test('stickers follow the same rules (create, kind, visibility)', async () => {
+  await seedAlice()
+  await assertSucceeds(setDoc(doc(dbAsAccount('alice'), 'stickers/s1'), newSticker('alice', 's1')))
+  await assertFails(setDoc(doc(dbAsAccount('alice'), 'stickers/s2'), newSticker('alice', 's2', { kind: 'virus' })))
+  await assertFails(setDoc(doc(dbAsAccount('alice'), 'stickers/s3'), newSticker('alice', 's3', { visibility: 'public' })))
+  await assertFails(getDoc(doc(dbAsAccount('bob'), 'stickers/s1')))
+})
+
+test('strips are private to the owner', async () => {
+  await seedAlice()
+  const strip = { ownerId: 'alice', title: 'Room 1234', imagePath: 'strips/alice/st1.jpg', createdAt: 1 }
+  await assertSucceeds(setDoc(doc(dbAsAccount('alice'), 'strips/st1'), strip))
+  await assertSucceeds(getDoc(doc(dbAsAccount('alice'), 'strips/st1')))
+  await assertFails(getDoc(doc(dbAsAccount('bob'), 'strips/st1')))
+  await assertFails(setDoc(doc(dbAsAccount('alice'), 'strips/st2'), { ...strip, imagePath: 'strips/bob/st2.jpg' }))
+  await assertFails(setDoc(doc(dbAsGuest('g1'), 'strips/st3'), { ...strip, ownerId: 'g1', imagePath: 'strips/g1/st3.jpg' }))
+})
+
+test('listing: I can list my own templates and public ones, but not everyone\'s', async () => {
+  await seed('templates/t1', newTemplate('alice', 't1'))
+  await seed('templates/t2', newTemplate('bob', 't2', { ownerName: 'Bob' }))
+  const aliceDb = dbAsAccount('alice')
+  await assertSucceeds(getDocs(query(collection(aliceDb, 'templates'), where('ownerId', '==', 'alice'))))
+  await assertSucceeds(getDocs(query(collection(aliceDb, 'templates'), where('visibility', '==', 'public'), where('status', '==', 'active'))))
+  await assertFails(getDocs(collection(aliceDb, 'templates')))
 })
 
 // ---------- Everything else ----------

@@ -1,6 +1,7 @@
 {
   "rewrites": [
     { "source": "/login", "destination": "/index.html" },
+    { "source": "/studio", "destination": "/index.html" },
     { "source": "/room/:code", "destination": "/index.html" },
     { "source": "/room/:code/strip", "destination": "/index.html" }
   ]

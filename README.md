@@ -39,9 +39,12 @@ src/components/VideoCallCard.vue  the call card: everyone's tiles + Mute/Unmute,
 src/components/VideoTile.vue      one person: live video, name, device type, mute icon (all tiles the same size)
 src/components/RoomGallery.vue    the shared gallery (grouped by shot) + Make photostrip button
 src/components/StreamVideo.vue    a <video> showing a camera stream (my camera)
+src/components/StorageImage.vue   an <img> of a file in Firebase Storage (only loads if the storage rules allow it)
 
 src/views/HomeView.vue    create room / join room by code
 src/views/LoginView.vue   log in / sign up (email + password, or Google), forgot password
+src/views/StudioView.vue  My Studio (/studio, accounts only): my photostrips, templates, stickers, public/private
+src/studio.js             save / list / publish / delete My Studio items (templates, stickers, strips)
 src/views/RoomLayout.vue  parent page for a room: joins the room + call once, shows a child page
 src/views/RoomView.vue    (child) camera, shutter, countdown, join card, call card, gallery
 src/views/StripView.vue   (child) call card, collaborative photostrip, export as JPG
@@ -107,9 +110,48 @@ Agora projects have an **App Certificate** (a secret). To join a channel, the br
 - **Members:** you can only join, update (heartbeat) and leave as yourself, only into an open room, and every field is checked.
 - **Photos:** only members can see them. You can only add a photo as yourself (`ownerId`), for a shot that has happened, as a JPEG under about 900KB. Photos cannot be edited.
 - **User profiles** (`users/{uid}` `{ displayName, createdAt }`): anyone signed in can read one profile (not list them). Only accounts (not guests) can create one, only their own, and they can only change `displayName` (1-30 characters). The email is not stored in Firestore.
+- **Templates, stickers** (`templates/{id}`, `stickers/{id}`): only accounts that are not banned can save them, as themselves, with their real profile name (`ownerName`), and their files must be in their own Storage folder. New items start `private`, `active`, with 0 saves. Only accounts with a **confirmed email** can make one `public`. Who can see one: the owner, admins, and anyone signed in (guests too) if it is public and not hidden. Only admins can change `status` (hide / unhide). Only the owner or an admin can delete.
+- **Strips** (`strips/{id}`): always private to the owner.
+- **Banned accounts** (`users/{uid}.banned == true`, set by an admin) cannot create or change anything.
+- **Storage** (`storage.rules`): files are in a folder named after the owner's uid (`templates/{uid}/...`, `stickers/{uid}/...`, `strips/{uid}/...`). Only the owner (an account) can upload there, only images (or the template's `project.json`) under 2-5 MB. Public files can be downloaded while their Firestore document is public and not hidden.
 - **Any other collection is blocked.** If you add a new collection (e.g. templates), add rules for it in `firestore.rules` and tests in `tests/firestore.rules.test.js`, or every read/write will fail with "Missing or insufficient permissions".
 
 Run the tests with `npm run test:rules` (needs Java). It starts a local copy of Firestore, so it never touches the real data. Deploy the rules with `firebase deploy --only firestore:rules,storage`.
+
+## My Studio: saving templates, stickers and strips (for teammates)
+
+Accounts have a **My Studio** page (`/studio`) with everything they saved. Each item is a small Firestore document plus its files in Firebase Storage:
+
+```
+templates/{id}  { ownerId, ownerName, name, slotCount, visibility, status, saveCount, thumbnailPath, dataPath, createdAt, updatedAt }
+                  Storage: templates/{uid}/{id}/thumbnail.png  and  templates/{uid}/{id}/project.json
+stickers/{id}   { ownerId, ownerName, name, kind, visibility, status, saveCount, imagePath, createdAt, updatedAt }
+                  Storage: stickers/{uid}/{id}/image
+strips/{id}     { ownerId, title, imagePath, createdAt }
+                  Storage: strips/{uid}/{id}.jpg
+```
+
+- `visibility`: `'private'` or `'public'` (public = shown in the marketplace). The owner changes it in My Studio.
+- `status`: `'active'` or `'hidden'` (only admins can hide something).
+
+**Use the functions in `src/studio.js`** instead of writing to Firestore/Storage yourself (the security rules check every field, so a hand-written write will probably be blocked):
+
+```js
+import { useAuth } from '../composables/useAuth.js'
+import { saveTemplate, saveSticker, loadTemplateProject } from '../studio.js'
+
+const { isAccount } = useAuth()   // only accounts can save: show a "Log in to save" button for guests
+
+// Template editor (Joash): thumbnail is a PNG Blob, projectData is the editor's project object
+const id = await saveTemplate({ name, slotCount, thumbnail, projectData })   // new template
+await saveTemplate({ id, name, slotCount, thumbnail, projectData })          // update it later
+const projectData = await loadTemplateProject(template)                      // open it again *
+
+// Sticker maker (Rae): image is a PNG, GIF or WebP Blob (under 2 MB)
+await saveSticker({ name, kind: 'static', image })   // kind: 'static', 'animated' or 'dynamic'
+```
+
+\* `loadTemplateProject` downloads a file with `fetch`, which needs the Storage bucket's CORS setting. Ask Gabriel to set it up before using it.
 
 ## Environment variables
 

@@ -2,6 +2,8 @@
 import { ref, computed } from 'vue'
 import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
+import { useAuth } from '../composables/useAuth.js'
+import { saveStrip } from '../studio.js'
 import VideoCallCard from '../components/VideoCallCard.vue'
 
 // The photostrip page (a child of RoomLayout.vue). Everyone in the room sees the SAME strip:
@@ -19,6 +21,11 @@ const { code, room, photos, roomRef } = useRoom()
 
 const activeSlot = ref(0) // which slot MY next chosen photo goes into (each person has their own)
 const exporting = ref(false)
+
+// Accounts can also save the strip to My Studio
+const { isAccount } = useAuth()
+const saving = ref(false)
+const saveMessage = ref('')
 
 // The 4 slots, as photo objects (or null if empty).
 // The room document stores only the photo ids: stripSlots: { 0: 'photoId', 1: null, ... }
@@ -94,10 +101,8 @@ function drawImageCover(ctx, img, x, y, boxWidth, boxHeight) {
   ctx.drawImage(img, cropX, cropY, cropWidth, cropHeight, x, y, boxWidth, boxHeight)
 }
 
-// Each person can download the strip to their own device
-async function exportJpg() {
-  exporting.value = true
-
+// Draw the strip on a canvas (used by Download and Save to My Studio)
+async function drawStrip() {
   const canvas = document.createElement('canvas')
   canvas.width = STRIP_WIDTH
   canvas.height = PADDING + SLOT_HEIGHT * 4 + GAP * 3 + FOOTER_HEIGHT
@@ -125,6 +130,13 @@ async function exportJpg() {
   ctx.font = 'bold 32px sans-serif'
   ctx.textAlign = 'center'
   ctx.fillText('Blue Studios', STRIP_WIDTH / 2, canvas.height - FOOTER_HEIGHT / 2 + 10)
+  return canvas
+}
+
+// Each person can download the strip to their own device
+async function exportJpg() {
+  exporting.value = true
+  const canvas = await drawStrip()
 
   // Download: make a temporary link to the JPG and click it
   const link = document.createElement('a')
@@ -133,6 +145,23 @@ async function exportJpg() {
   link.click()
 
   exporting.value = false
+}
+
+// Accounts: save a copy of the strip to My Studio (Firebase Storage + a strips document)
+async function saveToStudio() {
+  saving.value = true
+  saveMessage.value = ''
+  try {
+    const canvas = await drawStrip()
+    // toBlob gives the JPG as a file-like Blob (smaller than a data URL)
+    const image = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92))
+    await saveStrip({ title: 'Room ' + code.value + ' · ' + new Date().toLocaleDateString(), image: image })
+    saveMessage.value = 'Saved to My Studio!'
+  } catch (error) {
+    console.error(error)
+    saveMessage.value = 'Could not save. Please try again.'
+  }
+  saving.value = false
 }
 </script>
 
@@ -168,6 +197,15 @@ async function exportJpg() {
       <button class="btn btn-primary w-100 mt-3" :disabled="filledCount === 0 || exporting" @click="exportJpg">
         {{ exporting ? 'Exporting...' : 'Download JPG' }}
       </button>
+      <button
+        v-if="isAccount"
+        class="btn btn-outline-primary w-100 mt-2"
+        :disabled="filledCount === 0 || saving"
+        @click="saveToStudio"
+      >
+        {{ saving ? 'Saving...' : 'Save to My Studio' }}
+      </button>
+      <p v-if="saveMessage" class="small text-center mt-2 mb-0">{{ saveMessage }}</p>
       <p class="small text-muted text-center mt-2 mb-0">{{ filledCount }} of 4 slots filled</p>
     </div>
 

@@ -28,7 +28,7 @@ service cloud.firestore {
 
     // Admins get a special "admin" mark on their login, set only by our server (never by the browser)
     function isAdmin() {
-      return signedIn() && request.auth.token.admin == true;
+      return signedIn() && request.auth.token.get('admin', false) == true;
     }
 
     function roomPath(code) {
@@ -52,6 +52,40 @@ service cloud.firestore {
 
     function isName(value) {
       return value is string && value.size() >= 1 && value.size() <= 20;
+    }
+
+    // Admins can ban an account (users/{uid}.banned = true). Banned accounts cannot make or change anything.
+    function notBanned() {
+      let profile = /databases/$(database)/documents/users/$(request.auth.uid);
+      return !exists(profile) || get(profile).data.get('banned', false) != true;
+    }
+
+    // An account that can make things: has an account, and is not banned
+    function isCreator() {
+      return isAccount() && notBanned();
+    }
+
+    // The name shown on my items must be my real profile name (nobody can post as someone else)
+    function isMyName(value) {
+      return value == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.displayName;
+    }
+
+    // Item names: templates, stickers, strips
+    function isTitle(value) {
+      return value is string && value.size() >= 1 && value.size() <= 40;
+    }
+
+    // Only people who confirmed their email can make something public (stops spam accounts)
+    function canUseVisibility(value) {
+      return value == 'private' || (value == 'public' && request.auth.token.email_verified == true);
+    }
+
+    // Templates and stickers can be seen by: the owner, admins, and everyone if public (and not hidden by an admin)
+    function canSeeItem() {
+      return signedIn() && (
+        resource.data.ownerId == request.auth.uid
+        || isAdmin()
+        || (resource.data.visibility == 'public' && resource.data.status == 'active'));
     }
 
     // ---------- Rooms ----------
@@ -193,6 +227,107 @@ service cloud.firestore {
         && isDisplayName(request.resource.data.displayName);
 
       allow delete: if false;
+    }
+
+    // ---------- Templates (frames made in the template editor) ----------
+    // templates/{id}  { ownerId, ownerName, name, slotCount, visibility, status, saveCount,
+    //                   thumbnailPath, dataPath, createdAt, updatedAt }
+    // The files are in Firebase Storage: templates/{uid}/{id}/thumbnail.png and project.json
+
+    match /templates/{itemId} {
+      allow read: if canSeeItem();
+
+      allow create: if isCreator()
+        && request.resource.data.keys().hasOnly(['ownerId', 'ownerName', 'name', 'slotCount', 'visibility', 'status', 'saveCount', 'thumbnailPath', 'dataPath', 'createdAt', 'updatedAt'])
+        && request.resource.data.ownerId == request.auth.uid
+        && isMyName(request.resource.data.ownerName)
+        && isTitle(request.resource.data.name)
+        && request.resource.data.slotCount is int
+        && request.resource.data.slotCount >= 1
+        && request.resource.data.slotCount <= 12
+        && canUseVisibility(request.resource.data.visibility)
+        && request.resource.data.status == 'active'
+        && request.resource.data.saveCount == 0
+        && request.resource.data.thumbnailPath == 'templates/' + request.auth.uid + '/' + itemId + '/thumbnail.png'
+        && request.resource.data.dataPath == 'templates/' + request.auth.uid + '/' + itemId + '/project.json'
+        && request.resource.data.createdAt is int
+        && request.resource.data.updatedAt is int;
+
+      // The owner can rename, change slots, make public/private. Not status (admins) or saveCount.
+      allow update: if isCreator()
+        && resource.data.ownerId == request.auth.uid
+        && onlyChanged(['ownerName', 'name', 'slotCount', 'visibility', 'updatedAt'])
+        && isMyName(request.resource.data.ownerName)
+        && isTitle(request.resource.data.name)
+        && request.resource.data.slotCount is int
+        && request.resource.data.slotCount >= 1
+        && request.resource.data.slotCount <= 12
+        && canUseVisibility(request.resource.data.visibility)
+        && request.resource.data.updatedAt is int;
+
+      // Admins can hide or unhide (moderation)
+      allow update: if isAdmin()
+        && onlyChanged(['status'])
+        && request.resource.data.status in ['active', 'hidden'];
+
+      allow delete: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
+    // ---------- Stickers (made in the sticker maker) ----------
+    // stickers/{id}  { ownerId, ownerName, name, kind, visibility, status, saveCount, imagePath, createdAt, updatedAt }
+    // The image is in Firebase Storage: stickers/{uid}/{id}/image
+
+    match /stickers/{itemId} {
+      allow read: if canSeeItem();
+
+      allow create: if isCreator()
+        && request.resource.data.keys().hasOnly(['ownerId', 'ownerName', 'name', 'kind', 'visibility', 'status', 'saveCount', 'imagePath', 'createdAt', 'updatedAt'])
+        && request.resource.data.ownerId == request.auth.uid
+        && isMyName(request.resource.data.ownerName)
+        && isTitle(request.resource.data.name)
+        && request.resource.data.kind in ['static', 'animated', 'dynamic']
+        && canUseVisibility(request.resource.data.visibility)
+        && request.resource.data.status == 'active'
+        && request.resource.data.saveCount == 0
+        && request.resource.data.imagePath == 'stickers/' + request.auth.uid + '/' + itemId + '/image'
+        && request.resource.data.createdAt is int
+        && request.resource.data.updatedAt is int;
+
+      allow update: if isCreator()
+        && resource.data.ownerId == request.auth.uid
+        && onlyChanged(['ownerName', 'name', 'visibility', 'updatedAt'])
+        && isMyName(request.resource.data.ownerName)
+        && isTitle(request.resource.data.name)
+        && canUseVisibility(request.resource.data.visibility)
+        && request.resource.data.updatedAt is int;
+
+      allow update: if isAdmin()
+        && onlyChanged(['status'])
+        && request.resource.data.status in ['active', 'hidden'];
+
+      allow delete: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
+    // ---------- Strips (finished photostrips saved to My Studio) ----------
+    // strips/{id}  { ownerId, title, imagePath, createdAt }   always private to the owner
+    // The image is in Firebase Storage: strips/{uid}/{id}.jpg
+
+    match /strips/{stripId} {
+      allow read: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+
+      allow create: if isCreator()
+        && request.resource.data.keys().hasOnly(['ownerId', 'title', 'imagePath', 'createdAt'])
+        && request.resource.data.ownerId == request.auth.uid
+        && isTitle(request.resource.data.title)
+        && request.resource.data.imagePath == 'strips/' + request.auth.uid + '/' + stripId + '.jpg'
+        && request.resource.data.createdAt is int;
+
+      allow update: if isCreator()
+        && resource.data.ownerId == request.auth.uid
+        && onlyChanged(['title'])
+        && isTitle(request.resource.data.title);
+
+      allow delete: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
     }
 
     // Everything else (any other collection) is blocked until a rule above allows it.

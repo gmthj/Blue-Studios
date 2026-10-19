@@ -1,6 +1,7 @@
 import { initializeApp } from 'firebase/app'
 import { getFirestore } from 'firebase/firestore'
 import { getAuth } from 'firebase/auth'
+import { getStorage } from 'firebase/storage'
 
 // The values come from the .env file (locally) or Vercel's Environment Variables (when deployed).
 // Vite only puts variables that start with VITE_ into the frontend, using import.meta.env.
@@ -22,3 +23,6 @@ export const db = getFirestore(app)
 
 // auth is used by composables/useAuth.js (who is signed in)
 export const auth = getAuth(app)
+
+// storage is used for files (template previews, stickers, saved strips): see studio.js
+export const storage = getStorage(app)

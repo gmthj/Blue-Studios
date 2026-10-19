@@ -42,7 +42,8 @@ async function logOutAndGoHome() {
       <!-- Hidden inside a room: logging out there would change your user id and drop you from the room -->
       <div v-if="!inRoom" class="d-flex align-items-center gap-2">
         <template v-if="isAccount">
-          <span class="text-white small text-truncate account-name">{{ user.displayName || user.email }}</span>
+          <router-link to="/studio" class="btn btn-sm btn-outline-light">My Studio</router-link>
+          <span class="text-white small text-truncate account-name d-none d-sm-inline">{{ user.displayName || user.email }}</span>
           <button class="btn btn-sm btn-light" @click="logOutAndGoHome">Log out</button>
         </template>
         <template v-else>
