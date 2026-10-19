@@ -1,0 +1,478 @@
+rules_version = '2';
+
+// Firestore security rules: Firebase checks these on its own servers for EVERY read and write,
+// so they still protect the data even if someone changes the code in their browser.
+//
+// The basic idea:
+//   - Everything is blocked unless a rule below allows it.
+//   - request.auth.uid is the user id that Firebase itself checked (see composables/useAuth.js),
+//     so it cannot be faked. We compare it with hostId / member ids / ownerId.
+//   - Every write is checked field by field, so nobody can add extra fields or wrong types.
+//
+// DEV MODE (19 Oct 2026): while the team is still building, room fields, room sub-lists and any NEW
+// collection or Storage folder are open to signed-in users (search for "DEV" below), so teammates are
+// not blocked. Accounts, My Studio, marketplace and reports stay strict. Tighten these before submission.
+//
+// Deploy with:  firebase deploy --only firestore:rules
+// Test with:    npm run test:rules
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---------- Helpers ----------
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // People with an account (email or Google). Guests are signed in "anonymously".
+    function isAccount() {
+      return signedIn() && request.auth.token.firebase.sign_in_provider != 'anonymous';
+    }
+
+    // Admins get a special "admin" mark on their login, set only by our server (never by the browser)
+    function isAdmin() {
+      return signedIn() && request.auth.token.get('admin', false) == true;
+    }
+
+    function roomPath(code) {
+      return /databases/$(database)/documents/rooms/$(code);
+    }
+
+    // Am I in this room? (I have a document in rooms/{code}/members)
+    function isMember(code) {
+      return exists(/databases/$(database)/documents/rooms/$(code)/members/$(request.auth.uid));
+    }
+
+    // Only these fields changed in this update
+    function onlyChanged(fields) {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
+    }
+
+    // Account names can be a bit longer than room names
+    function isDisplayName(value) {
+      return value is string && value.size() >= 1 && value.size() <= 30;
+    }
+
+    function isName(value) {
+      return value is string && value.size() >= 1 && value.size() <= 20;
+    }
+
+    // Admins can ban an account (users/{uid}.banned = true). Banned accounts cannot make or change anything.
+    function notBanned() {
+      let profile = /databases/$(database)/documents/users/$(request.auth.uid);
+      return !exists(profile) || get(profile).data.get('banned', false) != true;
+    }
+
+    // An account that can make things: has an account, and is not banned
+    function isCreator() {
+      return isAccount() && notBanned();
+    }
+
+    // The name shown on my items must be my real profile name (nobody can post as someone else)
+    function isMyName(value) {
+      return value == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.displayName;
+    }
+
+    // Item names: templates, stickers, strips
+    function isTitle(value) {
+      return value is string && value.size() >= 1 && value.size() <= 40;
+    }
+
+    // Only people who confirmed their email can make something public (stops spam accounts)
+    function canUseVisibility(value) {
+      return value == 'private' || (value == 'public' && request.auth.token.email_verified == true);
+    }
+
+    // Marketplace categories (the same list as CATEGORIES in src/studio.js): 1 to 3 of them, no repeats
+    function isCategories(value) {
+      return value is list
+        && value.size() >= 1
+        && value.size() <= 3
+        && value.hasOnly(['birthday', 'friends', 'love', 'graduation', 'holiday', 'cute', 'minimal', 'other'])
+        && value.toSet().size() == value.size();
+    }
+
+    function itemPath(type, itemId) {
+      return /databases/$(database)/documents/$(type)/$(itemId);
+    }
+
+    // Is this template or sticker in the marketplace (public, and not hidden by an admin)?
+    function isInMarketplace(type, itemId) {
+      return exists(itemPath(type, itemId))
+        && get(itemPath(type, itemId)).data.visibility == 'public'
+        && get(itemPath(type, itemId)).data.status == 'active';
+    }
+
+    // Saving / unsaving from the marketplace: saveCount goes up or down by exactly 1, in the same
+    // batch as my saved document users/{me}/saved/{itemId} being added or removed (see marketplace.js).
+    // So nobody can change the number without really saving it, or save the same thing twice.
+    function isSaveCounterChange(type, itemId) {
+      let saved = /databases/$(database)/documents/users/$(request.auth.uid)/saved/$(itemId);
+      return onlyChanged(['saveCount'])
+        && ((request.resource.data.saveCount == resource.data.saveCount + 1
+              && !exists(saved) && existsAfter(saved) && getAfter(saved).data.type == type)
+          || (request.resource.data.saveCount == resource.data.saveCount - 1
+              && request.resource.data.saveCount >= 0
+              && exists(saved) && !existsAfter(saved) && get(saved).data.type == type));
+    }
+
+    // Templates and stickers can be seen by: the owner, admins, and everyone if public (and not hidden by an admin)
+    function canSeeItem() {
+      return signedIn() && (
+        resource.data.ownerId == request.auth.uid
+        || isAdmin()
+        || (resource.data.visibility == 'public' && resource.data.status == 'active'));
+    }
+
+    // ---------- Rooms ----------
+    // rooms/{code}  { hostId, hostName, shotNumber, shotStartedBy, stage, stripSlots, closed, createdAt }
+
+    match /rooms/{code} {
+      // Anyone with the app can look up ONE room by its code (to join it).
+      // Listing every room is not allowed.
+      allow get: if signedIn();
+      allow list: if false;
+
+      // Create: I must be the host, and the room must start empty
+      allow create: if signedIn()
+        && code.matches('^[0-9]{4}$')
+        && request.resource.data.keys().hasOnly(['hostId', 'hostName', 'shotNumber', 'stage', 'stripSlots', 'closed', 'createdAt'])
+        && request.resource.data.hostId == request.auth.uid
+        && isName(request.resource.data.hostName)
+        && request.resource.data.shotNumber == 0
+        && request.resource.data.stage == 'camera'
+        && request.resource.data.stripSlots == {}
+        && request.resource.data.closed == false
+        && request.resource.data.createdAt is int;
+
+      // Update: only people in the room, and only while it is open
+      allow update: if signedIn()
+        && isMember(code)
+        && resource.data.closed == false
+        && (pressShutter() || closeRoom() || devRoomChange());
+
+      // Admins can close any room (e.g. one left open by mistake)
+      allow update: if isAdmin()
+        && onlyChanged(['closed'])
+        && request.resource.data.closed == true;
+
+      allow delete: if false;
+
+      // Shutter: shotNumber goes up by exactly 1 (see pressShutter() in RoomView.vue)
+      function pressShutter() {
+        return onlyChanged(['shotNumber', 'shotStartedBy'])
+          && request.resource.data.shotNumber == resource.data.shotNumber + 1
+          && isName(request.resource.data.shotStartedBy);
+      }
+
+      // DEV (open while we are still building): members can change any other room field
+      // (stage, stripSlots, stripEdits, stripStickers, music, ...), so teammates can add fields freely.
+      // Still protected: who the host is, when it was made, the shutter counter and closing.
+      // TODO lockdown: check each field again (stage names, slot keys, sizes) before submission.
+      function devRoomChange() {
+        return !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['hostId', 'hostName', 'createdAt', 'shotNumber', 'shotStartedBy', 'closed']);
+      }
+
+      // Close the room for everyone (closed can only go from false to true)
+      function closeRoom() {
+        return onlyChanged(['closed'])
+          && request.resource.data.closed == true;
+      }
+
+      // ---------- Members ----------
+      // rooms/{code}/members/{uid}  { name, deviceType, joinedAt, lastSeen }
+
+      match /members/{memberId} {
+        // Signed-in users can see who is in a room (needed to check if the room is full before joining)
+        allow read: if signedIn();
+
+        // Join: only as myself, only into an open room
+        allow create: if signedIn()
+          && memberId == request.auth.uid
+          && exists(roomPath(code))
+          && get(roomPath(code)).data.closed == false
+          && request.resource.data.keys().hasOnly(['name', 'deviceType', 'joinedAt', 'lastSeen'])
+          && isName(request.resource.data.name)
+          && request.resource.data.deviceType in ['Phone', 'Tablet', 'Computer']
+          && request.resource.data.joinedAt is int
+          && request.resource.data.lastSeen is int;
+
+        // Heartbeat / rejoin: only my own document, and joinedAt never changes
+        allow update: if signedIn()
+          && memberId == request.auth.uid
+          && onlyChanged(['name', 'deviceType', 'lastSeen'])
+          && isName(request.resource.data.name)
+          && request.resource.data.deviceType in ['Phone', 'Tablet', 'Computer']
+          && request.resource.data.lastSeen is int;
+
+        // Leave: only myself (or an admin)
+        allow delete: if signedIn() && (memberId == request.auth.uid || isAdmin());
+      }
+
+      // ---------- Photos ----------
+      // rooms/{code}/photos/{photoId}  { ownerId, name, shotNumber, image, createdAt }
+
+      match /photos/{photoId} {
+        // Only people in the room can see its photos
+        allow read: if signedIn() && (isMember(code) || isAdmin());
+
+        // Take a photo: only in a room I am in, only as myself, and only a JPEG under about 900KB
+        allow create: if signedIn()
+          && isMember(code)
+          && request.resource.data.keys().hasOnly(['ownerId', 'name', 'shotNumber', 'image', 'createdAt'])
+          && request.resource.data.ownerId == request.auth.uid
+          && isName(request.resource.data.name)
+          && request.resource.data.shotNumber is int
+          && request.resource.data.shotNumber >= 1
+          && request.resource.data.shotNumber <= get(roomPath(code)).data.shotNumber
+          && request.resource.data.image is string
+          && request.resource.data.image.size() < 900000
+          && request.resource.data.image.matches('^data:image/jpeg;base64,.*')
+          && request.resource.data.createdAt is int;
+
+        // Photos cannot be changed. Admins can remove them (moderation).
+        allow update: if false;
+        allow delete: if isAdmin();
+      }
+
+      // DEV: any other list inside a room (e.g. rooms/{code}/clips, rooms/{code}/music) for teammates' features.
+      // Only people in the room can read and write it.
+      // TODO lockdown: replace with real rules for each one before submission.
+      match /{listName}/{docId=**} {
+        allow read, write: if signedIn()
+          && !(listName in ['members', 'photos'])
+          && isMember(code);
+      }
+    }
+
+    // ---------- User profiles ----------
+    // users/{uid}  { displayName, createdAt }   public profile. The email is NOT stored here.
+
+    match /users/{userId} {
+      // Anyone signed in can see one profile (e.g. the name on a marketplace item), but not list them all.
+      // Admins can list them (e.g. to see banned accounts).
+      allow get: if signedIn();
+      allow list: if isAdmin();
+
+      // Only accounts (not guests) have a profile, and only their own
+      allow create: if isAccount()
+        && userId == request.auth.uid
+        && request.resource.data.keys().hasOnly(['displayName', 'createdAt'])
+        && isDisplayName(request.resource.data.displayName)
+        && request.resource.data.createdAt is int;
+
+      // Change my name (nothing else)
+      allow update: if isAccount()
+        && userId == request.auth.uid
+        && onlyChanged(['displayName'])
+        && isDisplayName(request.resource.data.displayName);
+
+      allow delete: if false;
+
+      // ---------- Saved from the marketplace ----------
+      // users/{uid}/saved/{itemId}  { type, savedAt }   a bookmark ("save by reference"): the item itself
+      // stays with its owner, so if they make it private or delete it, it is gone from my saved list too.
+
+      match /saved/{itemId} {
+        // Only I can see what I saved
+        allow read: if signedIn() && userId == request.auth.uid;
+
+        // Save: only items in the marketplace, and the item's saveCount must go up by 1 in the same batch
+        allow create: if isCreator()
+          && userId == request.auth.uid
+          && request.resource.data.keys().hasOnly(['type', 'savedAt'])
+          && request.resource.data.type in ['templates', 'stickers']
+          && request.resource.data.savedAt is int
+          && isInMarketplace(request.resource.data.type, itemId)
+          && getAfter(itemPath(request.resource.data.type, itemId)).data.saveCount
+             == get(itemPath(request.resource.data.type, itemId)).data.saveCount + 1;
+
+        // Unsave: saveCount goes down by 1 in the same batch (unless the owner already deleted the item)
+        allow delete: if signedIn()
+          && userId == request.auth.uid
+          && (!exists(itemPath(resource.data.type, itemId))
+              || getAfter(itemPath(resource.data.type, itemId)).data.saveCount
+                 == get(itemPath(resource.data.type, itemId)).data.saveCount - 1);
+
+        allow update: if false;
+      }
+    }
+
+    // ---------- Templates (frames made in the template editor) ----------
+    // templates/{id}  { ownerId, ownerName, name, slotCount, categories, visibility, status, saveCount,
+    //                   thumbnailPath, dataPath, createdAt, updatedAt }
+    // The files are in Firebase Storage: templates/{uid}/{id}/thumbnail.png and project.json
+
+    match /templates/{itemId} {
+      allow read: if canSeeItem();
+
+      allow create: if isCreator()
+        && request.resource.data.keys().hasOnly(['ownerId', 'ownerName', 'name', 'slotCount', 'categories', 'visibility', 'status', 'saveCount', 'thumbnailPath', 'dataPath', 'createdAt', 'updatedAt'])
+        && request.resource.data.ownerId == request.auth.uid
+        && isMyName(request.resource.data.ownerName)
+        && isTitle(request.resource.data.name)
+        && request.resource.data.slotCount is int
+        && request.resource.data.slotCount >= 1
+        && request.resource.data.slotCount <= 12
+        && isCategories(request.resource.data.categories)
+        && canUseVisibility(request.resource.data.visibility)
+        && request.resource.data.status == 'active'
+        && request.resource.data.saveCount == 0
+        && request.resource.data.thumbnailPath == 'templates/' + request.auth.uid + '/' + itemId + '/thumbnail.png'
+        && request.resource.data.dataPath == 'templates/' + request.auth.uid + '/' + itemId + '/project.json'
+        && request.resource.data.createdAt is int
+        && request.resource.data.updatedAt is int;
+
+      // The owner can rename, change slots and categories, make public/private. Not status (admins) or saveCount.
+      allow update: if isCreator()
+        && resource.data.ownerId == request.auth.uid
+        && onlyChanged(['ownerName', 'name', 'slotCount', 'categories', 'visibility', 'updatedAt'])
+        && isMyName(request.resource.data.ownerName)
+        && isTitle(request.resource.data.name)
+        && request.resource.data.slotCount is int
+        && request.resource.data.slotCount >= 1
+        && request.resource.data.slotCount <= 12
+        && isCategories(request.resource.data.categories)
+        && canUseVisibility(request.resource.data.visibility)
+        && request.resource.data.updatedAt is int;
+
+      // Anyone with an account saving or unsaving it in the marketplace
+      allow update: if isAccount() && isSaveCounterChange('templates', itemId);
+
+      // Admins can hide or unhide (moderation)
+      allow update: if isAdmin()
+        && onlyChanged(['status'])
+        && request.resource.data.status in ['active', 'hidden'];
+
+      allow delete: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
+    // ---------- Stickers (made in the sticker maker) ----------
+    // stickers/{id}  { ownerId, ownerName, name, kind, categories, visibility, status, saveCount, imagePath, createdAt, updatedAt }
+    // The image is in Firebase Storage: stickers/{uid}/{id}/image
+
+    match /stickers/{itemId} {
+      allow read: if canSeeItem();
+
+      allow create: if isCreator()
+        && request.resource.data.keys().hasOnly(['ownerId', 'ownerName', 'name', 'kind', 'categories', 'visibility', 'status', 'saveCount', 'imagePath', 'createdAt', 'updatedAt'])
+        && request.resource.data.ownerId == request.auth.uid
+        && isMyName(request.resource.data.ownerName)
+        && isTitle(request.resource.data.name)
+        && request.resource.data.kind in ['static', 'animated', 'dynamic']
+        && isCategories(request.resource.data.categories)
+        && canUseVisibility(request.resource.data.visibility)
+        && request.resource.data.status == 'active'
+        && request.resource.data.saveCount == 0
+        && request.resource.data.imagePath == 'stickers/' + request.auth.uid + '/' + itemId + '/image'
+        && request.resource.data.createdAt is int
+        && request.resource.data.updatedAt is int;
+
+      allow update: if isCreator()
+        && resource.data.ownerId == request.auth.uid
+        && onlyChanged(['ownerName', 'name', 'categories', 'visibility', 'updatedAt'])
+        && isMyName(request.resource.data.ownerName)
+        && isTitle(request.resource.data.name)
+        && isCategories(request.resource.data.categories)
+        && canUseVisibility(request.resource.data.visibility)
+        && request.resource.data.updatedAt is int;
+
+      allow update: if isAccount() && isSaveCounterChange('stickers', itemId);
+
+      allow update: if isAdmin()
+        && onlyChanged(['status'])
+        && request.resource.data.status in ['active', 'hidden'];
+
+      allow delete: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
+    // ---------- Strips (finished photostrips saved to My Studio) ----------
+    // strips/{id}  { ownerId, title, imagePath, createdAt }   always private to the owner
+    // The image is in Firebase Storage: strips/{uid}/{id}.jpg
+
+    match /strips/{stripId} {
+      allow read: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+
+      allow create: if isCreator()
+        && request.resource.data.keys().hasOnly(['ownerId', 'title', 'imagePath', 'createdAt'])
+        && request.resource.data.ownerId == request.auth.uid
+        && isTitle(request.resource.data.title)
+        && request.resource.data.imagePath == 'strips/' + request.auth.uid + '/' + stripId + '.jpg'
+        && request.resource.data.createdAt is int;
+
+      allow update: if isCreator()
+        && resource.data.ownerId == request.auth.uid
+        && onlyChanged(['title'])
+        && isTitle(request.resource.data.title);
+
+      allow delete: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
+    // ---------- Reports (an account flags a marketplace item for the admins) ----------
+    // reports/{itemId_reporterUid}  { type, itemId, ownerId, reporterId, reason, details, status, createdAt }
+    // The id is the item id + my uid, so each person can report each item only once.
+
+    match /reports/{reportId} {
+      allow create: if isCreator()
+        && request.resource.data.keys().hasOnly(['type', 'itemId', 'ownerId', 'reporterId', 'reason', 'details', 'status', 'createdAt'])
+        && request.resource.data.type in ['templates', 'stickers']
+        && reportId == request.resource.data.itemId + '_' + request.auth.uid
+        && request.resource.data.reporterId == request.auth.uid
+        && isInMarketplace(request.resource.data.type, request.resource.data.itemId)
+        && request.resource.data.ownerId == get(itemPath(request.resource.data.type, request.resource.data.itemId)).data.ownerId
+        && request.resource.data.ownerId != request.auth.uid
+        && request.resource.data.reason in ['inappropriate', 'copyright', 'spam', 'other']
+        && request.resource.data.details is string
+        && request.resource.data.details.size() <= 300
+        && request.resource.data.status == 'open'
+        && request.resource.data.createdAt is int;
+
+      // I can check whether I already reported something (the id ends with my uid). Admins see all reports.
+      allow get: if signedIn()
+        && ((reportId.split('_').size() == 2 && reportId.split('_')[1] == request.auth.uid) || isAdmin());
+      allow list: if isAdmin();
+
+      // Admins close reports after looking at them
+      allow update: if isAdmin()
+        && onlyChanged(['status'])
+        && request.resource.data.status in ['open', 'resolved', 'dismissed'];
+
+      allow delete: if false;
+    }
+
+    // ---------- Admin log (what moderators did) ----------
+    // adminLog/{auto}  { adminId, action, targetType, targetId, reason, createdAt }
+    // Bans are logged by /api/admin (the server), and hide / unhide / reports / rooms by the admin page.
+    // Nobody can change or delete a log entry, so the log can be trusted.
+
+    match /adminLog/{logId} {
+      allow read: if isAdmin();
+
+      allow create: if isAdmin()
+        && request.resource.data.keys().hasOnly(['adminId', 'action', 'targetType', 'targetId', 'reason', 'createdAt'])
+        && request.resource.data.adminId == request.auth.uid
+        && request.resource.data.action in ['hide', 'unhide', 'resolveReport', 'dismissReport', 'closeRoom', 'deletePhoto']
+        && request.resource.data.targetType in ['templates', 'stickers', 'reports', 'rooms', 'photos']
+        && request.resource.data.targetId is string
+        && request.resource.data.targetId.size() >= 1
+        && request.resource.data.targetId.size() <= 200
+        && request.resource.data.reason is string
+        && request.resource.data.reason.size() <= 300
+        && request.resource.data.createdAt is int;
+
+      allow update, delete: if false;
+    }
+
+    // ---------- DEV: new collections for teammates' features ----------
+    // While we are still building, anyone signed in (guests too) can read and write any NEW top-level
+    // collection, so teammates are not blocked. The collections above keep their own strict rules.
+    // TODO lockdown: replace with real rules for each new collection, then delete this block.
+
+    match /{collectionName}/{docId=**} {
+      allow read, write: if signedIn()
+        && !(collectionName in ['rooms', 'users', 'templates', 'stickers', 'strips', 'reports', 'adminLog']);
+    }
+  }
+}

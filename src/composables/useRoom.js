@@ -34,9 +34,9 @@ function roomRef() {
 }
 
 // Called once by RoomLayout.vue when we enter a room
-async function enterRoom(roomCode, guestId, name, deviceType) {
+async function enterRoom(roomCode, uid, name, deviceType) {
   code.value = roomCode
-  memberRef = doc(db, 'rooms', roomCode, 'members', guestId)
+  memberRef = doc(db, 'rooms', roomCode, 'members', uid)
 
   // Clear anything left over from a previous room
   room.value = null

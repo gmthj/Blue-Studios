@@ -3,6 +3,8 @@ import { ref, computed } from 'vue'
 import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import { getGuestName } from '../guest.js'
+import { useAuth } from '../composables/useAuth.js'
+import { saveStrip } from '../studio.js'
 import { LAYOUTS, FRAME_STYLES, STICKERS, FILTERS, filterCss, saveField, saveFields } from '../stripData.js'
 import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
@@ -23,6 +25,11 @@ const trayTab = ref('mine')          // 'mine' | 'giphy' | 'dynamic'
 const selectedTrayId = ref(null)     // phones: the tray sticker tapped
 const showCall = ref(true)
 const exporting = ref(false)
+
+// Accounts can also save the strip to My Studio
+const { isAccount } = useAuth()
+const saving = ref(false)
+const saveMessage = ref('')
 
 // The strip, from the room document (the same fields as the Pick page)
 const layout = computed(() => LAYOUTS.find((l) => l.id === room.value.stripLayoutId) || LAYOUTS[0])
@@ -163,14 +170,16 @@ async function goToStage(stage) {
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image()
+    // Needed for images from Firebase Storage (e.g. stickers), or the canvas cannot be saved
+    img.crossOrigin = 'anonymous'
     img.onload = () => resolve(img)
     img.onerror = reject
     img.src = src
   })
 }
 
-async function downloadJpg() {
-  exporting.value = true
+// Draw the strip on a canvas (used by Download JPG and Save to My Studio)
+async function drawStripCanvas() {
   const W = 900                                 // width of the JPG, in pixels
   const H = Math.round(W / layout.value.aspect) // height, from the strip's shape
   const canvas = document.createElement('canvas')
@@ -229,14 +238,39 @@ async function downloadJpg() {
   ctx.font = 'bold 34px sans-serif'
   ctx.textAlign = 'center'
   ctx.fillText(frameStyle.value.caption, W / 2, H - H * 0.03)
+  return canvas
+}
 
-  // Download: make a temporary link to the JPG and click it
-  const link = document.createElement('a')
-  link.href = canvas.toDataURL('image/jpeg', 0.92)
-  link.download = 'photostrip-' + code.value + '.jpg'
-  link.click()
-
+async function downloadJpg() {
+  exporting.value = true
+  try {
+    const canvas = await drawStripCanvas()
+    // Download: make a temporary link to the JPG and click it
+    const link = document.createElement('a')
+    link.href = canvas.toDataURL('image/jpeg', 0.92)
+    link.download = 'photostrip-' + code.value + '.jpg'
+    link.click()
+  } catch (error) {
+    console.error(error)
+  }
   exporting.value = false
+}
+
+// Accounts: save a copy of the strip to My Studio (Firebase Storage + a strips document, see studio.js)
+async function saveToStudio() {
+  saving.value = true
+  saveMessage.value = ''
+  try {
+    const canvas = await drawStripCanvas()
+    // toBlob gives the JPG as a file-like Blob (smaller than a data URL)
+    const image = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92))
+    await saveStrip({ title: 'Room ' + code.value + ' · ' + new Date().toLocaleDateString(), image: image })
+    saveMessage.value = 'Saved to My Studio!'
+  } catch (error) {
+    console.error(error)
+    saveMessage.value = 'Could not save. Please try again.'
+  }
+  saving.value = false
 }
 </script>
 
@@ -379,6 +413,10 @@ async function downloadJpg() {
               {{ exporting ? 'Saving...' : 'Download JPG' }}
             </button>
           </div>
+          <button v-if="isAccount" class="btn btn-outline-primary btn-sm w-100 mt-2" :disabled="saving" @click="saveToStudio">
+            {{ saving ? 'Saving...' : 'Save to My Studio' }}
+          </button>
+          <p v-if="saveMessage" class="small text-center mt-2 mb-0">{{ saveMessage }}</p>
         </div>
       </div>
     </div>

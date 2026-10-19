@@ -143,3 +143,10 @@ vite.config.ts.timestamp-*
 .vite/
 .vercel
 .env*
+
+# Firebase emulator logs
+firebase-debug.log*
+firestore-debug.log*
+
+
+/figma
