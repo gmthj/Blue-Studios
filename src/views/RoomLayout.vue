@@ -8,7 +8,7 @@ import { isRoomFull, MAX_PEOPLE } from '../room.js'
 import { useRoom } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
 
-// The parent page for everything inside a room (/room/:code and /room/:code/strip).
+// The parent page for everything inside a room (/room/:code, /room/:code/strip, /room/:code/decorate).
 // It joins the room and starts the video call ONCE. The child pages (RoomView, StripView)
 // are shown in <router-view>, so moving between them does not drop the call.
 // New room features can be added as more child pages in router.js.
@@ -62,8 +62,17 @@ onBeforeUnmount(() => {
   exitRoom(false)
 })
 
-// Everyone in the room follows the room's "stage", so the whole group moves pages together:
-//   'camera' = taking photos (RoomView), 'strip' = making the photostrip (StripView)
+// Everyone in the room follows the room's "stage", so the whole group moves pages together.
+// Each stage is the end of its page's URL (see router.js). To add a new page, add one line here.
+const STAGE_PATHS = {
+  camera: '',            // /room/4821          taking photos (RoomView)
+  strip: '/strip',       // /room/4821/strip    choosing photos for the strip (StripView)
+  decorate: '/decorate', // /room/4821/decorate filters and stickers (DecorateView)
+  // PLACEHOLDER: add these when the pages are on main
+  // video: '/video',    // Saw Jun Han
+  // music: '/music',    // Shannon (music-mixer branch)
+}
+
 function followStage() {
   if (status.value !== 'ready' || !room.value) return
 
@@ -73,12 +82,12 @@ function followStage() {
   }
 
   const stage = room.value.stage || 'camera'
-  const onStripPage = route.path.endsWith('/strip')
-  if (stage === 'strip' && !onStripPage) {
-    router.push('/room/' + code + '/strip')
-  }
-  if (stage === 'camera' && onStripPage) {
-    router.push('/room/' + code)
+  const ending = STAGE_PATHS[stage]
+  if (ending === undefined) return // no page for this stage yet: stay where we are
+
+  const target = '/room/' + code + ending
+  if (route.path !== target) {
+    router.push(target)
   }
 }
 

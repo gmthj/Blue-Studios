@@ -1,6 +1,7 @@
 {
   "rewrites": [
     { "source": "/room/:code", "destination": "/index.html" },
-    { "source": "/room/:code/strip", "destination": "/index.html" }
+    { "source": "/room/:code/strip", "destination": "/index.html" },
+    { "source": "/room/:code/decorate", "destination": "/index.html" }
   ]
 }
