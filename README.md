@@ -1,78 +1,243 @@
 # Blue Studios Photobooth (IS216 G3 Group 2)
 
-An online photobooth where friends join one room from their own devices and take photos together.
+An online photobooth: friends join one room from their own devices (4-digit code or QR), video call, take photos together with a synchronised countdown, and make a photostrip together. Accounts can save strips, templates and stickers to **My Studio** and share templates and stickers in the **Marketplace**. Moderators have an **Admin** page.
 
-Current status: **Photobooth Rooms MVP** (create/join room, QR code, video call with mute/unmute, synchronised countdown, shared gallery, collaborative photostrip, close room).
+**Live site:** https://blue-studios-mu.vercel.app
+
+---
+
+## Setup
+
+There are two ways to set it up:
+- **A. Join the team's project.** Most people want this: it uses the existing Firebase, Agora and Vercel projects (Gabriel has the keys). Do **steps 1 to 5**.
+- **B. Your own copy from scratch**, for example a marker running it with their own accounts. First do **"Setting up your own Firebase, Agora and Vercel"** further down, then steps 1 to 5.
+
+### 0. Install the tools
+
+| Tool | Needed for | Install | Check |
+| --- | --- | --- | --- |
+| [Node.js](https://nodejs.org) LTS (v24 is used) | everything | the installer from nodejs.org | `node -v` |
+| [Git](https://git-scm.com) | getting the code | the installer from git-scm.com | `git --version` |
+| Vercel CLI | running the app **with** its `/api` functions (video call, admin) | `npm install -g vercel` | `vercel --version` |
+| Firebase CLI | deploying the security rules, running the rules tests | `npm install -g firebase-tools` | `firebase --version` |
+| *Optional:* Java 21 or newer (e.g. [Adoptium Temurin](https://adoptium.net)) | **only** for running the rules tests on your own laptop (the Firestore emulator runs on Java). **Skip it** unless you change the rules: GitHub runs the tests for you (step 4) | the installer from adoptium.net | `java -version` |
+
+The project uses **npm**. Don't use pnpm or yarn, so there's only one lock file (`package-lock.json`).
+
+### 1. Get the code and install packages
+
+```bash
+git clone https://github.com/gmthj/Blue-Studios.git
+cd Blue-Studios
+npm install
+```
+
+**Teammates:** start your feature branch from `main`, for example `git switch -c my-feature origin/main`. Branches made before the sign-in system (19 Oct 2026) get "Missing or insufficient permissions" from Firebase. See [`docs/team/`](docs/team/README.md) for your guide.
+
+### 2. Environment variables (the keys)
+
+1. Copy `.env.example` to a new file called `.env` in the project folder.
+2. Fill in the values. **Team:** ask Gabriel for them. **Own copy:** see where each one comes from below.
+
+| Variable | Used by | Secret? | Where it comes from |
+| --- | --- | --- | --- |
+| `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID` | the website (`src/firebase.js`) | no, every visitor's browser gets them; the security rules protect the data | Firebase console > gear icon > **Project settings** > **Your apps** > the web app's config |
+| `FIREBASE_SERVICE_ACCOUNT` | the server (`api/`), and the scripts `set-admin` / `set-cors` | **yes** | Firebase console > Project settings > **Service accounts** > **Generate new private key**, then the downloaded `.json` file as **one line of base64** (commands below) |
+| `AGORA_APP_ID` | the server (`api/token.js`) | no | Agora console > **Projects** |
+| `AGORA_APP_CERTIFICATE` | the server (`api/token.js`) | **yes** | Agora console > Projects > your project > **Primary Certificate** |
+
+Turning the service account `.json` file into one line of base64:
+
+```powershell
+# Windows PowerShell
+[Convert]::ToBase64String([IO.File]::ReadAllBytes("C:\path\to\key.json")) | Set-Clipboard
+```
+```bash
+# macOS
+base64 -i path/to/key.json | pbcopy
+# Linux
+base64 -w0 path/to/key.json
+```
+
+Paste the result after `FIREBASE_SERVICE_ACCOUNT=`. Then **delete the downloaded `.json` file**: anyone with it has full access to the Firebase project.
+
+- **`.env` must never be committed.** It's in `.gitignore`. Never put a secret in a `VITE_` variable: Vite copies those into the website, where anyone can read them.
+- Some teammates' features add their own keys (for example `VITE_JAMENDO_CLIENT_ID` for the music mixer). They're listed in `.env.example` on the branch that uses them.
+
+### 3. Run it on your laptop
+
+**Full app, including the video call and admin (recommended).** The Vercel CLI runs the website **and** the `api/` functions:
+
+```bash
+vercel login     # "Continue with GitHub", approve in the browser
+vercel link      # Y, pick the team/account, link to the existing "blue-studios" project
+vercel dev       # reads .env, opens http://localhost:3000
+```
+
+**Website only (faster to start):** `npm run dev`, then open http://localhost:5173. Everything works except what needs `api/`. The video call shows "Live video unavailable", and the admin page can't load accounts or ban anyone.
+
+**Testing with two people on one laptop:** open a second window in **Incognito** (Chrome: Ctrl+Shift+N) at the same address. Incognito has its own login, so it's a different guest. Two normal tabs share one login.
+
+**Phones** need https, so they can't use your laptop's `localhost` (the QR code points to it). Test phones on a Vercel deployment (step 5).
+
+### 4. Firebase CLI: rules, indexes and tests
+
+Only needed if you change `firestore.rules`, `storage.rules` or `firestore.indexes.json`, or want to run the tests.
+
+```bash
+firebase login                                # once, with the Google account that has access to the project
+firebase deploy --only firestore,storage      # deploys the Firestore rules + indexes and the Storage rules
+npm run test:rules                            # OPTIONAL: runs the rules + admin API tests on your laptop (needs Java)
+```
+
+- **Running the tests yourself is optional.** GitHub runs `npm run test:rules` automatically (`.github/workflows/rules-tests.yml`) on every pull request and on every push that changes the rules, `api/` or `tests/`. You'll see a ✓ or ✗ next to the commit or pull request, and the details under the repo's **Actions** tab. Run them locally only if you want the result before pushing.
+
+- The project is set in `.firebaserc` (`blue-studios-7cf16`). For your own copy, run `firebase use --add` and pick your project.
+- **Don't edit the rules in the Firebase console.** The next deploy overwrites them. Edit the files, test, then deploy.
+- The tests never touch the real data: `npm run test:rules` starts local copies of Auth, Firestore and Storage.
+- The first time you deploy `storage.rules`, the CLI may ask to let Storage read Firestore (the rules check whether a marketplace item is public). Answer **Y**.
+
+### 5. Deploy to Vercel, and test with your phone
+
+**The team project is already connected.** Every push to GitHub deploys automatically:
+- `main` goes to the live site.
+- Other branches get their own **preview** address (shown on the pull request and in Vercel > Deployments).
+
+If you change an environment variable on Vercel, it only applies to **new** deployments: go to Deployments, click **...** on the latest one, then **Redeploy**.
+
+**Testing a deployment with a phone:**
+1. On your laptop, open the deployment address, type your name, **Create room**, and allow the camera.
+2. On your phone, scan the QR code with the camera app, type a name, **Join**, and allow the camera.
+3. Check:
+   - both of you appear in the call
+   - **Switch camera** shows on the phone
+   - pressing the round **shutter** button counts 3-2-1 on both devices, and both photos land in the gallery under the same shot
+4. Check the token API is protected: open `https://YOUR-ADDRESS/api/token?code=1234` in a browser. It should say `{"error":"Please sign in again"}`.
+5. If the video says "Live video unavailable", look in Vercel > **Logs**. A missing `AGORA_...` or `FIREBASE_SERVICE_ACCOUNT` variable is logged there. Add it, then Redeploy.
+
+**Google sign-in on a new address:** add the address under Firebase console > **Authentication** > **Settings** > **Authorized domains**. Otherwise the Google popup fails with `auth/unauthorized-domain`.
+
+### 6. Make yourself an admin (optional)
+
+With `FIREBASE_SERVICE_ACCOUNT` in `.env`, log in to the site once with your account, then:
+
+```bash
+npm run set-admin -- you@example.com            # give the admin mark
+npm run set-admin -- you@example.com --remove   # take it away
+```
+
+Log out and in again: an **Admin** button appears in the navbar. More in [Admin (moderators)](#admin-moderators).
+
+### Setting up your own Firebase, Agora and Vercel (own copy only)
+
+Already done for the team project. Follow these only to run your own copy.
+
+**Firebase** (https://console.firebase.google.com):
+1. **Create a project** (Google Analytics off).
+2. On the project home page, click the **Web** icon `</>`, give it a nickname, leave Firebase Hosting unticked, then **Register app**. The `firebaseConfig` values go into `.env` as the `VITE_FIREBASE_...` lines.
+3. Bottom left: **Upgrade** to the **Blaze** plan. Firebase Storage needs it. Normal testing stays inside the free amounts. Set a **budget alert** (Google Cloud console > Billing > Budgets & alerts), for example $1.
+4. **Build > Firestore Database > Create database**: pick a location (we use `asia-southeast1`, Singapore) and **production mode**. Our rules are deployed in step 4 of Setup.
+5. **Build > Storage > Get started**: pick a US location such as `us-east1` (it has a no-cost tier) and **production mode**.
+6. **Build > Authentication > Get started > Sign-in method**, then turn on all three:
+   - **Anonymous** (guests)
+   - **Email/Password** (accounts)
+   - **Google**: set a support email
+7. **Authentication > Settings > Authorized domains**: add your Vercel address(es), for example `your-project.vercel.app`.
+8. **Project settings > Service accounts > Generate new private key**: turn it into `FIREBASE_SERVICE_ACCOUNT` (Setup step 2).
+9. In the project folder:
+   - `firebase use --add` (pick your project)
+   - `firebase deploy --only firestore,storage`
+   - `npm run set-cors`. This lets the website draw Storage images on a canvas and download template files (it uses `storage.cors.json`).
+
+**Agora** (https://console.agora.io):
+1. **Projects > Create**. Choose authentication with **App ID + Token** (secured mode), so it gets an **App Certificate**.
+2. Copy the **App ID** into `AGORA_APP_ID`.
+3. Open the project's settings (pencil/gear icon). Under **Security**, find **Primary Certificate** and copy it into `AGORA_APP_CERTIFICATE`.
+4. Never put the certificate in a file under `src/`, and never commit `.env`.
+
+**Vercel** (https://vercel.com, Hobby plan, "Continue with GitHub"):
+1. **Add New... > Project**, then import the GitHub repo. If it isn't listed, click **Adjust GitHub App Permissions**.
+2. The Framework Preset is **Vite** (detected automatically), with build command `npm run build` and output folder `dist`.
+3. **Environment Variables:** add every variable from your `.env`. Shortcut: paste the whole `.env` content into the first **Key** box and Vercel splits it up.
+4. **Deploy.** Then add the Vercel address to Firebase's Authorized domains (Firebase step 7).
+
+---
 
 ## Tech stack
 
-- Vue 3 (`<script setup>` with `ref()` / `computed()`, and composables for shared logic) + Vue Router, built with Vite
-- `.vue` files are ordered: `<script setup>`, then `<template>`, then `<style scoped>`
-- Bootstrap 5 for layout and responsive design
-- Firebase Cloud Firestore for real-time data (`onSnapshot` listeners)
-- Firebase Authentication: everyone gets a user id (uid), guests are signed in anonymously
-- Vercel for hosting (https is needed for phone cameras) + a Vercel serverless function for Agora tokens
-- MediaDevices API (`getUserMedia`) for the camera, Canvas API to capture photos
-- goqr.me API to generate the join QR code
-- Agora Web SDK (`agora-rtc-sdk-ng`) for the video call (video + audio), `agora-token` to create tokens on the server
-- axios to call our token API
-- Firebase Admin SDK (`firebase-admin`) on the server, to check who is calling our API
-  - `package.json` has `"overrides": { "jwks-rsa": { "jose": "^5.10.0" } }`. Do not remove it: `firebase-admin` uses `jwks-rsa`, which loads `jose` with `require()`, but `jose` 6 only works with `import`, and Vercel's server cannot `require()` it (`ERR_REQUIRE_ESM`, the API crashes). `jose` 5 works with both.
-- Firestore security rules (`firestore.rules`), tested with the Firebase emulator
+- **Vue 3** (`<script setup>` with `ref()` / `computed()`, composables for shared logic) + **Vue Router**, built with **Vite**. `.vue` files are ordered `<script setup>`, `<template>`, `<style scoped>`.
+- **Bootstrap 5** for layout and responsive design.
+- **Firebase Authentication:** everyone gets a user id (uid). Guests are signed in anonymously, and accounts use email/password or Google.
+- **Cloud Firestore** for real-time data (`onSnapshot` listeners), protected by **security rules** (`firestore.rules`).
+- **Firebase Storage** for saved strips, template files and stickers, protected by `storage.rules`.
+- **Vercel** hosting (https is needed for phone cameras) plus **serverless functions** in `api/`: Agora tokens and admin actions.
+- **Firebase Admin SDK** (`firebase-admin`) on the server, to check who is calling our API and to ban accounts.
+  - `package.json` has `"overrides": { "jwks-rsa": { "jose": "^5.10.0" } }`. **Don't remove it.** `firebase-admin` uses `jwks-rsa`, which loads `jose` with `require()`, but `jose` 6 only works with `import`, and Vercel's server can't `require()` it (the API crashes with `ERR_REQUIRE_ESM`). `jose` 5 works with both. See "Use of AI" below.
+- **Agora Web SDK** (`agora-rtc-sdk-ng`) for the video call, and `agora-token` to make tokens on the server.
+- **MediaDevices API** (`getUserMedia`) for the camera, and the **Canvas API** to capture photos and export strips.
+- **goqr.me** API for the join QR code. **axios** to call our API.
+- **Tests:** `@firebase/rules-unit-testing` with the Firebase emulators and `node --test` (`npm run test:rules`).
 
 ## Project structure
 
 ```
-index.html               page shell, loads src/main.js
-src/main.js              creates the Vue app, adds Bootstrap and the router
-src/App.vue              navbar + <router-view>
-src/router.js            URL -> page mapping ( /, and /room/:code with child pages '' and 'strip' )
-src/firebase.js          Firebase config (read from .env), exports db and auth
-src/guest.js             guest name saved in localStorage, device type (Phone/Tablet/Computer)
-src/room.js              6-person room limit, "is this member still here?" check
+index.html                 page shell, loads src/main.js
+src/main.js                signs in (startAuth), then creates the Vue app with Bootstrap and the router
+src/App.vue                navbar (Marketplace, My Studio, Admin, log in/out) + <router-view>
+src/router.js              URL -> page (see the routes list in the file); pages for accounts / admins only
+src/firebase.js            Firebase config (read from .env), exports db, auth and storage
+src/guest.js               guest name saved in localStorage, device type (Phone/Tablet/Computer)
+src/room.js                6-person room limit, "is this member still here?" check
+src/stripData.js           photostrip layouts, frame styles, sticker tray, filters (Pick + Decorate pages)
+src/studio.js              My Studio: save / list / publish / delete templates, stickers, strips; CATEGORIES
+src/marketplace.js         marketplace: browse / save / unsave / report
+src/admin.js               moderator actions for the admin page (calls /api/admin for accounts)
 
-src/composables/useAuth.js        SHARED login state: who is signed in (guests are signed in anonymously), sign up, log in, Google, log out
-src/composables/useRoom.js        SHARED room state: room document, members (+ heartbeat), photos
-src/composables/useVideoCall.js   SHARED video call (Agora): camera, mic, others' video/audio, switch camera
+src/composables/useAuth.js       SHARED login state: user, isAccount, isAdmin, sign up, log in, Google, log out
+src/composables/useRoom.js       SHARED room state: room document, members (+ heartbeat), photos
+src/composables/useVideoCall.js  SHARED video call (Agora): camera, mic, others' video/audio, switch camera
+src/composables/useAdminTab.js   shared loading / busy / message logic for the admin tabs
 
-src/components/VideoCallCard.vue  the call card: everyone's tiles + Mute/Unmute, Leave, Close room
-src/components/VideoTile.vue      one person: live video, name, device type, mute icon (all tiles the same size)
-src/components/RoomGallery.vue    the shared gallery (grouped by shot) + Make photostrip button
-src/components/StreamVideo.vue    a <video> showing a camera stream (my camera)
-src/components/StorageImage.vue   an <img> of a file in Firebase Storage (only loads if the storage rules allow it)
-src/components/MarketplaceCard.vue  one template/sticker in a marketplace grid (links to its page)
-src/components/ItemDetailsForm.vue  rename a template/sticker and pick its categories (My Studio)
-
-src/views/HomeView.vue    create room / join room by code
-src/views/LoginView.vue   log in / sign up (email + password, or Google), forgot password
-src/views/StudioView.vue  My Studio (/studio, accounts only): my photostrips, templates, stickers, public/private, saved
-src/studio.js             save / list / publish / delete My Studio items (templates, stickers, strips), CATEGORIES
-src/views/MarketplaceView.vue      marketplace (/marketplace, anyone): browse public templates/stickers by category
+src/views/HomeView.vue           landing page: create room / join room by code
+src/views/LoginView.vue          log in / sign up (email + password, or Google), forgot password
+src/views/StudioView.vue         My Studio (/studio, accounts only): strips, templates, stickers, saved items
+src/views/MarketplaceView.vue    marketplace (/marketplace, anyone): browse by type, category, newest / most saved
 src/views/MarketplaceItemView.vue  one item (/marketplace/templates/{id}): save to My Studio, report
-src/marketplace.js        browse / save / unsave / report marketplace items
-src/views/AdminView.vue   admin page (/admin, admins only): reports, hidden items, accounts (ban), rooms, log
-src/admin.js              moderator actions used by the admin page (hide, unhide, reports, rooms, log, calls /api/admin)
-src/views/TestUploadView.vue  TEMPORARY (/test-upload): makes test templates/stickers until the editors are merged. Remove before submission
-src/views/RoomLayout.vue  parent page for a room: joins the room + call once, shows a child page
-src/views/RoomView.vue    (child) camera, shutter, countdown, join card, call card, gallery
-src/views/StripView.vue   (child) call card, collaborative photostrip, export as JPG
+src/views/AdminView.vue          admin page (/admin, admins only); each tab is in src/components/admin/
+src/views/TestUploadView.vue     TEMPORARY (/test-upload): makes test templates/stickers. Remove before submission
+src/views/RoomLayout.vue         parent page of a room: joins the room + call once, moves everyone with the room's stage
+src/views/RoomView.vue           (child, /room/1234) camera, shutter, countdown, join card, call card, gallery
+src/views/StripView.vue          (child, /room/1234/strip) "Pick": choose the cut and frame, drag photos into slots
+src/views/DecorateView.vue       (child, /room/1234/decorate) filters, stickers, Download JPG, Save to My Studio
 
-api/token.js             Vercel serverless function: GET /api/token?code=1234 -> Agora token (members only)
-api/admin.js             Vercel serverless function: POST /api/admin (admins only): look up, ban, unban accounts
-api/_lib/firebaseAdmin.js  server-only Firebase Admin setup + getCaller(req) (who is calling). "_" = not a web address
-scripts/set-admin.mjs    run on your laptop: give or remove the admin mark (npm run set-admin -- email)
-scripts/set-cors.mjs     run on your laptop: apply storage.cors.json to the Storage bucket (npm run set-cors)
-storage.cors.json        lets pages read Storage files with fetch / draw them on a canvas (GET/HEAD only)
-docs/phase-7-lockdown-prompt.md  prompt to give Claude for the security lockdown before submission
-firestore.rules          Firestore security rules: who can read/write what (deploy with the Firebase CLI)
-storage.rules            Firebase Storage rules: files of templates, stickers and strips
-firestore.indexes.json   Firestore indexes the marketplace queries need (deployed with the rules)
-firebase.json, .firebaserc  Firebase CLI settings (which project, which rules files)
-tests/firestore.rules.test.js  tests for firestore.rules (npm run test:rules)
-tests/storage.rules.test.js    tests for storage.rules (npm run test:rules)
-tests/admin.api.test.js        tests for api/admin.js against the local Auth + Firestore emulators (npm run test:rules)
-vercel.json              sends page URLs (/room/..., /room/.../strip) to index.html (add new page routes here too)
-.env.example             list of environment variables needed (copy to .env)
+src/components/VideoCallCard.vue    the call card: everyone's tiles + Mute/Unmute, Leave, Close room
+src/components/VideoTile.vue        one person: live video, name, device type, mute icon
+src/components/StreamVideo.vue      a <video> showing my camera
+src/components/RoomGallery.vue      the shared gallery (grouped by shot) + Make photostrip button
+src/components/StageBar.vue         the step bar on the strip pages (Lobby ... Export) and who is in the room
+src/components/PhotoStrip.vue       the shared strip: slots, photos, filters, stickers (drag and drop)
+src/components/StorageImage.vue     an <img> of a Firebase Storage file (only loads if the rules allow it)
+src/components/MarketplaceCard.vue  one template/sticker in a grid (links to its page)
+src/components/ItemDetailsForm.vue  rename a template/sticker and pick its categories
+src/components/admin/*.vue          admin tabs: Overview, Reports, Items, Accounts, Rooms, Log
+
+api/token.js               GET /api/token?code=1234 -> Agora token (room members only)
+api/admin.js               POST /api/admin (admins only): list, look up, ban, unban accounts
+api/_lib/firebaseAdmin.js  server-only Firebase Admin setup + getCaller(req). "_" = not a web address
+
+firestore.rules            Firestore security rules (who can read/write what)
+storage.rules              Firebase Storage rules (template files, stickers, strips)
+firestore.indexes.json     indexes the marketplace queries need (deployed with the rules)
+storage.cors.json          lets the website fetch Storage files / draw them on a canvas (applied with npm run set-cors)
+firebase.json, .firebaserc Firebase CLI settings (project, rules files, emulator ports)
+tests/                     rules tests (Firestore, Storage) + admin API tests, run with npm run test:rules
+.github/workflows/         GitHub runs the tests automatically on pull requests (rules-tests.yml)
+scripts/set-admin.mjs      give / remove the admin mark (npm run set-admin -- email)
+scripts/set-cors.mjs       apply storage.cors.json to the Storage bucket (npm run set-cors)
+docs/team/                 a guide for each teammate on using accounts, My Studio, marketplace and rooms
+docs/phase-7-lockdown-prompt.md  instructions for the security lockdown before submission
+vercel.json                sends page URLs (/login, /room/...) to index.html: add new page routes here too
+.env.example               the environment variables needed (copy to .env)
 ```
 
 ## How the room works
@@ -97,14 +262,17 @@ rooms/{code}/photos/{auto}   { ownerId, name, shotNumber, image, createdAt }
 3. **Shared state (composables):** `useRoom.js` and `useVideoCall.js` create their `ref()`s once, outside the function, so every page and component that calls them shares the same room and the same call.
 4. **Video call:** each device asks our server for a token (`GET /api/token?code={code}`, see "Who gets a token" below), joins that Agora channel and sends ("publishes") its camera. When Agora says someone published video or audio (`user-published` event), we subscribe; `VideoTile.vue` plays their video, and audio just plays.
    - **Everyone starts muted:** the microphone is not opened when joining. "Unmute" opens the mic and publishes it; "Mute" unpublishes and closes it (so the mic is fully off).
-   - **Stays connected between pages:** the call is started by `RoomLayout.vue`, the parent of the camera and strip pages, so switching pages does not drop the call.
+   - **Stays connected between pages:** the call is started by `RoomLayout.vue`, the parent of all the room pages, so switching pages does not drop the call.
    - **Adding it to another page:** make the page a child route of `/room/:code` in `router.js`, and put `<VideoCallCard />` on it.
 5. **Synchronised countdown (anyone can press the shutter):** pressing the round shutter button adds 1 to `shotNumber` using a Firestore **transaction**: it only adds 1 if `shotNumber` is still the number this device saw. If two people press at the same moment, the second transaction sees the number has already changed and does nothing, so only one countdown starts. Every device watches `shotNumber` and starts its own 3-2-1 when it goes up.
 6. **Capture:** the current video frame is drawn on a canvas, turned into a small JPEG (data URL), and saved to `photos` with the shot number. A white flash fades in shortly before the photo and fades out shortly after it. Devices hear about the shutter at slightly different times, so this makes sure every screen is still lit up when every device takes its photo. The timing, fade length and brightness are the `FLASH_*` settings at the top of `RoomView.vue`.
 7. **Shared gallery:** every device listens to `photos`, so new photos appear on everyone's screen. Photos are grouped by shot number.
 8. **Switch camera:** after permission is given, we list all cameras with `enumerateDevices()`. If there is more than one, a button cycles through them. Switching swaps the new camera into the track already being sent (`replaceTrack`), so others never see us leave and rejoin. When a phone rotates, the browser rotates the camera picture by itself; tiles use `fit: 'contain'` so portrait and landscape both show fully.
-9. **Pages move together (`stage`):** "Make photostrip" sets the room's `stage` to `'strip'`; "Back to camera" sets it to `'camera'`. `RoomLayout.vue` watches `stage` and sends everyone to the matching page.
-10. **Collaborative photostrip:** the 4 chosen photo ids are stored in the room document (`stripSlots`), so everyone sees the same strip. Each slot is saved on its own (`updateDoc(room, { 'stripSlots.2': photoId })`), so two people changing different slots at once do not overwrite each other. Which slot you are filling is personal. "Download JPG" draws the strip on a canvas: each photo is cropped to fill its 4:3 slot (like CSS `object-fit: cover`), then downloaded with a temporary `<a download>` link.
+9. **Pages move together (`stage`):** buttons such as "Make photostrip", "Next" and "Back to camera" set the room's `stage` (`'camera'`, `'strip'`, `'decorate'`, ...). `RoomLayout.vue` watches it and sends everyone to the matching page (`STAGE_PATHS`). To add a room page, add a child route in `router.js`, a line in `STAGE_PATHS`, and the URL in `vercel.json`.
+10. **Collaborative photostrip:** everything about the strip is saved in the room document, so everyone sees the same strip:
+    - **Pick** (`StripView.vue`): the cut (`stripLayoutId`), the frame style (`stripStyleId`), and which photo is in which slot (`stripSlots`). Drag a photo into a slot, or on a phone tap a photo and then a slot. Each slot is saved on its own (`updateDoc(room, { 'stripSlots.2': photoId })`), so two people changing different slots at once don't overwrite each other.
+    - **Decorate** (`DecorateView.vue`): a filter and adjustments for each photo (`stripEdits`), and stickers that can be dragged, resized, rotated and layered (`stripStickers`).
+    - **Download JPG** draws the strip on a canvas (photos cropped like CSS `object-fit: cover`, with their filters and the stickers). Accounts can also **Save to My Studio**.
 11. **Close room:** the host (or anyone, if the host has left) can close the room. This sets `closed: true`; every device sees it, ends the video call and goes back to the home page. Closed rooms cannot be joined. This stops Agora minutes being used by forgotten open tabs.
 12. **Layout (Bootstrap grid):** the camera page is a Bootstrap `row` with `col-*` classes, exactly one screen tall (`100dvh`), so the join card, camera and call are always visible and only the gallery scrolls. Room pages use `container-fluid` (full width) so big screens get a bigger camera and bigger call tiles.
     - **xs** (phone upright): one column (`flex-column`): join card, call (sideways row), gallery (sideways row), camera fills the rest (`flex-grow-1`).
@@ -112,6 +280,7 @@ rooms/{code}/photos/{auto}   { ownerId, name, shotNumber, image, createdAt }
     - **xl** (1200px+): `col-xl-3 | col-xl-6 | col-xl-3`: join card + call on the left, camera in the middle, gallery on the right. The gallery is shown twice in the code, with `d-xl-none` (in the left column) and `d-none d-xl-block` (own column), so only one is visible at a time.
     - **Call tiles are all the same size:** fixed width (or two equal `minmax(0, 1fr)` columns), badges sit on top of the video, and the name is one line cut off with `text-truncate`.
     - **Shutter button:** sits on the camera view: bottom middle, or on the right edge when a phone is held sideways. Bootstrap breakpoints only check width, so that one case uses `(orientation: landscape) and (max-height: 500px)`.
+
 ### Why a token server?
 
 Agora projects have an **App Certificate** (a secret). To join a channel, the browser needs a **token** made with that certificate. If the certificate were in the frontend code, anyone could read it in the browser. So `api/token.js` runs on Vercel's server, reads the certificate from an environment variable, and only sends the browser a token for one channel + one user that expires after 3 hours.
@@ -132,11 +301,11 @@ Agora projects have an **App Certificate** (a secret). To join a channel, the br
 - **Saved** (`users/{uid}/saved/{itemId}`): only I can see my saved list. I can only save items that are in the marketplace, and `saveCount` must go up by exactly 1 in the same batch (and down by 1 when I unsave). So the number cannot be faked, and nobody can save the same thing twice.
 - **Reports** (`reports/{itemId_uid}`): accounts (not guests, not banned) can report someone else's marketplace item, once (the id includes their uid). Only the reporter and admins can read a report, and only admins can list or close them.
 - **Banned accounts** (`users/{uid}.banned == true`, set by an admin) cannot create or change anything.
-- **Admins** have the custom claim `admin: true` in their login token (only `scripts/set-admin.mjs` can set it). They can see private and hidden items, hide/unhide items, close reports, list profiles, close any room and delete room photos. **Admin log** (`adminLog`): only admins can read it or add to it, as themselves, and nobody can change or delete an entry.
+- **Admins** have the custom claim `admin: true` in their login token (only `scripts/set-admin.mjs` can set it). They can see private and hidden items, hide/unhide items, close reports, list profiles and rooms, close any room and delete room photos. **Admin log** (`adminLog`): only admins can read it or add to it, as themselves, and nobody can change or delete an entry.
 - **Storage** (`storage.rules`): files are in a folder named after the owner's uid (`templates/{uid}/...`, `stickers/{uid}/...`, `strips/{uid}/...`). Only the owner (an account) can upload there, only images (or the template's `project.json`) under 2-5 MB. Public files can be downloaded while their Firestore document is public and not hidden.
 - **DEV mode (while we are still building, look for `DEV` in the rules files):** so teammates are not blocked, members of an open room can change any room field except its core (`hostId`, `hostName`, `createdAt`, `shotNumber`, `shotStartedBy`, `closed`). New lists inside a room are open to its members. Any **new** top-level collection, and any **new** Storage folder (files under 50 MB, no HTML/SVG/JS/XML), are open to anyone signed in. Users, templates, stickers, strips, reports, members and photos stay strict. **Before submission**, replace the DEV blocks with real rules for each feature, plus tests.
 
-Run the tests with `npm run test:rules` (needs Java). It starts local copies of Auth, Firestore and Storage, so it never touches the real data. Deploy the rules and indexes with `firebase deploy --only firestore,storage`.
+GitHub runs the tests on every pull request (Actions tab). To run them yourself (optional, needs Java): `npm run test:rules`. It starts local copies of Auth, Firestore and Storage, so it never touches the real data. Deploy the rules and indexes with `firebase deploy --only firestore,storage`.
 
 ## My Studio: saving templates, stickers and strips (for teammates)
 
@@ -202,11 +371,12 @@ npm run set-admin -- someone@example.com --remove   # take it away
 They then log out and in again (or refresh), and an **Admin** button appears in the navbar.
 
 **The admin page** (`/admin`):
-- **Reports:** reported items, grouped by item, with each reason. "Hide item" takes it out of the marketplace and closes its reports as resolved. "Dismiss" closes the reports. "Owner's account..." opens the account tab.
-- **Hidden items:** unhide.
-- **Accounts:** find an account by email or user id, then ban or unban it (a reason is required).
-- **Rooms:** open a room by code to see its photos, delete a photo, or close the room.
-- **Log:** everything moderators did.
+- **Overview:** how many accounts (and banned), rooms (and open), templates, stickers, saved strips and open reports there are, plus the latest moderator actions. Each card opens its tab.
+- **Reports:** reported items, grouped by item, with each reason; filter open / resolved / dismissed / all. "Hide item" takes it out of the marketplace and closes its reports as resolved. "Dismiss" closes the reports. "Owner's account..." opens the account tab.
+- **Items:** every template and sticker (public, private and hidden), with search and filters; hide or unhide.
+- **Accounts:** every login, accounts and guests (from Firebase Auth through `/api/admin`), with search and filters (accounts, guests, banned, admins). Pick one to see what they made and reported, then ban or unban it (a reason is required).
+- **Rooms:** the newest 200 rooms, open and closed. Open one to see who is in it, its photos, delete a photo, or close the room. Older rooms can be opened by code.
+- **Log:** everything moderators did, filterable by action.
 
 **What a ban does** (`api/admin.js`, which uses the Admin SDK because only the server can switch off a login):
 1. Turns off the account's login (`disabled`) and logs it out on every device (`revokeRefreshTokens`).
@@ -216,104 +386,12 @@ They then log out and in again (or refresh), and an **Admin** button appears in 
 
 Admins can't ban themselves, other admins (remove the mark first), or guests (they have no account). Unbanning turns the login back on; their items stay hidden until an admin unhides them.
 
-## Environment variables
-
-All keys live in environment variables, not in the code.
-
-| Variable | Used by | Where to find it |
-|---|---|---|
-| `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID` | Frontend (`src/firebase.js`) | Firebase console > gear icon > Project settings > Your apps > Config |
-| `AGORA_APP_ID` | Server (`api/token.js`) | Agora console > Projects |
-| `AGORA_APP_CERTIFICATE` | Server (`api/token.js`), **secret** | Agora console > Projects > your project > Primary Certificate |
-| `FIREBASE_SERVICE_ACCOUNT` | Server (`api/_lib/firebaseAdmin.js`), **secret** | Firebase console > Project settings > Service accounts > Generate new private key, then the .json file as one line of base64 (ask Gabriel) |
-
-- Locally they go in a file called `.env` (copy `.env.example` and fill it in). `.env` is in `.gitignore` and must never be committed.
-- On Vercel they go in Project > Settings > Environment Variables.
-- Only variables starting with `VITE_` are put into the frontend by Vite. The Agora ones have no `VITE_` prefix on purpose, so they stay on the server.
-
----
-
-## Setup guide
-
-You need [Node.js](https://nodejs.org) (LTS) installed. Check with `node -v` in a terminal.
-
-### Step 1: Firebase project and Firestore (already done for our group)
-
-1. Go to https://console.firebase.google.com, **Create a project** named `blue-studios`, Analytics off.
-2. Click the **Web** icon `</>`, nickname `blue-studios-web`, leave "Firebase Hosting" unticked, **Register app**.
-3. Copy the values from the `firebaseConfig` code block into `.env` (the `VITE_FIREBASE_...` lines).
-4. Left menu: **Build > Firestore Database > Create database**, location `asia-southeast1 (Singapore)`, **Start in test mode**.
-
-The database is protected by `firestore.rules` (see **Security rules** above), deployed with the Firebase CLI. Do not edit the rules in the console's Rules tab: the next deploy would overwrite them.
-
-Also enable **Build > Authentication > Sign-in method > Anonymous** (guests are signed in anonymously).
-
-### Step 2: Agora App ID and App Certificate
-
-1. Go to https://console.agora.io and log in.
-2. Open **Projects** in the left menu (may be called **Project Management** or **All Projects**).
-3. Find the `blue-studios` project. The **App ID** is in the list, with a copy icon next to it. Paste it into `.env` as `AGORA_APP_ID=...`.
-4. Click the project's **edit/configure** icon (pencil or gear) to open its settings.
-5. Under **Security**, find **Primary Certificate** (App Certificate). Click the eye icon to show it, or the copy icon to copy it. Paste it into `.env` as `AGORA_APP_CERTIFICATE=...`.
-6. Never put the certificate in any file under `src/`, and never commit `.env`.
-
-### Step 3: Run it on your laptop
-
-Two ways:
-
-**A. Everything, including live previews (recommended)** - uses the Vercel CLI, which runs both Vite and the `/api` function:
-
-```
-npm install
-npm install -g vercel
-vercel login
-vercel link
-vercel dev
-```
-
-- `vercel login`: choose "Continue with GitHub" and approve in the browser.
-- `vercel link`: answer **Y** to set up, pick your account, and link to the existing `blue-studios` Vercel project (create it first in Step 4, or let it create a new one).
-- `vercel dev` reads your `.env` file and opens the app at **http://localhost:3000**.
-
-**B. Quick frontend only:** `npm run dev`, then open http://localhost:5173. Everything works except live previews, which show "Could not connect to live previews" because Vite alone does not run `/api/token`.
-
-To test with "two people" on one laptop: open a second Chrome window in **Incognito** (Ctrl+Shift+N) at the same address. Incognito has its own localStorage, so it acts as a different guest.
-
-The QR code points to `localhost`, which your phone cannot open. Phones need the deployed https version (Step 4).
-
-### Step 4: Deploy to Vercel
-
-1. Push the code to GitHub (`main` branch of `gmthj/Blue-Studios`).
-2. Go to https://vercel.com/signup, choose **Hobby** (free), and **Continue with GitHub**.
-3. On the dashboard click **Add New... > Project**.
-4. Under **Import Git Repository**, find `Blue-Studios` and click **Import**. If it is not listed, click **Adjust GitHub App Permissions** and give Vercel access to the repo.
-5. On the configure screen:
-   - Framework Preset: **Vite** (detected automatically)
-   - Build Command: `npm run build`, Output Directory: `dist` (the defaults)
-   - Open **Environment Variables** and add all 8 variables from your `.env` file. Shortcut: copy the whole content of `.env` and paste it into the first **Key** box; Vercel splits it into separate variables. Check `AGORA_APP_CERTIFICATE` has the real value, not the placeholder.
-6. Click **Deploy** and wait about a minute.
-7. You get a URL like `https://blue-studios-xxxx.vercel.app`.
-
-From now on, every push to `main` redeploys automatically. If you change an environment variable later, go to **Deployments**, click **...** on the latest one, and choose **Redeploy** (variables only apply to new deployments).
-
-### Step 5: Test with your phone
-
-1. On your laptop, open the `.vercel.app` URL, type your name, **Create room**, and allow the camera.
-2. On your phone, scan the QR code with the camera app and open the link.
-3. Type a name on the phone, press **Join room**, and allow the camera.
-4. Check: both names appear in "In this room" (scroll down), each device shows the other in **Live previews**, and **Switch camera** appears on the phone.
-5. On the laptop (host), press the round **shutter button** (anyone can). Both devices count 3-2-1 and both photos appear in the gallery under the same shot.
-
-To check the token API is protected, open `https://YOUR-URL.vercel.app/api/token?code=1234` in a browser. You should see `{"error":"Please sign in again"}` (the browser address bar sends no sign-in token). If live video says "Live video unavailable", check Vercel > Logs: a missing `AGORA_...` or `FIREBASE_SERVICE_ACCOUNT` variable is logged there (then add it and Redeploy).
-
----
-
-## Known limitations (MVP)
+## Known limitations
 
 - Members who close the tab without pressing "Leave room" disappear from the list only after about 45 seconds (heartbeat timeout).
 - The 6-person limit is checked when joining, not enforced by the security rules (rules cannot count documents): two people joining at the exact same moment could both get in.
 - Countdown sync depends on network speed (usually within half a second).
-- Photos are stored as small JPEG text in Firestore (each document max 1MB) instead of Firebase Storage, to keep setup simple and free.
+- Room photos are stored as small JPEG text in Firestore (each document max 1 MB), not in Firebase Storage, so they are small and lower quality. Only strips saved to My Studio go to Storage.
 - Room codes are only 4 digits, so anyone signed in could guess a code and join an open room. Photos are only visible to people who have joined.
 - Two normal tabs in the same browser share one user id (uid), so Agora treats them as the same user. Use an Incognito window for the second guest.
 - Testing several unmuted devices in the same physical room causes echo/feedback. Keep all but one muted, or use earphones.
@@ -339,5 +417,3 @@ To check the token API is protected, open `https://YOUR-URL.vercel.app/api/token
 **What I did:** reported the bug from the Vercel preview, reviewed the fix, and tested it on the preview with two devices.
 
 **What I learned:** a package can work locally but fail on the server when the Node setup is different, so the server logs (Vercel > Logs) are the first place to look. Some npm packages now only support `import` (ES modules), and `overrides` in `package.json` can pin one dependency's version without changing the others.
-
-
