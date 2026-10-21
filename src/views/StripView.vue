@@ -5,18 +5,16 @@ import { useRoom } from '../composables/useRoom.js'
 import { LAYOUTS, FRAME_STYLES, saveFields } from '../stripData.js'
 import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
-import VideoCallCard from '../components/VideoCallCard.vue'
 
 // The "Pick" page (a child of RoomLayout.vue): choose a frame and drag photos into it.
 //   Left:   gallery, photos grouped by session (shot)
-//   Middle: the strip (PhotoStrip.vue), with the video call floating on big screens
+//   Middle: the strip (PhotoStrip.vue)
 //   Right:  saved frames (Default / Mine styles, Cut layouts), Skip video, Next
 // Everything is saved in the room document, so everyone in the room sees the same strip.
 
 const { room, photos, roomRef } = useRoom()
 
 const selectedPhotoId = ref(null) // phones: the photo tapped (each person has their own)
-const showCall = ref(true)        // the video call can be hidden so it does not cover the strip
 
 // What the room has chosen (the first layout / style if nothing is saved yet)
 const layout = computed(() => LAYOUTS.find((l) => l.id === room.value.stripLayoutId) || LAYOUTS[0])
@@ -188,14 +186,6 @@ async function goToStage(stage) {
           @slot-click="onSlotClick"
           @clear-slot="clearSlot"
         />
-
-        <!-- Video call: below the strip on smaller screens, floating top-right from "xl" (1200px) up -->
-        <div class="call-float">
-          <button class="btn btn-sm btn-dark mb-1" @click="showCall = !showCall">
-            {{ showCall ? 'Hide call' : 'Show call' }}
-          </button>
-          <VideoCallCard v-show="showCall" layout="row" />
-        </div>
       </div>
     </div>
 
@@ -338,25 +328,6 @@ async function goToStage(stage) {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-/* Video call: below the strip by default */
-.call-float {
-  margin-top: 12px;
-  width: 100%;
-}
-
-/* Bootstrap "xl" (1200px+): the video call floats over the top-right of the canvas */
-@media (min-width: 1200px) {
-  .call-float {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    width: 300px;
-    margin-top: 0;
-    z-index: 50;
-    text-align: right;
-  }
 }
 
 /* Saved frames */

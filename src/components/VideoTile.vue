@@ -47,29 +47,28 @@ watch(hasVideo, showRemoteVideo)
 
 <template>
   <!--
-    Every tile is the same size: the video box has a fixed shape (4:3), the badges sit ON the video
-    (Bootstrap position-absolute), and the name is one line that is cut off with "..." if too long.
+    Every tile is the same size: the video box has a fixed shape (4:3) and everything else sits ON the video
+    (Bootstrap position-absolute), so the tile takes no extra space below the video.
   -->
-  <div class="tile">
-    <div class="tile-video rounded">
-      <!-- Me: my own camera stream. Others: Agora fills remoteEl with their video. -->
-      <StreamVideo v-if="isSelf" :stream="localStream" :mirrored="mirrored" />
-      <div v-else v-show="hasVideo" ref="remoteEl" class="remote-el"></div>
+  <div class="tile rounded">
+    <!-- Me: my own camera stream. Others: Agora fills remoteEl with their video. -->
+    <StreamVideo v-if="isSelf" :stream="localStream" :mirrored="mirrored" />
+    <div v-else v-show="hasVideo" ref="remoteEl" class="remote-el"></div>
 
-      <div v-if="!hasVideo" class="no-video">No video</div>
+    <div v-if="!hasVideo" class="no-video">No video</div>
 
-      <!-- Top left: host badge. Top right: device type. Bottom left: mic icon. -->
-      <span v-if="isHost" class="badge bg-primary tile-badge position-absolute top-0 start-0 m-1">Host</span>
-      <span class="badge text-bg-light tile-badge position-absolute top-0 end-0 m-1">{{ member.deviceType || 'Unknown' }}</span>
-      <span class="mic-icon position-absolute bottom-0 start-0 m-1" :title="hasAudio ? 'Microphone on' : 'Muted'">
-        {{ hasAudio ? '🎤' : '🔇' }}
-      </span>
-    </div>
+    <!-- Top left: host badge. Top right: mic icon. -->
+    <span v-if="isHost" class="badge bg-primary tile-badge position-absolute top-0 start-0 m-1">Host</span>
+    <!-- <span class="badge text-bg-light tile-badge position-absolute top-0 end-0 m-1">{{ member.deviceType || 'Unknown' }}</span> -->
+    <span class="mic-icon position-absolute top-0 end-0 m-1" :title="hasAudio ? 'Microphone on' : 'Muted'">
+      {{ hasAudio ? '🎤' : '🔇' }}
+    </span>
 
-    <!-- text-truncate: one line only, long names end with "..." (hover to see the full name) -->
-    <p class="small text-center text-truncate mb-0" :title="member.name">
+    <!-- Bottom: the name on a dark strip, so it can be read on any video.
+         text-truncate: one line only, long names end with "..." (hover to see the full name) -->
+    <div class="name-bar position-absolute bottom-0 start-0 end-0 text-truncate" :title="member.name">
       {{ member.name }}{{ isSelf ? ' (you)' : '' }}
-    </p>
+    </div>
   </div>
 </template>
 
@@ -77,9 +76,6 @@ watch(hasVideo, showRemoteVideo)
 /* min-width: 0 stops a long name from stretching the tile wider than its column */
 .tile {
   min-width: 0;
-}
-
-.tile-video {
   position: relative;
   width: 100%;
   aspect-ratio: 4 / 3;
@@ -111,5 +107,12 @@ watch(hasVideo, showRemoteVideo)
   background: rgba(0, 0, 0, 0.6);
   border-radius: 4px;
   padding: 0 4px;
+}
+
+.name-bar {
+  font-size: 0.7rem;
+  color: #ffffff;
+  background: rgba(0, 0, 0, 0.6);
+  padding: 1px 4px;
 }
 </style>

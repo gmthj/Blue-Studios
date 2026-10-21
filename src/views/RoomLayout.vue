@@ -8,6 +8,7 @@ import { getUid } from '../composables/useAuth.js'
 import { isRoomFull, MAX_PEOPLE } from '../room.js'
 import { useRoom } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
+import VideoCallCard from '../components/VideoCallCard.vue'
 
 // The parent page for everything inside a room (/room/:code, /room/:code/strip, /room/:code/decorate).
 // It joins the room and starts the video call ONCE. The child pages (RoomView, StripView)
@@ -112,6 +113,11 @@ watch(() => route.path, followStage)
     Room {{ code }} is full ({{ MAX_PEOPLE }} people max). <router-link to="/">Go back</router-link>
   </div>
 
-  <!-- The child page: RoomView (camera) or StripView (photostrip) -->
-  <router-view v-else />
+  <template v-else>
+    <!-- The child page: RoomView (camera), StripView (photostrip) or DecorateView -->
+    <router-view />
+
+    <!-- The video call window floats over every child page, so it is only here once -->
+    <VideoCallCard />
+  </template>
 </template>
