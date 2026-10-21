@@ -1,9 +1,10 @@
 <script setup>
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import { collection, addDoc, runTransaction } from 'firebase/firestore'
+import { collection, addDoc, runTransaction, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { getGuestName } from '../guest.js'
 import { getUid } from '../composables/useAuth.js'
+import { CLIP_SECONDS, recordStream, uploadClip } from '../clips.js'
 import { useRoom } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
 import StreamVideo from '../components/StreamVideo.vue'
@@ -11,6 +12,9 @@ import VideoCallCard from '../components/VideoCallCard.vue'
 import RoomGallery from '../components/RoomGallery.vue'
 
 // The camera page (a child of RoomLayout.vue, which has already joined the room and the call)
+// Photo mode: everyone's camera takes a photo when the countdown ends.
+// Video mode: everyone's camera records a short clip (CLIP_SECONDS) instead. Both are saved in the room gallery.
+// The mode is saved in the room document (captureMode), so everyone in the room is in the same mode.
 
 const uid = getUid()
 const guestName = getGuestName()
@@ -19,6 +23,8 @@ const { code, room, roomRef } = useRoom()
 const { localStream, mirrored, cameras, cameraIndex, cameraError, switchingCamera, switchCamera } = useVideoCall()
 
 const mainVideo = ref(null) // the big camera preview (a StreamVideo component)
+const recording = ref(false)    // true while my camera is recording a clip
+const savingClip = ref(false)   // true while my clip is uploading
 const copied = ref(false)   // shows "Link copied!" for a moment after copying
 
 // ---------- FLASH SETTINGS: change these numbers to test and adjust the flash ----------
@@ -44,6 +50,12 @@ const flashStyle = computed(() => {
 })
 let lastShotNumber = room.value.shotNumber // the last shot this device has already handled
 
+// 'photo' or 'video'. Rooms made before this feature have no captureMode, so they are in photo mode.
+const captureMode = computed(() => room.value.captureMode || 'photo')
+
+// True while this device is busy taking the shot (the countdown, recording, or uploading the clip)
+const capturing = computed(() => countdown.value > 0 || recording.value || savingClip.value)
+
 // Join card: the website address without "https://", the join link, and its QR code (goqr.me API)
 const siteAddress = window.location.host
 const joinLink = window.location.origin + '/?code=' + code.value
@@ -66,12 +78,19 @@ onBeforeUnmount(() => {
   clearTimeout(flashOffTimer)
 })
 
+// Anyone can switch between photo and video, but not in the middle of a shot.
+// The mode is saved in the room, so every device switches too.
+async function setMode(mode) {
+  if (capturing.value || mode === captureMode.value) return
+  await updateDoc(roomRef(), { captureMode: mode })
+}
+
 // Anyone can press the shutter. If two people press at the same moment, only one countdown must start.
 // A Firestore TRANSACTION reads and writes the room as one step: it only adds 1 to shotNumber
 // if shotNumber is still the number I saw. If someone else got there first, it has already
 // changed, so my press is ignored (their countdown is already starting on every device).
 async function pressShutter() {
-  if (countdown.value > 0) return
+  if (capturing.value) return
   const seenShotNumber = room.value.shotNumber
 
   try {
@@ -95,21 +114,29 @@ async function pressShutter() {
 // shutter a little later than the others), so a long flash makes sure every screen is still
 // lit up when every device takes its photo.
 function startCountdown() {
+  const videoMode = captureMode.value === 'video' // decided now, so a late mode change does not matter
   countdown.value = COUNTDOWN_SECONDS
   const photoInMs = COUNTDOWN_SECONDS * 1000 // the photo is taken when the countdown reaches 0
 
   // Flash on, FLASH_BEFORE_MS before the photo (Math.max: never less than 0 ms from now)
+  // (No flash in video mode: a white screen would cover the camera while it records)
   clearTimeout(flashOffTimer)
-  flashOnTimer = setTimeout(() => {
-    flash.value = true
-  }, Math.max(photoInMs - FLASH_BEFORE_MS, 0))
+  if (!videoMode) {
+    flashOnTimer = setTimeout(() => {
+      flash.value = true
+    }, Math.max(photoInMs - FLASH_BEFORE_MS, 0))
+  }
 
   countdownTimer = setInterval(() => {
     countdown.value = countdown.value - 1
 
     if (countdown.value === 0) {
       clearInterval(countdownTimer)
-      takePhoto()
+      if (videoMode) {
+        takeClip()
+      } else {
+        takePhoto()
+      }
 
       // Flash off, FLASH_AFTER_MS after the photo
       flashOffTimer = setTimeout(() => {
@@ -148,6 +175,26 @@ async function takePhoto() {
     image: image,
     createdAt: Date.now(),
   })
+}
+
+// Record my camera for CLIP_SECONDS, then upload the clip. Like a photo, it belongs to this shot number.
+async function takeClip() {
+  if (!localStream.value) return // no camera, nothing to record
+
+  const shotNumber = lastShotNumber
+  const isMirrored = mirrored.value // the clip is flipped when shown, so it matches the mirrored preview
+  recording.value = true
+  try {
+    const blob = await recordStream(localStream.value, CLIP_SECONDS)
+    recording.value = false
+    savingClip.value = true
+    await uploadClip(code.value, blob, { name: guestName, shotNumber: shotNumber, mirrored: isMirrored })
+  } catch (error) {
+    console.error(error)
+    alert('Could not save your video clip. Please try again.')
+  }
+  recording.value = false
+  savingClip.value = false
 }
 
 async function copyJoinLink() {
@@ -213,7 +260,7 @@ async function copyJoinLink() {
 
         <!-- Gallery here on sm / md / lg. Hidden on xs (it goes below the camera) and on xl (its own column).
              d-sm-flex, not d-sm-block, because the gallery card is a flex column. -->
-        <RoomGallery class="side-gallery d-none d-sm-flex d-xl-none" :countdown-running="countdown > 0" />
+        <RoomGallery class="side-gallery d-none d-sm-flex d-xl-none" :countdown-running="capturing" />
       </div>
 
       <!-- MIDDLE: my camera (flex-grow-1 makes it fill the rest of the screen on phones) -->
@@ -222,11 +269,20 @@ async function copyJoinLink() {
           <!-- :mirrored flips only the front camera, so the back camera is not flipped -->
           <StreamVideo ref="mainVideo" :stream="localStream" :mirrored="mirrored" />
 
+          <!-- Photo / Video: the same for everyone in the room -->
+          <div class="btn-group btn-group-sm mode-toggle" role="group" aria-label="Photo or video">
+            <button class="btn" :class="captureMode === 'photo' ? 'btn-light' : 'btn-outline-light'" :disabled="capturing" @click="setMode('photo')">Photo</button>
+            <button class="btn" :class="captureMode === 'video' ? 'btn-light' : 'btn-outline-light'" :disabled="capturing" @click="setMode('video')">Video</button>
+          </div>
+
+          <div v-if="recording" class="badge text-bg-danger rec-badge">● REC</div>
+          <div v-else-if="savingClip" class="badge text-bg-secondary rec-badge">Saving clip...</div>
+
           <!-- Only shown if the device has more than one camera (e.g. phones with front + back) -->
           <button
             v-if="cameras.length > 1"
             class="btn btn-light btn-sm switch-camera-btn"
-            :disabled="countdown > 0 || switchingCamera"
+            :disabled="capturing || switchingCamera"
             @click="switchCamera"
           >
             Switch camera ({{ cameraIndex + 1 }}/{{ cameras.length }})
@@ -238,15 +294,21 @@ async function copyJoinLink() {
       </div>
       
       <!-- Shutter button: anyone can press it. It sits on top of the camera view. -->
-      <button class="shutter-btn" :disabled="countdown > 0" aria-label="Take a photo" @click="pressShutter"></button>
+      <button
+        class="shutter-btn"
+        :class="{ video: captureMode === 'video' }"
+        :disabled="capturing"
+        :aria-label="captureMode === 'video' ? 'Record a video' : 'Take a photo'"
+        @click="pressShutter"
+      ></button>
       <!-- BOTTOM (xs only): the gallery as a sideways row below the camera -->
       <div class="col-12 d-sm-none">
-        <RoomGallery :countdown-running="countdown > 0" />
+        <RoomGallery :countdown-running="capturing" />
       </div>
 
       <!-- RIGHT (xl only): the gallery in its own column. d-none d-xl-block = hidden until xl. -->
       <div class="d-none d-xl-block col-xl-3 h-100">
-        <RoomGallery class="h-100" :countdown-running="countdown > 0" />
+        <RoomGallery class="h-100" :countdown-running="capturing" />
       </div>
     </div>
   </div>
@@ -344,6 +406,19 @@ async function copyJoinLink() {
   right: 10px;
 }
 
+.mode-toggle {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+}
+
+.rec-badge {
+  position: absolute;
+  top: 50px;
+  left: 10px;
+  font-size: 0.85rem;
+}
+
 .camera-error {
   position: absolute;
   left: 0;
@@ -367,6 +442,10 @@ async function copyJoinLink() {
   border: 6px solid #ffffff;
   background: var(--bs-primary);
   box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.25), 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.shutter-btn.video {
+  background: #dc3545; /* red in video mode, so it is clear the shutter records */
 }
 
 .shutter-btn:disabled {

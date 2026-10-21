@@ -3,6 +3,9 @@ import { ref, computed } from 'vue'
 import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import { LAYOUTS, FRAME_STYLES, saveFields } from '../stripData.js'
+import { resolveEditedVideos, editedVideoList } from '../clips.js'
+import EditedVideoThumb from '../components/EditedVideoThumb.vue'
+import ClipThumb from '../components/ClipThumb.vue'
 import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
 import VideoCallCard from '../components/VideoCallCard.vue'
@@ -13,7 +16,7 @@ import VideoCallCard from '../components/VideoCallCard.vue'
 //   Right:  saved frames (Default / Mine styles, Cut layouts), Skip video, Next
 // Everything is saved in the room document, so everyone in the room sees the same strip.
 
-const { room, photos, roomRef } = useRoom()
+const { room, photos, clips, roomRef } = useRoom()
 
 const selectedPhotoId = ref(null) // phones: the photo tapped (each person has their own)
 const showCall = ref(true)        // the video call can be hidden so it does not cover the strip
@@ -22,6 +25,9 @@ const showCall = ref(true)        // the video call can be hidden so it does not
 const layout = computed(() => LAYOUTS.find((l) => l.id === room.value.stripLayoutId) || LAYOUTS[0])
 const frameStyle = computed(() => FRAME_STYLES.find((s) => s.id === room.value.stripStyleId) || FRAME_STYLES[0])
 const slotPhotos = computed(() => room.value.stripSlots || {})
+// The edited videos made on the Video page: as { id: edit } (to find a slot's video) and as a list (for the gallery)
+const editedVideos = computed(() => resolveEditedVideos(room.value.editedVideos, clips.value))
+const editedList = computed(() => editedVideoList(room.value.editedVideos, clips.value))
 const defaultStyles = FRAME_STYLES.filter((s) => s.group === 'default')
 const myStyles = FRAME_STYLES.filter((s) => s.group === 'mine') // PLACEHOLDER (Joash): the user's own saved frames
 
@@ -34,17 +40,32 @@ const photosById = computed(() => {
   return map
 })
 
-// Group photos by session (shot number), Session 1 first. Each session has one photo per person.
-// Result looks like: [ { shotNumber: 1, photos: [...] }, { shotNumber: 2, photos: [...] } ]
+// The clips (unedited videos) as { id: clip }, like the photos above
+const clipsById = computed(() => {
+  const map = {}
+  for (const c of clips.value) {
+    map[c.id] = c
+  }
+  return map
+})
+
+// Group photos and clips by session (shot number), Session 1 first. Each session has one photo and one clip per person.
+// Result looks like: [ { shotNumber: 1, photos: [...], clips: [...] }, { shotNumber: 2, photos: [...], clips: [...] } ]
 const sessions = computed(() => {
   const groups = []
-  for (const photo of photos.value) {
-    let group = groups.find((g) => g.shotNumber === photo.shotNumber)
+  function groupFor(shotNumber) {
+    let group = groups.find((g) => g.shotNumber === shotNumber)
     if (!group) {
-      group = { shotNumber: photo.shotNumber, photos: [] }
+      group = { shotNumber: shotNumber, photos: [], clips: [] }
       groups.push(group)
     }
-    group.photos.push(photo)
+    return group
+  }
+  for (const photo of photos.value) {
+    groupFor(photo.shotNumber).photos.push(photo)
+  }
+  for (const clip of clips.value) {
+    groupFor(clip.shotNumber).clips.push(clip)
   }
   return groups.sort((a, b) => a.shotNumber - b.shotNumber)
 })
@@ -53,7 +74,9 @@ const sessions = computed(() => {
 const filledCount = computed(() => {
   let count = 0
   for (let i = 0; i < layout.value.slots.length; i++) {
-    if (slotPhotos.value[i] && photosById.value[slotPhotos.value[i]]) {
+    const id = slotPhotos.value[i]
+    // a slot is filled by a photo, a clip, or an edited video (that still has clips)
+    if (id && (photosById.value[id] || clipsById.value[id] || (editedVideos.value[id] && editedVideos.value[id].entries.length > 0))) {
       count = count + 1
     }
   }
@@ -127,6 +150,11 @@ async function chooseStyle(id) {
   await saveFields(roomRef(), { stripStyleId: id })
 }
 
+// Change a saved edited video: it is loaded into the Video page's timeline, and everyone moves there
+async function editSaved(edit) {
+  await updateDoc(roomRef(), { videoTimeline: edit.timeline, videoEditing: edit.id, stage: 'video' })
+}
+
 // Everyone moves to another page together (RoomLayout.vue follows the room's "stage")
 async function goToStage(stage) {
   await updateDoc(roomRef(), { stage: stage })
@@ -145,9 +173,34 @@ async function goToStage(stage) {
           <h2 class="h5 fw-bold mb-0">Gallery</h2>
           <button class="btn btn-link btn-sm p-0" @click="goToStage('camera')">&larr; Camera</button>
         </div>
-        <p class="small text-muted mb-2">Drag a photo into a slot. On a phone: tap a photo, then tap a slot.</p>
+        <p class="small text-muted mb-2">Drag a photo or video into a slot. On a phone: tap it, then tap a slot.</p>
 
-        <p v-if="sessions.length === 0" class="small text-muted">No photos yet.</p>
+        <p v-if="sessions.length === 0" class="small text-muted">No photos or videos yet.</p>
+
+        <!-- The videos made on the Video page, to drag into a slot like a photo. Each one is purple. -->
+        <section v-if="editedList.length > 0" class="mb-3">
+          <h3 class="h6 mb-2"><span class="badge edited-badge">✂ Edited videos</span></h3>
+          <div class="row g-2 session-box edited-box">
+            <div v-for="edit in editedList" :key="edit.id" class="col-4">
+              <div
+                class="thumb video-thumb edited"
+                :class="{ selected: edit.id === selectedPhotoId }"
+                draggable="true"
+                @dragstart="onPhotoDragStart($event, edit)"
+                @click="selectPhoto(edit.id)"
+              >
+                <EditedVideoThumb :edited="edit" />
+                <span class="name-tag edited-tag">✂ {{ edit.name }}</span>
+                <span v-if="isUsed(edit.id)" class="used-tick used-left">✓</span>
+              </div>
+              <!-- How long it is, and a shortcut to change it on the Video page -->
+              <div class="small text-muted d-flex justify-content-between">
+                <span>{{ edit.entries.length }} clip(s) · {{ edit.seconds.toFixed(1) }}s</span>
+                <button class="btn btn-link btn-sm p-0 align-baseline" @click="editSaved(edit)">Edit</button>
+              </div>
+            </div>
+          </div>
+        </section>
 
         <!-- Scrolls up and down through the sessions; 3 photos per row in each session (col-4) -->
         <div class="gallery-scroll">
@@ -167,6 +220,21 @@ async function goToStage(stage) {
                   <span v-if="isUsed(photo.id)" class="used-tick">✓</span>
                 </div>
               </div>
+
+              <!-- The session's unedited clips: drag or tap like a photo. The "▶ play" label plays it right here. -->
+              <div v-for="clip in session.clips" :key="clip.id" class="col-4">
+                <div
+                  class="thumb clip-thumb"
+                  :class="{ selected: clip.id === selectedPhotoId }"
+                  draggable="true"
+                  @dragstart="onPhotoDragStart($event, clip)"
+                  @click="selectPhoto(clip.id)"
+                >
+                  <ClipThumb :clip="clip" badge-plays />
+                  <span class="name-tag">{{ initials(clip.name) }} · #{{ session.shotNumber }}</span>
+                  <span v-if="isUsed(clip.id)" class="used-tick">✓</span>
+                </div>
+              </div>
             </div>
           </section>
         </div>
@@ -182,6 +250,8 @@ async function goToStage(stage) {
           :frame-style="frameStyle"
           :photos-by-id="photosById"
           :slot-photos="slotPhotos"
+          :clips="clips"
+          :edited-videos="editedVideos"
           :edits="room.stripEdits || {}"
           :stickers="room.stripStickers || []"
           @drop-photo="placePhoto"
@@ -251,10 +321,11 @@ async function goToStage(stage) {
           {{ filledCount }} of {{ layout.slots.length }} slots filled · Slots: photo or clip
         </p>
 
-        <button class="btn btn-outline-secondary w-100 mb-2" :disabled="filledCount === 0" @click="goToStage('decorate')">
-          Skip video (photos only)
+        <!-- Opens the Video page, even before any photo is on the strip, as long as the room has photos or clips.
+             The edited video then appears in the gallery on the left, to drag into a slot. -->
+        <button class="btn btn-outline-secondary w-100 mb-2" :disabled="filledCount === 0 && clips.length === 0" @click="goToStage('video')">
+          Edit video
         </button>
-        <!-- PLACEHOLDER (Saw Jun Han): when the Video page exists, change 'decorate' to 'video' -->
         <button class="btn btn-primary w-100" :disabled="filledCount === 0" @click="goToStage('decorate')">
           Next
         </button>
@@ -304,6 +375,57 @@ async function goToStage(stage) {
 
 .thumb.selected {
   border-color: #2F5BEA;
+}
+
+.video-thumb {
+  aspect-ratio: 4 / 5;
+  background: #000;
+  cursor: grab;
+}
+
+/* The edited video is purple, so it is easy to tell from a normal photo or clip */
+.edited-badge,
+.edited-tag {
+  background: #7B61FF;
+  color: #fff;
+}
+
+.edited-box {
+  border-color: #7B61FF;
+}
+
+.thumb.edited {
+  border-color: #7B61FF;
+}
+
+.used-left {
+  left: 4px;
+  right: auto;
+}
+
+.thumb.edited.selected {
+  border-color: #2F5BEA;
+}
+
+/* An unedited clip is the same shape as a photo. The video inside ignores the mouse, so the whole tile is dragged. */
+.clip-thumb :deep(.clip) {
+  aspect-ratio: 4 / 5;
+  border-radius: 0;
+  cursor: grab;
+}
+
+.clip-thumb :deep(video) {
+  pointer-events: none;
+}
+
+/* The play button is in the top-right corner of a clip, so its "used" tick moves to the top-left */
+.clip-thumb .used-tick {
+  left: 4px;
+  right: auto;
+}
+
+.video-thumb video {
+  pointer-events: none; /* so the whole tile is dragged, not the video inside it */
 }
 
 .thumb img {

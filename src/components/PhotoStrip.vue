@@ -1,6 +1,8 @@
 <script setup>
 import { ref } from 'vue'
 import { filterCss } from '../stripData.js'
+import ClipSequencePlayer from './ClipSequencePlayer.vue'
+import { CLIP_SECONDS } from '../clips.js'
 
 // One photostrip, drawn from data in layers: frame background -> photo slots -> stickers.
 // Used by both photostrip pages:
@@ -18,7 +20,9 @@ const props = defineProps({
   slotPhotos: { type: Object, default: () => ({}) },    // { 0: photoId, 1: null, ... }
   edits: { type: Object, default: () => ({}) },         // { 0: { filter, brightness, ... } }
   stickers: { type: Array, default: () => [] },         // [{ id, src, x, y, w, rotate, z, visible, by }]
-  mode: { type: String, default: 'pick' },              // 'pick' or 'decorate'
+  mode: { type: String, default: 'pick' },              // 'pick' or 'decorate' (anything else: just show the strip, no editing)
+  clips: { type: Array, default: () => [] },            // every clip recorded in the room: a slot can hold one (see clips.js)
+  editedVideos: { type: Object, default: () => ({}) },  // the saved edited videos: { editId: { name, entries } } (see resolveEditedVideos in clips.js)
   selectedSlot: { type: Number, default: null },        // the slot to highlight
   selectedStickerId: { type: Number, default: null },   // the sticker to outline
 })
@@ -32,6 +36,23 @@ const hoverSlot = ref(null) // the slot under a dragged photo (highlighted)
 function photoIn(index) {
   const id = props.slotPhotos[index]
   return id ? props.photosById[id] || null : null
+}
+
+// The clip (an unedited video) in a slot, or null if the slot does not hold one
+function clipIn(index) {
+  const id = props.slotPhotos[index]
+  return id ? props.clips.find((c) => c.id === id) || null : null
+}
+
+// A clip played as it is: the whole clip, from 0 to its full length (same shape as the edited video's entries)
+function rawEntries(index) {
+  return [{ clip: clipIn(index), start: 0, end: CLIP_SECONDS }]
+}
+
+// The edited video in a slot, or null if the slot does not hold one (or the edit has no clips left)
+function editedIn(index) {
+  const edit = props.editedVideos[props.slotPhotos[index]]
+  return edit && edit.entries.length > 0 ? edit : null
 }
 
 // Turn the mouse position into a position inside the strip, in % (0-100).
@@ -116,8 +137,26 @@ function onStripClick(event) {
       :style="{ left: slot.x + '%', top: slot.y + '%', width: slot.w + '%', height: slot.h + '%' }"
       @click.stop="emit('slot-click', index)"
     >
+      <!-- An edited video plays (and repeats) in its slot -->
+      <ClipSequencePlayer
+        v-if="editedIn(index)"
+        bare
+        autoplay
+        loop
+        :entries="editedIn(index).entries"
+        :style="{ filter: filterCss(edits[index]) }"
+      />
+      <!-- An unedited clip also plays and repeats in its slot -->
+      <ClipSequencePlayer
+        v-else-if="clipIn(index)"
+        bare
+        autoplay
+        loop
+        :entries="rawEntries(index)"
+        :style="{ filter: filterCss(edits[index]) }"
+      />
       <img
-        v-if="photoIn(index)"
+        v-else-if="photoIn(index)"
         :src="photoIn(index).image"
         alt=""
         draggable="false"
@@ -126,11 +165,14 @@ function onStripClick(event) {
       <span v-else-if="mode === 'pick'" class="slot-empty">Drop here</span>
 
       <button
-        v-if="mode === 'pick' && photoIn(index)"
+        v-if="mode === 'pick' && (photoIn(index) || editedIn(index) || clipIn(index))"
         class="btn btn-sm btn-light remove-btn"
         title="Remove photo"
         @click.stop="emit('clear-slot', index)"
       >&times;</button>
+
+      <span v-if="mode === 'pick' && editedIn(index)" class="media-badge edited">✂ {{ editedIn(index).name }}</span>
+      <span v-else-if="mode === 'pick' && clipIn(index)" class="media-badge">▶ video</span>
     </div>
 
     <!-- Stickers, always above the slots (z-index 10 + z, so a bigger z is in front).
@@ -216,6 +258,24 @@ function onStripClick(event) {
   font-size: 0.8rem;
   color: #2F5BEA;
   font-weight: 500;
+}
+
+/* A small label on the Pick page that says what kind of video the slot holds (not part of the exported strip) */
+.media-badge {
+  position: absolute;
+  left: 4px;
+  bottom: 4px;
+  background: #1A1A2E;
+  color: #fff;
+  font-size: 0.6rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.media-badge.edited {
+  background: #7B61FF; /* the same purple as the edited video in the gallery */
 }
 
 .remove-btn {
