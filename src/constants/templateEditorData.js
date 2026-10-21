@@ -118,11 +118,11 @@ export const TEMPLATE_PRESETS = [
     border: '#E2E8F0',
     borderWidth: 2,
     shape: 'Rounded',
-    caption: 'Exchange reunion · 16.10.26',
+    caption: 'EXCHANGE REUNION · 1998',
     previewIcon: '📷',
     elements: [
-      { type: 'tape', name: 'Sky Tape', color: 'rgba(96, 165, 250, 0.85)', patternColor: '#FFFFFF', x: 95, y: 4, width: 90, height: 16, rotation: -2 },
-      { type: 'text', text: 'PHOTO STUDIO', fontFamily: "'Space Mono', monospace", fontSize: 11, fontWeight: '700', color: '#64748B', letterSpacing: 2, x: 80, y: 520, rotation: 0 }
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.retroCamera, name: 'Vintage Camera', width: 24, height: 20, x: 10, y: 518, rotation: -4 },
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleStar, name: 'Cyber Sparkle', width: 20, height: 20, x: 248, y: 518, rotation: 8 }
     ]
   },
   {
@@ -137,11 +137,11 @@ export const TEMPLATE_PRESETS = [
     border: '#BAE6FD',
     borderWidth: 2,
     shape: 'Rounded',
-    caption: '하루필름 · Always With You ✨',
+    caption: '하루필름 · HARU FILM ✨',
     previewIcon: '☁️',
     elements: [
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.daisy, name: 'Daisy Blossom', width: 32, height: 32, x: 124, y: 6, rotation: 12 },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleStar, name: 'Cyber Sparkle', width: 22, height: 22, x: 236, y: 16, rotation: 0 }
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.cloudCute, name: 'Fluffy Cloud', width: 26, height: 18, x: 10, y: 519, rotation: -3 },
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.daisy, name: 'Daisy Blossom', width: 22, height: 22, x: 248, y: 517, rotation: 10 }
     ]
   },
   {
@@ -156,11 +156,11 @@ export const TEMPLATE_PRESETS = [
     border: '#F43F5E',
     borderWidth: 2,
     shape: 'Square',
-    caption: '// Y2K ARCHIVE · 2000s VOL. 1',
+    caption: '// Y2K ARCHIVE 2000s //',
     previewIcon: '⚡',
     elements: [
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleStar, name: 'Cyber Sparkle', width: 28, height: 28, x: 126, y: 5, rotation: 15 },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.smiley, name: 'Smiley Badge', width: 26, height: 26, x: 232, y: 512, rotation: -8 }
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleStar, name: 'Cyber Sparkle', width: 22, height: 22, x: 10, y: 517, rotation: 12 },
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.smiley, name: 'Smiley Badge', width: 22, height: 22, x: 248, y: 517, rotation: -6 }
     ]
   },
   {
@@ -175,11 +175,11 @@ export const TEMPLATE_PRESETS = [
     border: '#86EFAC',
     borderWidth: 2,
     shape: 'Rounded',
-    caption: '성수동 카페 · MATCHA VIBES 🍵',
+    caption: '성수동 MATCHA · 🍵',
     previewIcon: '🍵',
     elements: [
-      { type: 'tape', name: 'Mint Tape', color: 'rgba(52, 211, 153, 0.85)', patternColor: '#FFFFFF', x: 95, y: 4, width: 90, height: 15, rotation: 0 },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.cherries, name: 'Twin Cherries', width: 26, height: 26, x: 235, y: 265, rotation: 10 }
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.cherries, name: 'Twin Cherries', width: 22, height: 22, x: 10, y: 269, rotation: -8 },
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.daisy, name: 'Matcha Blossom', width: 20, height: 20, x: 250, y: 269, rotation: 10 }
     ]
   },
   {
@@ -194,11 +194,11 @@ export const TEMPLATE_PRESETS = [
     border: '#D97706',
     borderWidth: 2,
     shape: 'Square',
-    caption: 'FILM NO. 402 · 10.26.98 ARCHIVE',
+    caption: 'FILM NO. 402 · 1998',
     previewIcon: '🎞️',
     elements: [
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.retroCamera, name: 'Vintage Camera', width: 34, height: 28, x: 123, y: 5, rotation: 0 },
-      { type: 'text', text: 'ISO 400', fontFamily: "'Space Mono', monospace", fontSize: 10, fontWeight: '700', color: '#D97706', letterSpacing: 2, x: 114, y: 522, rotation: 0 }
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.retroCamera, name: 'Vintage Camera', width: 24, height: 20, x: 10, y: 518, rotation: -2 },
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.vinylRecord, name: 'Vinyl Disc', width: 22, height: 22, x: 248, y: 517, rotation: 15 }
     ]
   },
   {
@@ -216,8 +216,8 @@ export const TEMPLATE_PRESETS = [
     caption: 'TOKYO KISS · ロマンス 🌸',
     previewIcon: '🌸',
     elements: [
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.ribbonBow, name: 'Ribbon Bow', width: 36, height: 28, x: 122, y: 4, rotation: 0 },
-      { type: 'tape', name: 'Pink Tape', color: 'rgba(244, 114, 182, 0.8)', patternColor: '#FFFFFF', x: 95, y: 268, width: 90, height: 14, rotation: 2 }
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.ribbonBow, name: 'Ribbon Bow', width: 24, height: 20, x: 10, y: 269, rotation: -4 },
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleHeart, name: 'Sparkle Heart', width: 20, height: 20, x: 250, y: 269, rotation: 8 }
     ]
   },
   {
@@ -232,11 +232,11 @@ export const TEMPLATE_PRESETS = [
     border: '#FDE68A',
     borderWidth: 2,
     shape: 'Rounded',
-    caption: 'Golden hour memories · 17:45 ☀️',
+    caption: 'GOLDEN HOUR · 17:45 ☀️',
     previewIcon: '🌅',
     elements: [
-      { type: 'tape', name: 'Yellow Tape', color: 'rgba(253, 224, 71, 0.9)', patternColor: '#FFFFFF', x: 95, y: 4, width: 90, height: 16, rotation: -1 },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleStar, name: 'Golden Sparkle', width: 24, height: 24, x: 236, y: 390, rotation: 15 }
+      { type: 'shape', shapeType: 'star', name: 'Golden Star', color: '#FACC15', strokeColor: '#B45309', strokeWidth: 1.5, width: 20, height: 20, x: 12, y: 393, rotation: -5 },
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleStar, name: 'Golden Sparkle', width: 20, height: 20, x: 248, y: 393, rotation: 15 }
     ]
   },
   {
@@ -251,11 +251,11 @@ export const TEMPLATE_PRESETS = [
     border: '#0F172A',
     borderWidth: 2,
     shape: 'Square',
-    caption: 'STUDIO EDITION · SERIES 08',
+    caption: 'STUDIO EDITION · 2026',
     previewIcon: '📐',
     elements: [
-      { type: 'tape', name: 'Black Tape', color: 'rgba(15, 23, 42, 0.9)', patternColor: '#FFFFFF', x: 95, y: 6, width: 90, height: 14, rotation: 0 },
-      { type: 'text', text: '16.10.2026 / 19:45', fontFamily: "'Space Mono', monospace", fontSize: 10, fontWeight: '700', color: '#0F172A', letterSpacing: 2, x: 74, y: 520, rotation: 0 }
+      { type: 'shape', shapeType: 'diamond', name: 'Gem Diamond', color: '#0F172A', strokeColor: '#0F172A', strokeWidth: 1, width: 16, height: 16, x: 14, y: 520, rotation: 0 },
+      { type: 'shape', shapeType: 'diamond', name: 'Gem Diamond', color: '#0F172A', strokeColor: '#0F172A', strokeWidth: 1, width: 16, height: 16, x: 250, y: 520, rotation: 0 }
     ]
   },
   {
@@ -270,11 +270,11 @@ export const TEMPLATE_PRESETS = [
     border: '#DDD6FE',
     borderWidth: 2,
     shape: 'Rounded',
-    caption: 'LILAC HAZE · BLUE STUDIOS 💜',
+    caption: 'LILAC HAZE · 💜',
     previewIcon: '💜',
     elements: [
-      { type: 'tape', name: 'Lavender Tape', color: 'rgba(167, 139, 250, 0.85)', patternColor: '#FFFFFF', x: 95, y: 4, width: 90, height: 15, rotation: 0 },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.butterfly, name: 'Pastel Butterfly', width: 30, height: 26, x: 232, y: 262, rotation: 12 }
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleStar, name: 'Cyber Sparkle', width: 20, height: 20, x: 12, y: 269, rotation: 0 },
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.butterfly, name: 'Pastel Butterfly', width: 22, height: 20, x: 248, y: 269, rotation: 10 }
     ]
   },
   {
@@ -289,11 +289,11 @@ export const TEMPLATE_PRESETS = [
     border: '#FDBA74',
     borderWidth: 2,
     shape: 'Rounded',
-    caption: 'Cafe Terrace · Paris 1994 ☕',
+    caption: 'CAFE TERRACE · 1994 ☕',
     previewIcon: '☕',
     elements: [
-      { type: 'tape', name: 'Peach Tape', color: 'rgba(251, 146, 60, 0.85)', patternColor: '#FFFFFF', x: 95, y: 4, width: 90, height: 15, rotation: -2 },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.polaroidFrame, name: 'Mini Frame', width: 26, height: 32, x: 234, y: 388, rotation: 8 }
+      { type: 'shape', shapeType: 'heart', name: 'Sweetheart', color: '#FB923C', strokeColor: '#C2410C', strokeWidth: 1.5, width: 20, height: 20, x: 12, y: 393, rotation: -6 },
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.polaroidFrame, name: 'Mini Frame', width: 18, height: 22, x: 250, y: 392, rotation: 6 }
     ]
   }
 ]

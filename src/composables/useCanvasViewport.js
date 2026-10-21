@@ -91,10 +91,12 @@ export function useCanvasViewport() {
    * Fit photostrip to screen with comfortable margins
    */
   function fitToScreen(workspaceEl, frameEl) {
-    if (!workspaceEl || !frameEl) return
-    const wsRect = workspaceEl.getBoundingClientRect()
-    const frameW = frameEl.offsetWidth || 280
-    const frameH = frameEl.offsetHeight || 556
+    const ws = (workspaceEl && workspaceEl.value !== undefined) ? workspaceEl.value : workspaceEl
+    const frame = (frameEl && frameEl.value !== undefined) ? frameEl.value : frameEl
+    if (!ws || !frame || typeof ws.getBoundingClientRect !== 'function') return
+    const wsRect = ws.getBoundingClientRect()
+    const frameW = frame.offsetWidth || 280
+    const frameH = frame.offsetHeight || 556
 
     const rulerOffset = showRulers.value ? 24 : 0
     const paddingH = 70 + rulerOffset
@@ -118,10 +120,12 @@ export function useCanvasViewport() {
    * Fill screen height with the photostrip
    */
   function fillScreen(workspaceEl, frameEl) {
-    if (!workspaceEl || !frameEl) return
-    const wsRect = workspaceEl.getBoundingClientRect()
-    const frameW = frameEl.offsetWidth || 280
-    const frameH = frameEl.offsetHeight || 556
+    const ws = (workspaceEl && workspaceEl.value !== undefined) ? workspaceEl.value : workspaceEl
+    const frame = (frameEl && frameEl.value !== undefined) ? frameEl.value : frameEl
+    if (!ws || !frame || typeof ws.getBoundingClientRect !== 'function') return
+    const wsRect = ws.getBoundingClientRect()
+    const frameW = frame.offsetWidth || 280
+    const frameH = frame.offsetHeight || 556
 
     const rulerOffset = showRulers.value ? 24 : 0
     const availH = Math.max(100, wsRect.height - 40 - rulerOffset)

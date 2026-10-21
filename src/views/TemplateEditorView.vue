@@ -551,12 +551,32 @@ async function closeDrawer() {
   isDrawerOpen.value = false
 }
 
+// Fit photostrip to screen helper
+function triggerFitToScreen() {
+  fitToScreen(canvasWorkspaceRef.value, stripRef.value)
+}
+
+let refitRafId = null
+function refitDuringTransition(duration = 280) {
+  if (refitRafId) cancelAnimationFrame(refitRafId)
+  const startTime = performance.now()
+  function step(now) {
+    triggerFitToScreen()
+    if (now - startTime < duration) {
+      refitRafId = requestAnimationFrame(step)
+    } else {
+      triggerFitToScreen()
+      refitRafId = null
+    }
+  }
+  refitRafId = requestAnimationFrame(step)
+}
+
 // Automatically refit photostrip to screen whenever drawer opens or closes
 watch(isDrawerOpen, async () => {
   await nextTick()
-  requestAnimationFrame(() => {
-    fitToScreen(canvasWorkspaceRef.value, stripRef.value)
-  })
+  triggerFitToScreen()
+  refitDuringTransition(280)
 })
 
 function setLayout(layout) {
@@ -2871,6 +2891,7 @@ watch(() => route.query.template, async (newId) => {
 })
 
 onBeforeUnmount(() => {
+  if (refitRafId) cancelAnimationFrame(refitRafId)
   window.removeEventListener('keydown', onKeydown)
   window.removeEventListener('keyup', onKeyup)
   window.removeEventListener('click', handleGlobalClick)
@@ -3596,7 +3617,8 @@ onBeforeUnmount(() => {
       </aside>
 
       <!-- Expandable Flyout Drawer (Bootstrap 5) -->
-      <div v-if="isDrawerOpen" class="canva-drawer bg-white border-end d-flex flex-column flex-shrink-0 shadow-sm overflow-hidden" style="width: 310px; z-index: 15;">
+      <Transition name="drawer" @after-enter="triggerFitToScreen" @after-leave="triggerFitToScreen">
+        <div v-if="isDrawerOpen" class="canva-drawer bg-white border-end d-flex flex-column flex-shrink-0 shadow-sm overflow-hidden" style="width: 310px; z-index: 15;">
         <div class="p-3 border-bottom d-flex align-items-center justify-content-between gap-2">
           <div class="d-flex align-items-center gap-2 flex-grow-1 px-1">
             <div class="p-1 rounded-2 bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center" style="width: 28px; height: 28px;">
@@ -4278,6 +4300,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
+    </Transition>
 
       <!-- Center Canvas Workspace -->
       <main
@@ -5248,9 +5271,8 @@ onBeforeUnmount(() => {
     <!-- Save Template to My Studio / Account Modal -->
     <div
       v-if="isSaveModalOpen"
-      class="modal fade show d-block"
+      class="modal fade show d-block save-modal-backdrop"
       tabindex="-1"
-      style="background: rgba(15, 23, 42, 0.6); z-index: 1060;"
       @click.self="isSaveModalOpen = false"
     >
       <div class="modal-dialog modal-dialog-centered" style="max-width: 480px;">
@@ -5322,7 +5344,7 @@ onBeforeUnmount(() => {
                   v-for="c in CATEGORIES"
                   :key="c.id"
                   type="button"
-                  class="btn btn-sm rounded-pill py-0 px-2"
+                  class="btn btn-sm rounded-pill py-0 px-2 category-pill-btn"
                   :class="chosenCategories.includes(c.id) ? 'btn-primary' : 'btn-outline-secondary'"
                   :disabled="!chosenCategories.includes(c.id) && chosenCategories.length >= MAX_CATEGORIES"
                   @click="toggleCategory(c.id)"
@@ -5382,15 +5404,40 @@ onBeforeUnmount(() => {
 
 <style scoped>
 /* ============================================================
-   CANVAS & CUSTOM POPOVER MECHANICS (CANNOT BE DONE BY BOOTSTRAP 5)
+   DESIGN ENGINEERING: MOTION TOKENS & TRANSITIONS
+   ============================================================ */
+:root,
+.editor-container {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Universal button active tactile feedback (sweet spot scale) */
+.btn:not(:disabled):active {
+  transform: scale(0.97);
+}
+
+/* Left Rail Navigation Buttons */
+.left-rail .btn {
+  transition: background-color 140ms ease, color 140ms ease, transform 120ms var(--ease-out);
+}
+
+.left-rail .btn:active {
+  transform: scale(0.94);
+}
+
+/* ============================================================
+   CANVAS & CUSTOM POPOVER MECHANICS
    ============================================================ */
 
-/* Zoom Popover Dropdown */
+/* Zoom Popover Dropdown (origin-aware scale pop) */
 .zoom-popover-menu {
   position: absolute;
   top: calc(100% + 8px);
   left: 50%;
-  transform: translateX(-50%);
+  transform-origin: top center;
   background: #ffffff;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
@@ -5401,12 +5448,12 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 2px;
   z-index: 1000;
-  animation: slideDownZoom 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: slideDownZoom 160ms var(--ease-spring);
 }
 
 @keyframes slideDownZoom {
-  from { opacity: 0; transform: translate(-50%, -6px); }
-  to { opacity: 1; transform: translate(-50%, 0); }
+  from { opacity: 0; transform: translate(-50%, -6px) scale(0.96); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
 
 .zoom-popover-menu .menu-header {
@@ -5429,11 +5476,15 @@ onBeforeUnmount(() => {
   width: 100%;
   cursor: pointer;
   text-align: left;
-  transition: all 0.12s ease;
+  transition: background-color 140ms ease, color 140ms ease, transform 120ms var(--ease-out);
 }
 
 .zoom-popover-menu .menu-item:hover {
   background: #f8fafc;
+}
+
+.zoom-popover-menu .menu-item:active {
+  transform: scale(0.98);
 }
 
 .zoom-popover-menu .menu-item.current {
@@ -5471,6 +5522,19 @@ onBeforeUnmount(() => {
 .canva-drawer {
   width: 310px;
   box-shadow: 4px 0 16px rgba(15, 23, 42, 0.04);
+}
+
+.drawer-enter-active,
+.drawer-leave-active {
+  transition: width 240ms var(--ease-drawer), opacity 180ms ease, transform 240ms var(--ease-drawer);
+  overflow: hidden;
+}
+
+.drawer-enter-from,
+.drawer-leave-to {
+  width: 0 !important;
+  opacity: 0;
+  transform: translateX(-12px);
 }
 
 .drawer-content {
@@ -6169,7 +6233,7 @@ onBeforeUnmount(() => {
   border: none;
   border-radius: 8px;
   cursor: pointer;
-  transition: background-color 0.15s, transform 0.05s;
+  transition: background-color 140ms ease, transform 120ms var(--ease-out), box-shadow 140ms ease;
 }
 
 .save-frame-btn:hover {
@@ -6177,29 +6241,58 @@ onBeforeUnmount(() => {
 }
 
 .save-frame-btn:active {
-  transform: scale(0.99);
+  transform: scale(0.97);
 }
 
-/* Toast Notification */
+/* Toast Notification (Frosted glass with subtle border and spring pop) */
 .toast-toast {
   position: fixed;
   bottom: 24px;
   left: 50%;
   transform: translateX(-50%);
-  background-color: #0f172a;
+  background: rgba(15, 23, 42, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
   color: #ffffff;
   font-size: 0.9rem;
   font-weight: 500;
-  padding: 10px 20px;
+  padding: 10px 22px;
   border-radius: 9999px;
-  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 16px 32px -4px rgba(0, 0, 0, 0.28), 0 4px 8px -2px rgba(0, 0, 0, 0.12);
   z-index: 1000;
-  animation: fadeIn 0.2s ease;
+  animation: toastPop 220ms var(--ease-spring);
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translate(-50%, 10px); }
-  to { opacity: 1; transform: translate(-50%, 0); }
+@keyframes toastPop {
+  from { opacity: 0; transform: translate(-50%, 12px) scale(0.95); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
+}
+
+/* Modal Glassmorphism & Centered Pop Transition */
+.save-modal-backdrop {
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  z-index: 1060;
+}
+
+.save-modal-backdrop .modal-dialog {
+  transform-origin: center;
+  animation: modalEnter 220ms var(--ease-spring);
+}
+
+@keyframes modalEnter {
+  from { opacity: 0; transform: scale(0.96) translateY(6px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.category-pill-btn {
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 120ms var(--ease-out);
+}
+
+.category-pill-btn:active {
+  transform: scale(0.95);
 }
 
 /* ===================================================
@@ -6289,7 +6382,11 @@ onBeforeUnmount(() => {
   color: #334155;
   cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s ease;
+  transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, transform 120ms var(--ease-out);
+}
+
+.cutout-stack-btn:active {
+  transform: scale(0.96);
 }
 
 .cutout-stack-btn:hover {
@@ -6344,7 +6441,7 @@ onBeforeUnmount(() => {
   position: absolute;
   bottom: calc(100% + 10px);
   left: 50%;
-  transform: translateX(-50%);
+  transform-origin: bottom center;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -6356,6 +6453,12 @@ onBeforeUnmount(() => {
   z-index: 120;
   white-space: nowrap;
   pointer-events: auto;
+  animation: floatingBarPop 180ms var(--ease-spring);
+}
+
+@keyframes floatingBarPop {
+  from { opacity: 0; transform: translate(-50%, 6px) scale(0.96); }
+  to { opacity: 1; transform: translate(-50%, 0) scale(1); }
 }
 
 .position-btn-wrapper {
@@ -6374,8 +6477,12 @@ onBeforeUnmount(() => {
   font-weight: 600;
   color: #334155;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 140ms ease, color 140ms ease, transform 120ms var(--ease-out);
   height: 26px;
+}
+
+.floating-tool-btn:active {
+  transform: scale(0.95);
 }
 
 .floating-tool-btn:hover {
@@ -6537,7 +6644,11 @@ onBeforeUnmount(() => {
   color: #1e293b;
   cursor: pointer;
   text-align: left;
-  transition: all 0.1s ease;
+  transition: background-color 120ms ease, color 120ms ease, transform 100ms var(--ease-out);
+}
+
+.context-item:active {
+  transform: scale(0.98);
 }
 
 .context-item:hover {
@@ -6799,6 +6910,18 @@ onBeforeUnmount(() => {
   display: block;
   pointer-events: none;
   border-radius: inherit;
+}
+
+/* Accessibility: Honor reduced motion preference */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 </style>
