@@ -226,6 +226,7 @@ function formatDate(time) {
                   </div>
                   <div class="d-flex flex-wrap gap-3">
                     <button class="btn btn-sm btn-link px-0" @click="editingId = template.id">Edit</button>
+                    <router-link :to="'/template-editor?template=' + template.id" class="btn btn-sm btn-link px-0">Open in editor</router-link>
                     <router-link v-if="isListed(template)" :to="'/marketplace/templates/' + template.id" class="btn btn-sm btn-link px-0">View</router-link>
                     <button class="btn btn-sm btn-link text-danger px-0" :disabled="busyId === template.id" @click="remove(template)">Delete</button>
                   </div>

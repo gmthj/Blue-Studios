@@ -37,10 +37,22 @@
 // 1. Imports
 // =============================================================================
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 
-// Composables
+// Composables & Auth
 import { useSmartGuides } from '../composables/useSmartGuides.js'
 import { useCanvasViewport } from '../composables/useCanvasViewport.js'
+import { useAuth, getUid } from '../composables/useAuth.js'
+
+// Studio & Marketplace Integrations
+import {
+  saveTemplate,
+  loadTemplateProject,
+  CATEGORIES,
+  MAX_CATEGORIES,
+  categoryLabel
+} from '../studio.js'
+import { getItem } from '../marketplace.js'
 
 // Utilities & Engines
 import {
@@ -97,6 +109,24 @@ const canvasWorkspaceRef = ref(null)
 const uploadInputRef = ref(null)
 const captionInputRef = ref(null)
 const textInputRefs = ref({})
+
+// --- Router & Auth Context ---
+const route = useRoute()
+const router = useRouter()
+const { user, isAccount } = useAuth()
+
+// --- Cloud Template & My Studio / Marketplace State ---
+const cloudId = ref(null) // Firestore document ID if saved to account or loaded from cloud
+const loadedTemplateOwnerId = ref(null) // ownerId of template loaded from Firestore
+const chosenCategories = ref(['other']) // 1 to 3 categories from CATEGORIES
+const isSaveModalOpen = ref(false)
+const cloudErrorMessage = ref('')
+const alsoDownloadPng = ref(true)
+
+const isOwner = computed(() => {
+  if (!cloudId.value || !loadedTemplateOwnerId.value) return true
+  return loadedTemplateOwnerId.value === getUid()
+})
 
 // --- Notification System ---
 const showNotification = ref(false)
@@ -475,10 +505,13 @@ function redo() {
 }
 
 function applySnapshot(state) {
-  templateName.value = state.templateName
-  activeLayout.value = state.activeLayout
-  slotCount.value = state.slotCount
-  selectedBgColor.value = state.selectedBgColor
+  if (state.templateName) templateName.value = state.templateName
+  if (state.activeLayout) activeLayout.value = state.activeLayout
+  if (state.slotCount) slotCount.value = state.slotCount
+  if (state.categories && Array.isArray(state.categories) && state.categories.length) {
+    chosenCategories.value = [...state.categories]
+  }
+  if (state.selectedBgColor) selectedBgColor.value = state.selectedBgColor
   if (state.frameBg) {
     frameBg.value = { ...state.frameBg }
   } else {
@@ -492,13 +525,14 @@ function applySnapshot(state) {
       scale: 1
     }
   }
-  borderColor.value = state.borderColor
-  borderWidth.value = state.borderWidth
-  slotShape.value = state.slotShape
-  captionText.value = state.captionText
+  if (state.borderColor !== undefined) borderColor.value = state.borderColor
+  if (state.borderWidth !== undefined) borderWidth.value = state.borderWidth
+  if (state.slotShape) slotShape.value = state.slotShape
+  if (state.captionText !== undefined) captionText.value = state.captionText
   if (state.cutoutsLayerPosition) cutoutsLayerPosition.value = state.cutoutsLayerPosition
   if (state.showCutouts !== undefined) showCutouts.value = state.showCutouts
   canvasElements.value = state.canvasElements || []
+  if (state.customGuides) customGuides.value = state.customGuides || []
 }
 
 // =============================================================================
@@ -2177,30 +2211,88 @@ async function onCanvasDrop(event) {
 }
 
 // =============================================================================
-// 18. Saved Frames Storage & Editable PNG Export
+// 18. Saved Frames Storage, Account/Cloud Sync & Editable PNG Export
 // =============================================================================
-async function saveFrame() {
+
+// Make a PNG Blob no taller/wider than maxSide pixels (under 2 MB for Firebase Storage)
+async function shrinkPng(blob, maxSide = 1400) {
+  const bitmap = await createImageBitmap(blob)
+  const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height))
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(bitmap.width * scale)
+  canvas.height = Math.round(bitmap.height * scale)
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  return await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
+}
+
+// Where each photo slot is, in percent of the strip, so Germaine's Pick page can place photos without the editor
+function measureSlots(stripEl) {
+  if (!stripEl) return []
+  const box = stripEl.getBoundingClientRect()
+  if (box.width === 0 || box.height === 0) return []
+  return Array.from(stripEl.querySelectorAll('.cutout-slot')).map((el) => {
+    const r = el.getBoundingClientRect()
+    return {
+      x: ((r.left - box.left) / box.width) * 100,
+      y: ((r.top - box.top) / box.height) * 100,
+      w: (r.width / box.width) * 100,
+      h: (r.height / box.height) * 100,
+    }
+  })
+}
+
+function toggleCategory(id) {
+  if (chosenCategories.value.includes(id)) {
+    if (chosenCategories.value.length > 1) {
+      chosenCategories.value = chosenCategories.value.filter((other) => other !== id)
+    }
+  } else if (chosenCategories.value.length < MAX_CATEGORIES) {
+    chosenCategories.value = chosenCategories.value.concat(id)
+  }
+}
+
+function saveFrame() {
+  cloudErrorMessage.value = ''
+  isSaveModalOpen.value = true
+}
+
+async function executeSave({ asCopy = false } = {}) {
   if (isSavingFrame.value || !stripRef.value) return
   isSavingFrame.value = true
-  notify('Saving template and generating editable PNG...')
+  cloudErrorMessage.value = ''
+  notify('Saving template...')
 
   const prevSelected = [...selectedElementIds.value]
   const prevShowCutouts = showCutouts.value
   selectedElementIds.value = []
-  showCutouts.value = false
+
+  // Ensure cutouts are visible during slot measurement for accurate coordinates
+  showCutouts.value = true
   await nextTick()
 
   try {
     const frameId = currentSavedFrameId.value || `frame_${Date.now()}`
     currentSavedFrameId.value = frameId
 
+    // Measure slot rects and aspect ratio for Germaine
+    const slotRects = measureSlots(stripRef.value)
+    const aspect = stripRef.value.offsetWidth / stripRef.value.offsetHeight
+
+    const safeName = templateName.value.trim().slice(0, 40) || 'Untitled frame'
+    const safeCategories = (chosenCategories.value && chosenCategories.value.length >= 1)
+      ? chosenCategories.value
+      : ['other']
+
     const projectData = {
       id: frameId,
-      templateName: templateName.value,
+      templateName: safeName,
       updatedAt: Date.now(),
       version: 1,
       activeLayout: activeLayout.value,
-      slotCount: slotCount.value,
+      slotCount: Math.min(12, Math.max(1, slotCount.value || 4)),
+      categories: safeCategories,
+      slotRects,
+      aspect,
       selectedBgColor: selectedBgColor.value,
       frameBg: { ...frameBg.value },
       borderColor: borderColor.value,
@@ -2215,9 +2307,31 @@ async function saveFrame() {
 
     const { blob, thumbnail } = await captureEditablePng(stripRef.value, projectData)
 
+    // Save to user's account in Firebase (My Studio) if signed in as account
+    if (isAccount.value) {
+      const rawBlob = await (await fetch(thumbnail)).blob()
+      const thumbnailBlob = await shrinkPng(rawBlob, 1400)
+
+      // If user requested a copy or doesn't own original template, save without id to create new
+      const targetCloudId = (asCopy || !isOwner.value) ? undefined : (cloudId.value || undefined)
+
+      const savedId = await saveTemplate({
+        id: targetCloudId,
+        name: safeName,
+        slotCount: Math.min(12, Math.max(1, slotCount.value || 4)),
+        categories: safeCategories,
+        thumbnail: thumbnailBlob,
+        projectData: projectData
+      })
+      cloudId.value = savedId
+      loadedTemplateOwnerId.value = getUid()
+    }
+
+    // Always update local IndexedDB record for offline / browser backup
     const record = {
       id: frameId,
-      name: templateName.value,
+      cloudId: cloudId.value,
+      name: safeName,
       updatedAt: Date.now(),
       slotCount: slotCount.value,
       elementCount: canvasElements.value.length,
@@ -2227,13 +2341,20 @@ async function saveFrame() {
     await saveFrameToDB(record)
     savedFramesList.value = await loadSavedFramesFromDB()
 
-    const filename = `${sanitizeFilename(templateName.value || 'photostrip')}.png`
-    triggerFileDownload(blob, filename)
+    if (alsoDownloadPng.value || !isAccount.value) {
+      const filename = `${sanitizeFilename(safeName)}.png`
+      triggerFileDownload(blob, filename)
+    }
 
-    notify(`Template "${templateName.value}" saved to folder & downloaded as editable PNG!`)
+    isSaveModalOpen.value = false
+    const msg = isAccount.value
+      ? `Saved "${safeName}" to My Studio!`
+      : `Saved "${safeName}" to device!`
+    notify(msg)
   } catch (err) {
     console.error('Failed to save frame:', err)
-    notify('Failed to save frame. Please try again.')
+    cloudErrorMessage.value = err.message || 'Failed to save frame. Please try again.'
+    notify('Failed to save frame.')
   } finally {
     selectedElementIds.value = prevSelected
     showCutouts.value = prevShowCutouts
@@ -2245,8 +2366,39 @@ function openSavedFrame(frameRecord) {
   if (!frameRecord || !frameRecord.projectData) return
   applySnapshot(frameRecord.projectData)
   currentSavedFrameId.value = frameRecord.id
+  if (frameRecord.cloudId) {
+    cloudId.value = frameRecord.cloudId
+  }
   isSavedFramesModalOpen.value = false
   notify(`Loaded "${frameRecord.name || 'Template'}"!`)
+}
+
+async function loadTemplateFromQuery(templateId) {
+  if (!templateId) return
+  try {
+    notify('Loading template from cloud...')
+    const template = await getItem('templates', templateId)
+    if (template) {
+      const projectData = await loadTemplateProject(template)
+      applySnapshot(projectData)
+      if (template.name) templateName.value = template.name
+      if (template.categories && template.categories.length) {
+        chosenCategories.value = [...template.categories]
+      }
+      loadedTemplateOwnerId.value = template.ownerId
+      if (template.ownerId === getUid()) {
+        cloudId.value = template.id
+      } else {
+        cloudId.value = null // Different owner -> save will create user's own copy
+      }
+      notify(`Loaded template "${template.name}"!`)
+    } else {
+      notify('Template not found or private.')
+    }
+  } catch (err) {
+    console.error('Error loading template from cloud:', err)
+    notify('Could not load template from cloud.')
+  }
 }
 
 async function deleteFrame(id) {
@@ -2705,6 +2857,17 @@ onMounted(async () => {
   if (frames && frames.length > 0) {
     savedFramesList.value = frames
   }
+
+  // Check if opening a saved template from My Studio or Marketplace via ?template={id}
+  if (route.query.template) {
+    await loadTemplateFromQuery(route.query.template)
+  }
+})
+
+watch(() => route.query.template, async (newId) => {
+  if (newId && newId !== cloudId.value) {
+    await loadTemplateFromQuery(newId)
+  }
 })
 
 onBeforeUnmount(() => {
@@ -2737,9 +2900,9 @@ onBeforeUnmount(() => {
         </router-link>
 
         <nav class="nav gap-1">
-          <router-link to="/" class="nav-link text-secondary py-1 px-2 rounded">My Studio</router-link>
+          <router-link to="/studio" class="nav-link text-secondary py-1 px-2 rounded">My Studio</router-link>
           <span class="nav-link active text-primary fw-bold py-1 px-2 rounded">Templates</span>
-          <span class="nav-link text-secondary py-1 px-2 rounded">Stickers</span>
+          <router-link to="/marketplace" class="nav-link text-secondary py-1 px-2 rounded">Marketplace</router-link>
         </nav>
       </div>
 
@@ -2748,7 +2911,23 @@ onBeforeUnmount(() => {
           <IconUsers :size="16" :stroke-width="2" />
           <span>Join room</span>
         </router-link>
-        <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center fw-bold" style="width: 32px; height: 32px; font-size: 13px;">G</div>
+        <template v-if="isAccount">
+          <router-link to="/studio" class="btn btn-sm btn-outline-secondary rounded-pill d-none d-sm-inline-flex align-items-center gap-1 text-decoration-none">
+            <span>My Studio</span>
+          </router-link>
+          <span class="small fw-semibold text-truncate d-none d-md-inline" style="max-width: 130px;">
+            {{ user.displayName || user.email }}
+          </span>
+          <div class="rounded-circle bg-primary text-white d-flex align-items-center justify-content-center fw-bold" style="width: 32px; height: 32px; font-size: 13px;" :title="user.displayName || user.email">
+            {{ (user.displayName || user.email || 'U').charAt(0).toUpperCase() }}
+          </div>
+        </template>
+        <template v-else>
+          <router-link :to="'/login?redirect=' + encodeURIComponent($route.fullPath)" class="btn btn-outline-primary btn-sm rounded-pill">
+            Log in
+          </router-link>
+          <div class="rounded-circle bg-secondary text-white d-flex align-items-center justify-content-center fw-bold" style="width: 32px; height: 32px; font-size: 13px;" title="Browsing as guest">G</div>
+        </template>
       </div>
     </header>
 
@@ -3294,10 +3473,25 @@ onBeforeUnmount(() => {
             <span v-if="savedFramesList.length > 0" class="badge rounded-pill bg-primary ms-1">{{ savedFramesList.length }}</span>
           </button>
 
-          <!-- Save Frame Button (Editable PNG & Local Folder Storage) -->
-          <button class="btn btn-sm btn-primary d-flex align-items-center gap-1 fw-bold shadow-sm" :disabled="isSavingFrame" @click="saveFrame" title="Save Frame & Download Editable PNG (⌘S)">
+          <!-- Guest notice button if not logged in -->
+          <router-link
+            v-if="!isAccount"
+            :to="'/login?redirect=' + encodeURIComponent($route.fullPath)"
+            class="btn btn-sm btn-outline-primary d-none d-md-flex align-items-center gap-1"
+            title="Log in to save to your account and My Studio"
+          >
+            <span>Log in to save</span>
+          </router-link>
+
+          <!-- Save Frame Button (Editable PNG & My Studio) -->
+          <button
+            class="btn btn-sm btn-primary d-flex align-items-center gap-1 fw-bold shadow-sm"
+            :disabled="isSavingFrame"
+            @click="saveFrame"
+            :title="isAccount ? 'Save Frame to My Studio & Download PNG (⌘S)' : 'Save Frame Locally (⌘S)'"
+          >
             <IconSave :size="14" :stroke-width="2.3" />
-            <span>{{ isSavingFrame ? 'Saving...' : 'Save Frame' }}</span>
+            <span>{{ isSavingFrame ? 'Saving...' : (isAccount ? (cloudId ? (isOwner ? 'Save Frame' : 'Save a Copy') : 'Save Frame') : 'Save Frame') }}</span>
           </button>
         </div>
       </template>
@@ -5050,6 +5244,134 @@ onBeforeUnmount(() => {
       @import-file="importFrameFromFile"
       @save-current="saveFrame"
     />
+
+    <!-- Save Template to My Studio / Account Modal -->
+    <div
+      v-if="isSaveModalOpen"
+      class="modal fade show d-block"
+      tabindex="-1"
+      style="background: rgba(15, 23, 42, 0.6); z-index: 1060;"
+      @click.self="isSaveModalOpen = false"
+    >
+      <div class="modal-dialog modal-dialog-centered" style="max-width: 480px;">
+        <div class="modal-content shadow-lg border-0 rounded-4 overflow-hidden">
+          <div class="modal-header bg-light border-bottom px-4 py-3 align-items-center">
+            <div class="d-flex align-items-center gap-2">
+              <div class="rounded-circle bg-primary bg-opacity-10 p-2 text-primary d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                <IconSave :size="18" :stroke-width="2.2" />
+              </div>
+              <h5 class="modal-title fs-6 fw-bold m-0">Save Template</h5>
+            </div>
+            <button type="button" class="btn-close" @click="isSaveModalOpen = false" aria-label="Close"></button>
+          </div>
+
+          <div class="modal-body p-4 d-flex flex-column gap-3">
+            <!-- Account Status Banner -->
+            <div v-if="isAccount" class="alert alert-light border d-flex align-items-center justify-content-between p-2 mb-0">
+              <div class="d-flex align-items-center gap-2 small">
+                <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">Logged In</span>
+                <span class="fw-semibold text-truncate" style="max-width: 220px;">{{ user.displayName || user.email }}</span>
+              </div>
+              <router-link to="/studio" class="small text-decoration-none">My Studio &rarr;</router-link>
+            </div>
+            <div v-else class="alert alert-warning small d-flex flex-column gap-2 mb-0">
+              <div class="d-flex align-items-center gap-2">
+                <span>⚠️ You are currently editing as a <strong>guest</strong>.</span>
+              </div>
+              <p class="mb-0 text-muted" style="font-size: 0.8rem;">
+                Guests can save locally to this browser and download editable PNGs. To save templates to your account, use them in photo rooms, or publish to the marketplace:
+              </p>
+              <div>
+                <router-link :to="'/login?redirect=' + encodeURIComponent($route.fullPath)" class="btn btn-sm btn-primary">
+                  Log in to save to My Studio
+                </router-link>
+              </div>
+            </div>
+
+            <!-- Notice if editing someone else's marketplace template -->
+            <div v-if="isAccount && cloudId && !isOwner" class="alert alert-info small mb-0 py-2">
+              ℹ️ This template belongs to another creator. Saving will save a <strong>new copy</strong> to your My Studio.
+            </div>
+
+            <!-- Template Name Field -->
+            <div>
+              <label class="form-label small fw-bold text-secondary text-uppercase mb-1" for="modal-template-name">Template Name</label>
+              <input
+                id="modal-template-name"
+                v-model="templateName"
+                type="text"
+                maxlength="40"
+                class="form-control"
+                placeholder="e.g. Y2K Besties Strip"
+                required
+              />
+              <div class="d-flex justify-content-between text-muted mt-1" style="font-size: 0.72rem;">
+                <span>{{ slotCount }} slots &middot; {{ activeLayout }} layout</span>
+                <span>{{ (templateName || '').length }} / 40</span>
+              </div>
+            </div>
+
+            <!-- Category Picker (1 to 3) -->
+            <div>
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Marketplace Categories</label>
+                <span class="small text-muted" style="font-size: 0.75rem;">Pick 1 to {{ MAX_CATEGORIES }}</span>
+              </div>
+              <div class="d-flex flex-wrap gap-1">
+                <button
+                  v-for="c in CATEGORIES"
+                  :key="c.id"
+                  type="button"
+                  class="btn btn-sm rounded-pill py-0 px-2"
+                  :class="chosenCategories.includes(c.id) ? 'btn-primary' : 'btn-outline-secondary'"
+                  :disabled="!chosenCategories.includes(c.id) && chosenCategories.length >= MAX_CATEGORIES"
+                  @click="toggleCategory(c.id)"
+                >
+                  {{ c.label }}
+                </button>
+              </div>
+            </div>
+
+            <!-- Also download PNG checkbox -->
+            <div class="form-check">
+              <input id="modal-download-png" v-model="alsoDownloadPng" class="form-check-input" type="checkbox" />
+              <label class="form-check-label small text-secondary" for="modal-download-png">
+                Also download editable PNG & save to device folder
+              </label>
+            </div>
+
+            <div v-if="cloudErrorMessage" class="alert alert-danger small py-2 mb-0">
+              {{ cloudErrorMessage }}
+            </div>
+          </div>
+
+          <div class="modal-footer bg-light border-top px-4 py-3 d-flex justify-content-between">
+            <button type="button" class="btn btn-outline-secondary btn-sm" @click="isSaveModalOpen = false">Cancel</button>
+
+            <div class="d-flex gap-2">
+              <button
+                v-if="isAccount && cloudId && isOwner"
+                type="button"
+                class="btn btn-outline-primary btn-sm"
+                :disabled="isSavingFrame"
+                @click="executeSave({ asCopy: true })"
+              >
+                Save as Copy
+              </button>
+              <button
+                type="button"
+                class="btn btn-primary btn-sm fw-bold px-3 shadow-sm"
+                :disabled="isSavingFrame"
+                @click="executeSave({ asCopy: false })"
+              >
+                <span v-if="isSavingFrame" class="spinner-border spinner-border-sm me-1" role="status"></span>
+                <span>{{ isAccount ? (cloudId ? (isOwner ? 'Update in My Studio' : 'Save a copy to My Studio') : 'Save to My Studio') : 'Save to Device & Download' }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- Toast Notification -->
     <div v-if="showNotification" class="toast-toast">
