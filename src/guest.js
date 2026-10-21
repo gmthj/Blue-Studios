@@ -1,15 +1,5 @@
-// Guests do not need an account to join a room, so we give each browser
-// a random guest id and remember it (and their name) in localStorage.
-// This means refreshing the page keeps the same id, so the host stays the host.
-
-export function getGuestId() {
-  let id = localStorage.getItem('guestId')
-  if (id === null) {
-    id = 'guest-' + Date.now() + '-' + Math.floor(Math.random() * 100000)
-    localStorage.setItem('guestId', id)
-  }
-  return id
-}
+// Guests do not need an account to join a room. Their user id comes from Firebase Auth
+// (see composables/useAuth.js); here we only remember the name they typed, in localStorage.
 
 export function getGuestName() {
   return localStorage.getItem('guestName') || ''

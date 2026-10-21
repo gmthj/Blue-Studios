@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
-import { getGuestId } from '../guest.js'
+import { getUid } from '../composables/useAuth.js'
 import { MAX_PEOPLE } from '../room.js'
 import VideoTile from './VideoTile.vue'
 
@@ -19,14 +19,14 @@ defineProps({
 })
 
 const router = useRouter()
-const guestId = getGuestId()
+const uid = getUid()
 const { room, activeMembers, roomRef, exitRoom } = useRoom()
 const { micOn, micBusy, toggleMic, callError } = useVideoCall()
 
 // The host can always close the room. If the host has left, anyone can (so the room is not stuck open).
 const canCloseRoom = computed(() => {
   const hostIsHere = activeMembers.value.some((member) => member.id === room.value.hostId)
-  return room.value.hostId === guestId || !hostIsHere
+  return room.value.hostId === uid || !hostIsHere
 })
 
 async function leaveRoom() {
@@ -68,7 +68,7 @@ async function closeRoom() {
           v-for="member in activeMembers"
           :key="member.id"
           :member="member"
-          :is-self="member.id === guestId"
+          :is-self="member.id === uid"
           :is-host="member.id === room.hostId"
         />
       </div>

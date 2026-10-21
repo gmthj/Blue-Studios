@@ -145,3 +145,10 @@ vite.config.ts.timestamp-*
 .env*
 
 .DS_Store
+
+# Firebase emulator logs
+firebase-debug.log*
+firestore-debug.log*
+
+/figma
+
