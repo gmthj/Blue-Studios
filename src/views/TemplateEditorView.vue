@@ -10,7 +10,7 @@
 //    - Frame Background, Texture & Border Properties
 //    - Interactive Selection, Drag, Resize & Rotate States
 //    - Typography & Inline Text Editing States
-//    - Vector SVG Recoloring & Doodle Engine States
+//    - Vector SVG Recoloring Engine States
 //    - User Uploads (IndexedDB) & Project Persistence
 //    - Notification & Undo / Redo History
 // 3. Computed Properties & Layer Helpers
@@ -26,12 +26,11 @@
 // 13. Layer Management, Ordering & Grouping
 // 14. Typography & Double-Click Inline Text Editing
 // 15. Canva-Style Vector SVG Dynamic Recoloring Engine
-// 16. Freehand Doodle Drawing Engine & Eraser
-// 17. User Media Uploads System (IndexedDB)
-// 18. Saved Frames Storage & Editable PNG Export
-// 19. Canvas Workspace Handlers (Pan, Zoom, Rulers & Mouse Events)
-// 20. Global Keyboard Shortcuts & Event Listeners
-// 21. Lifecycle Hooks (onMounted, onBeforeUnmount)
+// 16. User Media Uploads System (IndexedDB)
+// 17. Saved Frames Storage & Editable PNG Export
+// 18. Canvas Workspace Handlers (Pan, Zoom, Rulers & Mouse Events)
+// 19. Global Keyboard Shortcuts & Event Listeners
+// 20. Lifecycle Hooks (onMounted, onBeforeUnmount)
 // =============================================================================
 
 // =============================================================================
@@ -42,7 +41,6 @@ import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 // Composables
 import { useSmartGuides } from '../composables/useSmartGuides.js'
 import { useCanvasViewport } from '../composables/useCanvasViewport.js'
-import { useDoodleEngine } from '../composables/useDoodleEngine.js'
 
 // Utilities & Engines
 import {
@@ -151,22 +149,7 @@ const {
   clearGuides
 } = useSmartGuides()
 
-// --- Freehand Doodle Brush Engine ---
-const {
-  isDrawMode,
-  currentBrush,
-  brushColor,
-  brushWidth,
-  isDrawing,
-  currentPoints,
-  activeStrokes,
-  DOODLE_PALETTE,
-  setBrush,
-  pointsToSvgPath,
-  computeBoundingBox,
-  generateSparkles,
-  createDoodleElement
-} = useDoodleEngine()
+
 
 // --- Editor Navigation & Toolbar State ---
 const templateName = ref('Retro 4-cut')
@@ -258,13 +241,11 @@ const isFontDropdownOpen = ref(false)
 const fontSearchQuery = ref('')
 const isTextColorPickerOpen = ref(false)
 const isTextSpacingOpen = ref(false)
-const isTextEffectsOpen = ref(false)
 let textHistoryTimer = null
 
 // --- Vector SVG Dynamic Recoloring ---
 const activeVectorColorTarget = ref(null)
 const isVectorColorPickerOpen = ref(false)
-const isDoodleColorPickerOpen = ref(false)
 
 // --- UI Dropdown & Popover States ---
 const isPositionPopoverOpen = ref(false)
@@ -339,13 +320,6 @@ const activeVectorElement = computed(() => {
   return null
 })
 
-const activeDoodleElement = computed(() => {
-  if (selectedElementIds.value.length === 1) {
-    const el = canvasElements.value.find(e => e.id === selectedElementIds.value[0])
-    if (el && el.type === 'doodle') return el
-  }
-  return null
-})
 
 const canGroupSelected = computed(() => {
   if (selectedElementIds.value.length <= 1) return false
@@ -378,7 +352,7 @@ const collectiveBounds = computed(() => {
   selected.forEach(el => {
     let w = 40
     let h = 40
-    if (el.type === 'tape' || el.type === 'shape' || el.type === 'doodle') {
+    if (el.type === 'tape' || el.type === 'shape') {
       w = el.width || 80
       h = el.height || 24
     } else if (el.type === 'sticker') {
@@ -531,26 +505,15 @@ function applySnapshot(state) {
 // 6. Template Presets & Layout Operations
 // =============================================================================
 function toggleDrawer(toolName) {
-  if (isDrawMode.value && toolName !== 'draw') {
-    finishDrawingSession()
-  }
   if (activeTool.value === toolName && isDrawerOpen.value) {
     closeDrawer()
   } else {
     activeTool.value = toolName
     isDrawerOpen.value = true
-    if (toolName === 'draw') {
-      isDrawMode.value = true
-      selectedElementIds.value = []
-      notify('Draw Mode: pick a brush and doodle on the strip!')
-    }
   }
 }
 
 async function closeDrawer() {
-  if (isDrawMode.value) {
-    finishDrawingSession()
-  }
   isDrawerOpen.value = false
 }
 
@@ -766,13 +729,6 @@ function addTextElement(preset) {
     letterSpacing: preset.letterSpacing || 0,
     lineHeight: preset.lineHeight || 1.2,
     color: preset.color || '#0F172A',
-    effect: preset.effect || 'none',
-    effectSettings: preset.effectSettings ? JSON.parse(JSON.stringify(preset.effectSettings)) : {
-      shadow: { offsetX: 3, offsetY: 3, blur: 4, opacity: 0.6, color: '#000000', direction: 45 },
-      stroke: { width: 3, color: preset.color && preset.color !== '#FFFFFF' ? preset.color : '#0F172A', isHollow: true },
-      echo: { offset: 4, color: '#FF4081' },
-      badge: { color: '#FFD166', padding: 8, borderRadius: 8 }
-    },
     curveAmount: preset.curveAmount || 0,
     x: 40,
     y: 40,
@@ -1268,7 +1224,7 @@ function onResizeMove(event) {
     dx = -dx
   }
 
-  if (el.type === 'sticker' || el.type === 'text' || el.type === 'image' || el.type === 'doodle') {
+  if (el.type === 'sticker' || el.type === 'text' || el.type === 'image') {
     const delta = (dx + dy) / 2
     const scale = Math.max(0.25, (startW + delta) / startW)
     if (el.fontSize) el.fontSize = Math.max(12, Math.min(84, Math.round(startFontSize * scale)))
@@ -1541,10 +1497,6 @@ function getElementDisplayName(el) {
   if (el.type === 'tape') return `${el.color || 'Colored'} Washi Tape`
   if (el.type === 'text') return el.text ? `"${el.text.slice(0, 14)}..."` : 'Text'
   if (el.type === 'shape') return 'Cute Shape'
-  if (el.type === 'doodle') {
-    const brush = el.brushType ? el.brushType.charAt(0).toUpperCase() + el.brushType.slice(1) : 'Hand'
-    return `${brush} Doodle`
-  }
   return 'Layer'
 }
 
@@ -1618,15 +1570,6 @@ function normalizeTextElement(el) {
   if (el.letterSpacing === undefined) el.letterSpacing = 0
   if (el.lineHeight === undefined) el.lineHeight = 1.2
   if (!el.color) el.color = '#0F172A'
-  if (!el.effect) el.effect = 'none'
-  if (!el.effectSettings) {
-    el.effectSettings = {
-      shadow: { offsetX: 3, offsetY: 3, blur: 4, opacity: 0.6, color: '#000000', direction: 45 },
-      stroke: { width: 3, color: '#0F172A', isHollow: true },
-      echo: { offset: 4, color: '#FF4081' },
-      badge: { color: '#FFD166', padding: 8, borderRadius: 8 }
-    }
-  }
   if (el.curveAmount === undefined) el.curveAmount = 0
   return el
 }
@@ -1698,25 +1641,6 @@ function setTextColor(color) {
   debounceTextHistory()
 }
 
-function openEffectsDrawer() {
-  activeTool.value = 'effects'
-  isDrawerOpen.value = true
-}
-
-function setEffect(effectName) {
-  if (!activeTextElement.value) return
-  activeTextElement.value.effect = effectName
-  if (!activeTextElement.value.effectSettings) {
-    activeTextElement.value.effectSettings = {
-      shadow: { offsetX: 3, offsetY: 3, blur: 4, opacity: 0.6, color: '#000000', direction: 45 },
-      stroke: { width: 3, color: '#0F172A', isHollow: true },
-      echo: { offset: 4, color: '#FF4081' },
-      badge: { color: '#FFD166', padding: 8, borderRadius: 8 }
-    }
-  }
-  debounceTextHistory()
-}
-
 function toggleCurvature(enable) {
   if (!activeTextElement.value) return
   activeTextElement.value.curveAmount = enable ? 45 : 0
@@ -1725,7 +1649,7 @@ function toggleCurvature(enable) {
 
 function getTextStyle(el) {
   if (!el) return {}
-  const s = {
+  return {
     fontFamily: el.fontFamily || "'Montserrat', sans-serif",
     fontSize: (el.fontSize || 22) + 'px',
     fontWeight: el.fontWeight || 'normal',
@@ -1737,38 +1661,6 @@ function getTextStyle(el) {
     lineHeight: el.lineHeight || 1.2,
     color: el.color || '#0F172A'
   }
-
-  const eff = el.effect || 'none'
-  const cfg = el.effectSettings || {}
-
-  if (eff === 'shadow') {
-    const sh = cfg.shadow || { offsetX: 3, offsetY: 3, blur: 4, opacity: 0.6, color: '#000000' }
-    const rgba = hexToRgba(sh.color || '#000000', sh.opacity || 0.6)
-    s.textShadow = `${sh.offsetX || 3}px ${sh.offsetY || 3}px ${sh.blur || 4}px ${rgba}`
-  } else if (eff === 'stroke') {
-    const st = cfg.stroke || { width: 2, color: '#000000', isHollow: false }
-    s.webkitTextStroke = `${st.width || 2}px ${st.color || '#000000'}`
-    if (st.isHollow) s.color = 'transparent'
-  } else if (eff === 'echo') {
-    const ec = cfg.echo || { offset: 3, color: '#FF4081' }
-    const d = ec.offset || 3
-    s.textShadow = `${d}px ${d}px 0px ${ec.color || '#FF4081'}, ${d * 2}px ${d * 2}px 0px ${hexToRgba(ec.color || '#FF4081', 0.5)}`
-  } else if (eff === 'glitch') {
-    s.textShadow = `-2px 0 #00ffff, 2px 0 #ff00ff`
-  } else if (eff === 'neon') {
-    const col = el.color || '#38BDF8'
-    s.textShadow = `0 0 5px #fff, 0 0 10px #fff, 0 0 20px ${col}, 0 0 35px ${col}`
-  } else if (eff === 'badge') {
-    const bg = cfg.badge?.color || '#FFD166'
-    const pad = cfg.badge?.padding || 8
-    const rad = cfg.badge?.borderRadius || 8
-    s.backgroundColor = bg
-    s.padding = `${pad / 2}px ${pad}px`
-    s.borderRadius = `${rad}px`
-    s.display = 'inline-block'
-  }
-
-  return s
 }
 
 function getCurvedSvgWidth(el) {
@@ -2040,184 +1932,7 @@ function getTapePattern(el) {
 }
 
 // =============================================================================
-// 16. Freehand Doodle Drawing Engine & Eraser
-// =============================================================================
-function getStarPoints(cx, cy, outerR, innerR, points = 4) {
-  let str = ''
-  const inR = innerR !== undefined ? innerR : outerR * 0.22
-  for (let i = 0; i < points * 2; i++) {
-    const r = i % 2 === 0 ? outerR : inR
-    const angle = (i * Math.PI) / points - Math.PI / 2
-    const x = cx + r * Math.cos(angle)
-    const y = cy + r * Math.sin(angle)
-    str += `${x.toFixed(1)},${y.toFixed(1)} `
-  }
-  return str.trim()
-}
-
-function getCrossPoints(cx, cy, size) {
-  const w = size * 0.25
-  const l = size
-  return `${cx},${cy - l} ${cx + w},${cy - w} ${cx + l},${cy} ${cx + w},${cy + w} ${cx},${cy + l} ${cx - w},${cy + w} ${cx - l},${cy} ${cx - w},${cy - w}`
-}
-
-function handleEraserAtPoint(pt) {
-  const eraserRadius = Math.max(14, brushWidth.value * 1.5)
-
-  if (activeStrokes.value.length > 0) {
-    const strokeIdx = activeStrokes.value.findIndex(s => {
-      if (!s.points || s.points.length === 0) return false
-      return s.points.some(p => Math.hypot(p.x - pt.x, p.y - pt.y) <= Math.max(eraserRadius, (s.width || 6) * 1.5))
-    })
-    if (strokeIdx >= 0) {
-      activeStrokes.value.splice(strokeIdx, 1)
-      notify('Erased stroke')
-      return
-    }
-  }
-
-  const hitIdx = canvasElements.value.findIndex(el => {
-    if (el.type !== 'doodle') return false
-    return (
-      pt.x >= el.x - eraserRadius &&
-      pt.x <= el.x + el.width + eraserRadius &&
-      pt.y >= el.y - eraserRadius &&
-      pt.y <= el.y + el.height + eraserRadius
-    )
-  })
-
-  if (hitIdx >= 0) {
-    const removed = canvasElements.value.splice(hitIdx, 1)[0]
-    selectedElementIds.value = selectedElementIds.value.filter(id => id !== removed.id)
-    notify('Erased doodle')
-    saveHistoryState()
-  }
-}
-
-function getStripPoint(e) {
-  if (!stripRef.value) return { x: 0, y: 0, pressure: 0.5 }
-  const rect = stripRef.value.getBoundingClientRect()
-  return {
-    x: Math.round(((e.clientX - rect.left) / canvasScale.value) * 10) / 10,
-    y: Math.round(((e.clientY - rect.top) / canvasScale.value) * 10) / 10,
-    pressure: e.pressure || 0.5
-  }
-}
-
-function onDrawPointerDown(event) {
-  if (!isDrawMode.value) return
-  if (event.button !== 0) return
-
-  const pt = getStripPoint(event)
-
-  if (currentBrush.value === 'eraser') {
-    handleEraserAtPoint(pt)
-    return
-  }
-
-  isDrawing.value = true
-  currentPoints.value = [pt]
-}
-
-function onDrawPointerMove(event) {
-  if (!isDrawMode.value) return
-
-  const pt = getStripPoint(event)
-
-  if (currentBrush.value === 'eraser') {
-    if (event.buttons === 1) {
-      handleEraserAtPoint(pt)
-    }
-    return
-  }
-
-  if (!isDrawing.value) return
-
-  const last = currentPoints.value[currentPoints.value.length - 1]
-  if (last) {
-    const dist = Math.hypot(pt.x - last.x, pt.y - last.y)
-    if (dist < 1.5) return
-  }
-
-  currentPoints.value.push(pt)
-}
-
-function onDrawPointerUp() {
-  if (!isDrawMode.value) return
-  if (currentBrush.value === 'eraser') return
-
-  if (!isDrawing.value) return
-  isDrawing.value = false
-
-  if (currentPoints.value.length > 1) {
-    activeStrokes.value.push({
-      points: [...currentPoints.value],
-      pathData: pointsToSvgPath(currentPoints.value),
-      brush: currentBrush.value,
-      color: brushColor.value,
-      width: brushWidth.value,
-      opacity: currentBrush.value === 'highlighter' ? 0.45 : 1
-    })
-  }
-  currentPoints.value = []
-}
-
-function undoDoodleStroke() {
-  if (activeStrokes.value.length > 0) {
-    activeStrokes.value.pop()
-    notify('Undo stroke')
-  }
-}
-
-function clearDoodleStrokes() {
-  activeStrokes.value = []
-  currentPoints.value = []
-  notify('Cleared drawings')
-}
-
-function finishDrawingSession() {
-  if (activeStrokes.value.length > 0) {
-    const newEl = createDoodleElement(
-      activeStrokes.value,
-      currentBrush.value,
-      brushColor.value,
-      brushWidth.value,
-      currentBrush.value === 'highlighter' ? 0.45 : 1
-    )
-
-    if (newEl) {
-      canvasElements.value.push(newEl)
-      selectedElementIds.value = [newEl.id]
-      saveHistoryState()
-      notify('Doodle converted to movable canvas element!')
-    }
-  }
-
-  activeStrokes.value = []
-  currentPoints.value = []
-  isDrawMode.value = false
-}
-
-function toggleDrawMode() {
-  toggleDrawer('draw')
-}
-
-function setDoodleColor(color) {
-  if (activeDoodleElement.value) {
-    activeDoodleElement.value.color = color
-    saveHistoryState()
-  }
-}
-
-function setDoodleStrokeWidth(w) {
-  if (activeDoodleElement.value) {
-    activeDoodleElement.value.strokeWidth = w
-    saveHistoryState()
-  }
-}
-
-// =============================================================================
-// 17. User Media Uploads System (IndexedDB)
+// 16. User Media Uploads System (IndexedDB)
 // =============================================================================
 const DB_NAME = 'BlueStudiosUploadsDB'
 const DB_VERSION = 1
@@ -2779,7 +2494,6 @@ function handleGlobalClick(event) {
   isTextSpacingOpen.value = false
   isPositionPopoverOpen.value = false
   isVectorColorPickerOpen.value = false
-  isDoodleColorPickerOpen.value = false
   isZoomMenuOpen.value = false
   closeContextMenu()
 }
@@ -3300,21 +3014,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <div class="vr mx-1"></div>
 
-        <!-- Canva-Style "Effects" Button -->
-        <button
-          class="btn btn-sm d-flex align-items-center gap-1 position-relative"
-          :class="activeTool === 'effects' && isDrawerOpen ? 'btn-primary' : 'btn-outline-secondary'"
-          title="Open Text Effects & Curve"
-          @click="openEffectsDrawer"
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-          </svg>
-          <span class="small">Effects</span>
-          <span v-if="activeTextElement.effect !== 'none' || (activeTextElement.curveAmount && activeTextElement.curveAmount !== 0)" class="position-absolute top-0 start-100 translate-middle p-1 bg-primary border border-light rounded-circle"></span>
-        </button>
 
         <div class="vr mx-1"></div>
 
@@ -3394,119 +3094,6 @@ onBeforeUnmount(() => {
               </div>
             </div>
           </div>
-        </div>
-
-        <div class="vr mx-1"></div>
-
-        <!-- Quick actions: Duplicate & Delete -->
-        <div class="btn-group btn-group-sm">
-          <button class="btn btn-outline-secondary" title="Duplicate (⌘D)" @click="duplicateSelectedElements">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-            </svg>
-          </button>
-          <button class="btn btn-outline-danger" title="Delete (Del)" @click="removeSelectedElements">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-            </svg>
-          </button>
-        </div>
-
-        <div class="vr mx-1"></div>
-
-        <!-- Undo & Redo -->
-        <div class="btn-group btn-group-sm">
-          <button class="btn btn-outline-secondary" title="Undo" :disabled="historyIndex <= 0" @click="undo">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-              <path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
-            </svg>
-          </button>
-          <button class="btn btn-outline-secondary" title="Redo" :disabled="historyIndex >= history.length - 1" @click="redo">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-              <path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7" />
-            </svg>
-          </button>
-        </div>
-      </div>
-
-      <!-- When a doodle element is selected: CANVA DOODLE FORMATTING TOOLBAR -->
-      <div v-else-if="activeDoodleElement" class="d-flex align-items-center gap-2 flex-nowrap" @mousedown.stop>
-        <div class="badge bg-light text-dark border d-flex align-items-center gap-1 py-1 px-2 fw-semibold small text-capitalize">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M12 19l7-7 3 3-7 7-3-3z"></path>
-            <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"></path>
-            <path d="M2 2l7.586 7.586"></path>
-            <circle cx="11" cy="11" r="2"></circle>
-          </svg>
-          <span>{{ activeDoodleElement.brushType || 'Doodle' }} Stroke</span>
-        </div>
-
-        <div class="d-flex align-items-center gap-1">
-          <div class="position-relative">
-            <button
-              class="btn btn-sm btn-outline-secondary p-1 rounded-2"
-              style="width: 28px; height: 28px;"
-              :class="{ 'border-primary shadow-sm': isDoodleColorPickerOpen }"
-              :title="'Doodle Color: ' + (activeDoodleElement.color || '#0F172A')"
-              @click.stop="isDoodleColorPickerOpen = !isDoodleColorPickerOpen"
-            >
-              <span class="d-block w-100 h-100 rounded-1 border" :style="{ backgroundColor: activeDoodleElement.color || '#0F172A' }"></span>
-            </button>
-
-            <!-- Color Popover -->
-            <div
-              v-if="isDoodleColorPickerOpen"
-              class="card shadow-lg p-2 position-absolute border"
-              style="top: calc(100% + 6px); left: 0; width: 220px; z-index: 1050;"
-              @click.stop
-              @mousedown.stop
-            >
-              <div class="text-uppercase fw-bold text-muted small mb-2" style="font-size: 0.65rem;">Doodle Color</div>
-              <div class="d-flex flex-wrap gap-1 mb-2">
-                <button
-                  v-for="c in TEXT_PALETTE_COLORS"
-                  :key="c"
-                  class="rounded-circle border"
-                  style="width: 24px; height: 24px;"
-                  :class="{ 'border-2 border-primary': activeDoodleElement.color === c }"
-                  :style="{ backgroundColor: c }"
-                  @click.stop="setDoodleColor(c)"
-                ></button>
-              </div>
-              <div class="d-flex align-items-center gap-2 pt-2 border-top">
-                <label class="small text-muted mb-0">Custom:</label>
-                <input
-                  type="color"
-                  :value="activeDoodleElement.color || '#0F172A'"
-                  class="form-control form-control-color form-control-sm p-0 border-0"
-                  style="width: 28px; height: 28px;"
-                  @input="setDoodleColor($event.target.value)"
-                  @click.stop
-                  @mousedown.stop
-                />
-                <span class="font-monospace small fw-semibold">{{ activeDoodleElement.color || '#0F172A' }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="vr mx-1"></div>
-
-        <!-- Stroke Width Adjuster -->
-        <div class="d-flex align-items-center gap-2">
-          <span class="text-muted small fw-semibold">Thickness</span>
-          <input
-            type="range"
-            min="1"
-            max="48"
-            :value="activeDoodleElement.strokeWidth || 6"
-            class="form-range"
-            style="width: 80px;"
-            @input="setDoodleStrokeWidth(Number($event.target.value))"
-          />
-          <span class="small fw-bold text-dark" style="width: 28px;">{{ activeDoodleElement.strokeWidth || 6 }}px</span>
         </div>
 
         <div class="vr mx-1"></div>
@@ -3764,38 +3351,7 @@ onBeforeUnmount(() => {
           <span style="font-size: 0.68rem;">Text</span>
         </button>
 
-        <!-- Draw Mode Rail Tab -->
-        <button
-          class="btn btn-sm d-flex flex-column align-items-center justify-content-center p-2 rounded border-0 position-relative w-100"
-          :class="((activeTool === 'draw' && isDrawerOpen) || isDrawMode) ? 'text-primary bg-primary bg-opacity-10 fw-bold' : 'text-secondary'"
-          title="Draw (Freehand Doodles, Highlighter & Eraser)"
-          @click="toggleDrawer('draw')"
-        >
-          <div class="mb-1">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 19l7-7 3 3-7 7-3-3z" />
-              <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
-              <path d="M2 2l7.586 7.586" />
-              <circle cx="11" cy="11" r="2" />
-            </svg>
-          </div>
-          <span style="font-size: 0.68rem;">Draw</span>
-          <span v-if="activeStrokes.length > 0" class="badge rounded-pill bg-primary position-absolute top-0 end-0 translate-middle-y me-1">{{ activeStrokes.length }}</span>
-        </button>
 
-        <button
-          class="btn btn-sm d-flex flex-column align-items-center justify-content-center p-2 rounded border-0 position-relative w-100"
-          :class="(activeTool === 'effects' && isDrawerOpen) ? 'text-primary bg-primary bg-opacity-10 fw-bold' : 'text-secondary'"
-          @click="toggleDrawer('effects')"
-        >
-          <div class="mb-1">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-            </svg>
-          </div>
-          <span style="font-size: 0.68rem;">Effects</span>
-          <span v-if="activeTextElement && (activeTextElement.effect !== 'none' || (activeTextElement.curveAmount && activeTextElement.curveAmount !== 0))" class="badge rounded-pill bg-primary position-absolute top-0 end-0 translate-middle-y me-1">★</span>
-        </button>
 
         <button
           class="btn btn-sm d-flex flex-column align-items-center justify-content-center p-2 rounded border-0 position-relative w-100"
@@ -3853,8 +3409,6 @@ onBeforeUnmount(() => {
               <span v-if="activeTool === 'elements'" class="fs-6">🎀</span>
               <span v-else-if="activeTool === 'templates'" class="fs-6">🖼️</span>
               <span v-else-if="activeTool === 'text'" class="fs-6 fw-bold">T</span>
-              <span v-else-if="activeTool === 'draw'" class="fs-6">✏️</span>
-              <span v-else-if="activeTool === 'effects'" class="fs-6">✨</span>
               <span v-else-if="activeTool === 'uploads'" class="fs-6">📁</span>
               <span v-else-if="activeTool === 'background'" class="fs-6">🎨</span>
               <span v-else-if="activeTool === 'layers'" class="fs-6">📑</span>
@@ -3864,8 +3418,6 @@ onBeforeUnmount(() => {
                 activeTool === 'elements' ? 'Stickers & Elements' :
                 activeTool === 'templates' ? 'Templates Presets' :
                 activeTool === 'text' ? 'Text & Typography' :
-                activeTool === 'draw' ? 'Draw & Doodle' :
-                activeTool === 'effects' ? 'Photo Effects' :
                 activeTool === 'uploads' ? 'Upload Media' :
                 activeTool === 'background' ? 'Background Styles' :
                 activeTool === 'layers' ? 'Layers Stack' : activeTool
@@ -4139,559 +3691,12 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- DRAWER CONTENT: DRAW (Freehand Brushes: Felt Pen, Highlighter, Eraser) -->
-        <div v-if="activeTool === 'draw'" class="drawer-content draw-drawer-content p-3 d-flex flex-column gap-3 overflow-y-auto flex-grow-1">
-          <div>
-            <h6 class="fw-bold text-dark mb-1">Freehand Brushes</h6>
-            <p class="small text-muted mb-2">Pick a tool and sketch directly on the photostrip.</p>
-          </div>
 
-          <!-- Brush Type Selection -->
-          <div class="row row-cols-3 g-2 mb-3">
-            <!-- Felt Pen -->
-            <div class="col">
-              <button
-                class="btn w-100 p-2 d-flex flex-column align-items-center text-center rounded-3 border"
-                :class="currentBrush === 'pen' ? 'btn-primary shadow-sm' : 'btn-outline-light border text-dark'"
-                title="Felt Pen: solid, clean signature & sketch lines"
-                @click="setBrush('pen')"
-              >
-                <div class="mb-1">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="M12 19l7-7 3 3-7 7-3-3z" />
-                    <path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z" />
-                    <path d="M2 2l7.586 7.586" />
-                    <circle cx="11" cy="11" r="2" />
-                  </svg>
-                </div>
-                <span class="small fw-bold">Felt Pen</span>
-                <span class="small opacity-75" style="font-size: 0.7rem;">Solid line</span>
-              </button>
-            </div>
 
-            <!-- Highlighter -->
-            <div class="col">
-              <button
-                class="btn w-100 p-2 d-flex flex-column align-items-center text-center rounded-3 border"
-                :class="currentBrush === 'highlighter' ? 'btn-primary shadow-sm' : 'btn-outline-light border text-dark'"
-                title="Highlighter: transparent multiply marker"
-                @click="setBrush('highlighter')"
-              >
-                <div class="mb-1">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="m9 11-6 6v3h3l6-6" />
-                    <path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4" />
-                  </svg>
-                </div>
-                <span class="small fw-bold">Highlighter</span>
-                <span class="small opacity-75" style="font-size: 0.7rem;">Translucent</span>
-              </button>
-            </div>
 
-            <!-- Eraser -->
-            <div class="col">
-              <button
-                class="btn w-100 p-2 d-flex flex-column align-items-center text-center rounded-3 border"
-                :class="currentBrush === 'eraser' ? 'btn-primary shadow-sm' : 'btn-outline-light border text-dark'"
-                title="Eraser: tap or drag over strokes to remove"
-                @click="setBrush('eraser')"
-              >
-                <div class="mb-1">
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21" />
-                    <path d="M22 21H7" />
-                    <path d="m5 11 9 9" />
-                  </svg>
-                </div>
-                <span class="small fw-bold">Eraser</span>
-                <span class="small opacity-75" style="font-size: 0.7rem;">Erase lines</span>
-              </button>
-            </div>
-          </div>
 
-          <!-- Stroke Thickness Section -->
-          <div class="card p-2 bg-light border rounded-3">
-            <div class="d-flex align-items-center justify-content-between mb-2">
-              <span class="small fw-bold text-secondary text-uppercase m-0">{{ currentBrush === 'eraser' ? 'Eraser Size' : 'Stroke Thickness' }}</span>
-              <div class="d-flex align-items-center gap-2">
-                <span
-                  class="rounded-circle d-inline-block"
-                  :style="{
-                    width: Math.min(20, Math.max(4, brushWidth)) + 'px',
-                    height: Math.min(20, Math.max(4, brushWidth)) + 'px',
-                    backgroundColor: currentBrush === 'eraser' ? '#94A3B8' : brushColor,
-                    opacity: currentBrush === 'highlighter' ? 0.5 : 1
-                  }"
-                ></span>
-                <span class="badge bg-secondary-subtle text-secondary">{{ brushWidth }}px</span>
-              </div>
-            </div>
 
-            <input
-              type="range"
-              min="1"
-              max="48"
-              step="1"
-              :value="brushWidth"
-              class="form-range"
-              @input="brushWidth = Number($event.target.value)"
-            />
 
-            <!-- Quick Thickness Preset Chips -->
-            <div class="d-flex gap-1 justify-content-between mt-2">
-              <button
-                v-for="preset in [3, 6, 12, 24, 36]"
-                :key="preset"
-                class="btn btn-sm py-0 px-2 rounded-pill"
-                :class="brushWidth === preset ? 'btn-primary' : 'btn-outline-secondary'"
-                style="font-size: 0.75rem;"
-                @click="brushWidth = preset"
-              >
-                {{ preset }}px
-              </button>
-            </div>
-          </div>
-
-          <!-- Color Palette Section (Hidden when eraser selected) -->
-          <div v-if="currentBrush !== 'eraser'" class="card p-2 bg-light border rounded-3">
-            <div class="d-flex align-items-center justify-content-between mb-2">
-              <span class="small fw-bold text-secondary text-uppercase m-0">Ink Color</span>
-              <span class="badge bg-white text-secondary border font-monospace">{{ brushColor.toUpperCase() }}</span>
-            </div>
-
-            <div class="d-flex flex-wrap gap-1">
-              <button
-                v-for="c in DOODLE_PALETTE"
-                :key="c"
-                class="rounded-circle border"
-                style="width: 26px; height: 26px;"
-                :class="{ 'border-2 border-primary': brushColor.toLowerCase() === c.toLowerCase() }"
-                :style="{ backgroundColor: c }"
-                :title="c"
-                @click="brushColor = c"
-              ></button>
-
-              <!-- Native Custom Color Picker Button -->
-              <label class="btn btn-sm btn-outline-secondary p-0 rounded-circle position-relative overflow-hidden d-flex align-items-center justify-content-center" style="width: 26px; height: 26px;" title="Custom color picker">
-                <input
-                  type="color"
-                  :value="brushColor"
-                  class="position-absolute top-0 start-0 w-100 h-100 opacity-0"
-                  style="cursor: pointer;"
-                  @input="brushColor = $event.target.value"
-                />
-                <span class="fw-bold text-muted lh-1 small">+</span>
-              </label>
-            </div>
-          </div>
-
-          <!-- Actions: Undo, Clear, Done -->
-          <div class="card p-2 bg-light border rounded-3">
-            <div class="d-flex align-items-center justify-content-between mb-2">
-              <span class="small text-muted">
-                {{ activeStrokes.length }} stroke{{ activeStrokes.length === 1 ? '' : 's' }}
-              </span>
-              <div class="d-flex align-items-center gap-1">
-                <button
-                  class="btn btn-sm btn-outline-secondary py-1 px-2 d-flex align-items-center gap-1"
-                  :disabled="activeStrokes.length === 0"
-                  title="Undo last stroke (⌘Z)"
-                  @click="undoDoodleStroke"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
-                    <path d="M3 7v6h6" />
-                    <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
-                  </svg>
-                  <span>Undo</span>
-                </button>
-                <button
-                  class="btn btn-sm btn-outline-danger py-1 px-2 d-flex align-items-center gap-1"
-                  :disabled="activeStrokes.length === 0"
-                  title="Clear all in-progress strokes"
-                  @click="clearDoodleStrokes"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <polyline points="3 6 5 6 21 6" />
-                    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                  </svg>
-                  <span>Clear</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- DRAWER CONTENT: TEXT EFFECTS -->
-        <div v-if="activeTool === 'effects'" class="drawer-content effects-drawer-content p-3 d-flex flex-column gap-3 overflow-y-auto flex-grow-1">
-          <div>
-            <h6 class="fw-bold text-dark mb-1">Text Effects</h6>
-            <p class="small text-muted mb-2">Transform typography with shadow, stroke, badges and curve.</p>
-          </div>
-
-          <!-- If no text element is currently selected, show a friendly prompt -->
-          <div v-if="!activeTextElement" class="card p-4 text-center text-muted bg-light border rounded-3">
-            <div class="fs-1 mb-2">✨</div>
-            <h6 class="fw-bold text-dark mb-1">No text selected</h6>
-            <p class="small text-muted mb-0">Select any text block on your photostrip to customize its typography effects and curvature.</p>
-          </div>
-
-          <!-- When a text element is selected, show modular visual presets and sliders -->
-          <div v-else class="d-flex flex-column gap-3">
-            <!-- Active Text Preview Chip -->
-            <div class="card p-2 bg-light border rounded-3 d-flex flex-row align-items-center justify-content-between">
-              <span class="small fw-bold text-secondary text-uppercase" style="font-size: 0.7rem;">ACTIVE TEXT</span>
-              <span class="small fw-semibold text-dark text-truncate ms-2">"{{ activeTextElement.text.slice(0, 24) }}{{ activeTextElement.text.length > 24 ? '...' : '' }}"</span>
-            </div>
-
-            <!-- STYLE EFFECTS SECTION -->
-            <div>
-              <label class="small fw-bold text-secondary text-uppercase mb-2 d-block">STYLE</label>
-              <div class="row row-cols-3 g-2 mb-2">
-                <!-- None -->
-                <div class="col">
-                  <button
-                    class="btn btn-outline-light border text-dark p-2 d-flex flex-column align-items-center w-100 rounded-3"
-                    :class="{ 'border-primary bg-primary bg-opacity-10 shadow-sm': activeTextElement.effect === 'none' }"
-                    @click="setEffect('none')"
-                  >
-                    <div class="effect-card-preview effect-preview-none mb-1">Ag</div>
-                    <span class="small fw-semibold">None</span>
-                  </button>
-                </div>
-
-                <!-- Shadow -->
-                <div class="col">
-                  <button
-                    class="btn btn-outline-light border text-dark p-2 d-flex flex-column align-items-center w-100 rounded-3"
-                    :class="{ 'border-primary bg-primary bg-opacity-10 shadow-sm': activeTextElement.effect === 'shadow' }"
-                    @click="setEffect('shadow')"
-                  >
-                    <div class="effect-card-preview effect-preview-shadow mb-1">Ag</div>
-                    <span class="small fw-semibold">Shadow</span>
-                  </button>
-                </div>
-
-                <!-- Hollow / Stroke -->
-                <div class="col">
-                  <button
-                    class="btn btn-outline-light border text-dark p-2 d-flex flex-column align-items-center w-100 rounded-3"
-                    :class="{ 'border-primary bg-primary bg-opacity-10 shadow-sm': activeTextElement.effect === 'stroke' }"
-                    @click="setEffect('stroke')"
-                  >
-                    <div class="effect-card-preview effect-preview-stroke mb-1">Ag</div>
-                    <span class="small fw-semibold">Hollow</span>
-                  </button>
-                </div>
-
-                <!-- Echo / Splice -->
-                <div class="col">
-                  <button
-                    class="btn btn-outline-light border text-dark p-2 d-flex flex-column align-items-center w-100 rounded-3"
-                    :class="{ 'border-primary bg-primary bg-opacity-10 shadow-sm': activeTextElement.effect === 'echo' }"
-                    @click="setEffect('echo')"
-                  >
-                    <div class="effect-card-preview effect-preview-echo mb-1">Ag</div>
-                    <span class="small fw-semibold">Echo</span>
-                  </button>
-                </div>
-
-                <!-- Background Highlight Badge -->
-                <div class="col">
-                  <button
-                    class="btn btn-outline-light border text-dark p-2 d-flex flex-column align-items-center w-100 rounded-3"
-                    :class="{ 'border-primary bg-primary bg-opacity-10 shadow-sm': activeTextElement.effect === 'badge' }"
-                    @click="setEffect('badge')"
-                  >
-                    <div class="effect-card-preview effect-preview-badge mb-1">Ag</div>
-                    <span class="small fw-semibold">Background</span>
-                  </button>
-                </div>
-              </div>
-
-              <!-- SLIDERS & CONTROLS FOR ACTIVE STYLE EFFECT -->
-              <!-- Shadow Controls -->
-              <div v-if="activeTextElement.effect === 'shadow'" class="card p-3 bg-light border rounded-3 mb-2">
-                <div class="mb-2">
-                  <div class="d-flex justify-content-between align-items-center mb-1">
-                    <span class="small text-muted">Offset</span>
-                    <span class="badge bg-secondary-subtle text-secondary">{{ activeTextElement.effectSettings.shadow.offsetX }}px</span>
-                  </div>
-                  <input
-                    v-model.number="activeTextElement.effectSettings.shadow.offsetX"
-                    type="range"
-                    min="-30"
-                    max="30"
-                    step="1"
-                    class="form-range"
-                    @input="debounceTextHistory"
-                  />
-                </div>
-
-                <div class="mb-2">
-                  <div class="d-flex justify-content-between align-items-center mb-1">
-                    <span class="small text-muted">Blur</span>
-                    <span class="badge bg-secondary-subtle text-secondary">{{ activeTextElement.effectSettings.shadow.blur }}</span>
-                  </div>
-                  <input
-                    v-model.number="activeTextElement.effectSettings.shadow.blur"
-                    type="range"
-                    min="0"
-                    max="25"
-                    step="1"
-                    class="form-range"
-                    @input="debounceTextHistory"
-                  />
-                </div>
-
-                <div class="mb-2">
-                  <div class="d-flex justify-content-between align-items-center mb-1">
-                    <span class="small text-muted">Transparency</span>
-                    <span class="badge bg-secondary-subtle text-secondary">{{ Math.round((activeTextElement.effectSettings.shadow.opacity || 0.6) * 100) }}%</span>
-                  </div>
-                  <input
-                    v-model.number="activeTextElement.effectSettings.shadow.opacity"
-                    type="range"
-                    min="0.1"
-                    max="1"
-                    step="0.05"
-                    class="form-range"
-                    @input="debounceTextHistory"
-                  />
-                </div>
-
-                <div>
-                  <span class="small text-muted d-block mb-1">Shadow Color</span>
-                  <div class="d-flex align-items-center gap-2">
-                    <input
-                      v-model="activeTextElement.effectSettings.shadow.color"
-                      type="color"
-                      class="form-control form-control-color"
-                      style="width: 36px; height: 32px;"
-                      @input="debounceTextHistory"
-                    />
-                    <div class="d-flex gap-1">
-                      <button
-                        v-for="c in ['#000000', '#1E293B', '#2F5BEA', '#E11D48', '#FFD166', '#FFFFFF']"
-                        :key="c"
-                        class="btn p-0 rounded-circle border shadow-sm"
-                        :style="{ backgroundColor: c, width: '22px', height: '22px' }"
-                        @click="activeTextElement.effectSettings.shadow.color = c; debounceTextHistory()"
-                      ></button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Hollow / Stroke Controls -->
-              <div v-else-if="activeTextElement.effect === 'stroke'" class="card p-3 bg-light border rounded-3 mb-2">
-                <div class="mb-2">
-                  <div class="d-flex justify-content-between align-items-center mb-1">
-                    <span class="small text-muted">Thickness</span>
-                    <span class="badge bg-secondary-subtle text-secondary">{{ activeTextElement.effectSettings.stroke.width }}px</span>
-                  </div>
-                  <input
-                    v-model.number="activeTextElement.effectSettings.stroke.width"
-                    type="range"
-                    min="1"
-                    max="16"
-                    step="1"
-                    class="form-range"
-                    @input="debounceTextHistory"
-                  />
-                </div>
-
-                <div class="form-check mb-2">
-                  <input
-                    id="stroke-hollow-check"
-                    v-model="activeTextElement.effectSettings.stroke.isHollow"
-                    type="checkbox"
-                    class="form-check-input"
-                    @change="debounceTextHistory"
-                  />
-                  <label for="stroke-hollow-check" class="form-check-label small text-muted">Hollow center (transparent fill)</label>
-                </div>
-
-                <div>
-                  <span class="small text-muted d-block mb-1">Stroke Color</span>
-                  <div class="d-flex align-items-center gap-2">
-                    <input
-                      v-model="activeTextElement.effectSettings.stroke.color"
-                      type="color"
-                      class="form-control form-control-color"
-                      style="width: 36px; height: 32px;"
-                      @input="debounceTextHistory"
-                    />
-                    <div class="d-flex gap-1">
-                      <button
-                        v-for="c in ['#0F172A', '#2F5BEA', '#F43F5E', '#10B981', '#F59E0B', '#8B5CF6', '#FFFFFF']"
-                        :key="c"
-                        class="btn p-0 rounded-circle border shadow-sm"
-                        :style="{ backgroundColor: c, width: '22px', height: '22px' }"
-                        @click="activeTextElement.effectSettings.stroke.color = c; debounceTextHistory()"
-                      ></button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Echo Controls -->
-              <div v-else-if="activeTextElement.effect === 'echo'" class="card p-3 bg-light border rounded-3 mb-2">
-                <div class="mb-2">
-                  <div class="d-flex justify-content-between align-items-center mb-1">
-                    <span class="small text-muted">Offset</span>
-                    <span class="badge bg-secondary-subtle text-secondary">{{ activeTextElement.effectSettings.echo.offset }}px</span>
-                  </div>
-                  <input
-                    v-model.number="activeTextElement.effectSettings.echo.offset"
-                    type="range"
-                    min="1"
-                    max="18"
-                    step="1"
-                    class="form-range"
-                    @input="debounceTextHistory"
-                  />
-                </div>
-
-                <div>
-                  <span class="small text-muted d-block mb-1">Echo Color</span>
-                  <div class="d-flex align-items-center gap-2">
-                    <input
-                      v-model="activeTextElement.effectSettings.echo.color"
-                      type="color"
-                      class="form-control form-control-color"
-                      style="width: 36px; height: 32px;"
-                      @input="debounceTextHistory"
-                    />
-                    <div class="d-flex gap-1">
-                      <button
-                        v-for="c in ['#FF4081', '#2F5BEA', '#10B981', '#F59E0B', '#8B5CF6', '#0F172A']"
-                        :key="c"
-                        class="btn p-0 rounded-circle border shadow-sm"
-                        :style="{ backgroundColor: c, width: '22px', height: '22px' }"
-                        @click="activeTextElement.effectSettings.echo.color = c; debounceTextHistory()"
-                      ></button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Background Badge Controls -->
-              <div v-else-if="activeTextElement.effect === 'badge'" class="card p-3 bg-light border rounded-3 mb-2">
-                <div class="mb-2">
-                  <div class="d-flex justify-content-between align-items-center mb-1">
-                    <span class="small text-muted">Roundness</span>
-                    <span class="badge bg-secondary-subtle text-secondary">{{ activeTextElement.effectSettings.badge.borderRadius }}px</span>
-                  </div>
-                  <input
-                    v-model.number="activeTextElement.effectSettings.badge.borderRadius"
-                    type="range"
-                    min="0"
-                    max="30"
-                    step="1"
-                    class="form-range"
-                    @input="debounceTextHistory"
-                  />
-                </div>
-
-                <div class="mb-2">
-                  <div class="d-flex justify-content-between align-items-center mb-1">
-                    <span class="small text-muted">Spread / Padding</span>
-                    <span class="badge bg-secondary-subtle text-secondary">{{ activeTextElement.effectSettings.badge.padding }}px</span>
-                  </div>
-                  <input
-                    v-model.number="activeTextElement.effectSettings.badge.padding"
-                    type="range"
-                    min="2"
-                    max="24"
-                    step="1"
-                    class="form-range"
-                    @input="debounceTextHistory"
-                  />
-                </div>
-
-                <div>
-                  <span class="small text-muted d-block mb-1">Badge Color</span>
-                  <div class="d-flex align-items-center gap-2">
-                    <input
-                      v-model="activeTextElement.effectSettings.badge.color"
-                      type="color"
-                      class="form-control form-control-color"
-                      style="width: 36px; height: 32px;"
-                      @input="debounceTextHistory"
-                    />
-                    <div class="d-flex gap-1">
-                      <button
-                        v-for="c in ['#FFD166', '#EFF4FE', '#FCE7F3', '#D1FAE5', '#FEF08A', '#0F172A']"
-                        :key="c"
-                        class="btn p-0 rounded-circle border shadow-sm"
-                        :style="{ backgroundColor: c, width: '22px', height: '22px' }"
-                        @click="activeTextElement.effectSettings.badge.color = c; debounceTextHistory()"
-                      ></button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <hr class="my-1 opacity-25" />
-
-            <!-- SHAPE / CURVE SECTION -->
-            <div>
-              <label class="small fw-bold text-secondary text-uppercase mb-2 d-block">SHAPE</label>
-              <div class="row row-cols-2 g-2 mb-2">
-                <!-- None (Straight) -->
-                <div class="col">
-                  <button
-                    class="btn btn-outline-light border text-dark p-2 d-flex flex-column align-items-center w-100 rounded-3"
-                    :class="{ 'border-primary bg-primary bg-opacity-10 shadow-sm': !activeTextElement.curveAmount || activeTextElement.curveAmount === 0 }"
-                    @click="toggleCurvature(false)"
-                  >
-                    <div class="shape-card-preview shape-preview-none mb-1">ABC</div>
-                    <span class="small fw-semibold">None</span>
-                  </button>
-                </div>
-
-                <!-- Curve / Arch -->
-                <div class="col">
-                  <button
-                    class="btn btn-outline-light border text-dark p-2 d-flex flex-column align-items-center w-100 rounded-3"
-                    :class="{ 'border-primary bg-primary bg-opacity-10 shadow-sm': activeTextElement.curveAmount && activeTextElement.curveAmount !== 0 }"
-                    @click="toggleCurvature(true)"
-                  >
-                    <div class="shape-card-preview shape-preview-curve mb-1">
-                      <svg width="34" height="20" viewBox="0 0 34 20" fill="none">
-                        <path d="M3 17 Q 17 3 31 17" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" fill="none" />
-                      </svg>
-                    </div>
-                    <span class="small fw-semibold">Curve</span>
-                  </button>
-                </div>
-              </div>
-
-              <!-- Curve Slider -->
-              <div v-if="activeTextElement.curveAmount && activeTextElement.curveAmount !== 0" class="card p-3 bg-light border rounded-3 mb-2">
-                <div class="d-flex justify-content-between align-items-center mb-1">
-                  <span class="small text-muted">Curve amount</span>
-                  <span class="badge bg-secondary-subtle text-secondary">{{ activeTextElement.curveAmount }}%</span>
-                </div>
-                <input
-                  v-model.number="activeTextElement.curveAmount"
-                  type="range"
-                  min="-100"
-                  max="100"
-                  step="1"
-                  class="form-range"
-                  @input="debounceTextHistory"
-                />
-                <div class="d-flex justify-content-between align-items-center mt-1">
-                  <span class="text-muted" style="font-size: 0.7rem;">−100 (Smile)</span>
-                  <button class="btn btn-sm btn-link text-decoration-none p-0" style="font-size: 0.7rem;" @click="activeTextElement.curveAmount = 0; debounceTextHistory()">0° (Flat)</button>
-                  <span class="text-muted" style="font-size: 0.7rem;">+100 (Arch)</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
 
         <!-- DRAWER CONTENT: BACKGROUND (Colors, Gradients, Textures & Patterns) -->
         <div v-if="activeTool === 'background'" class="drawer-content p-3 d-flex flex-column gap-3 overflow-y-auto flex-grow-1">
@@ -5015,11 +4020,6 @@ onBeforeUnmount(() => {
                     style="width: 14px; height: 14px;"
                     :style="{ backgroundColor: el.color }"
                   ></span>
-                  <span
-                    v-else-if="el.type === 'doodle'"
-                    :style="{ color: el.color || '#0F172A' }"
-                    title="Doodle"
-                  >✏️</span>
                 </div>
 
                 <!-- Layer Label & Depth Info -->
@@ -5131,61 +4131,13 @@ onBeforeUnmount(() => {
           <div
             ref="stripRef"
             class="photostrip-frame"
-            :class="[
-              'layout-' + activeLayout,
-              { 'in-draw-mode': isDrawMode }
-            ]"
+            :class="'layout-' + activeLayout"
             :style="getFrameStyle()"
             @click.stop="onFrameClick"
             @contextmenu.prevent.stop="openContextMenu($event, null)"
             @dragover.prevent
             @drop="onCanvasDrop"
           >
-            <!-- Active Freehand Doodle Drawing Surface Layer (Top Z-Index when in Draw Mode) -->
-            <svg
-              v-if="isDrawMode"
-              class="active-doodle-drawing-surface"
-              :class="{
-                'is-pen': currentBrush === 'pen',
-                'is-highlighter': currentBrush === 'highlighter',
-                'is-eraser': currentBrush === 'eraser'
-              }"
-              @pointerdown.prevent.stop="onDrawPointerDown"
-              @pointermove.prevent="onDrawPointerMove"
-              @pointerup="onDrawPointerUp"
-              @pointerleave="onDrawPointerLeave"
-            >
-              <!-- Completed strokes in current drawing session -->
-              <g v-for="(stroke, sIdx) in activeStrokes" :key="'stroke-' + sIdx">
-                <path
-                  :d="stroke.pathData"
-                  :stroke="stroke.color"
-                  :stroke-width="stroke.width"
-                  :stroke-linecap="stroke.brush === 'highlighter' ? 'square' : 'round'"
-                  :stroke-linejoin="stroke.brush === 'highlighter' ? 'bevel' : 'round'"
-                  fill="none"
-                  :style="{
-                    opacity: stroke.opacity || 1,
-                    mixBlendMode: stroke.brush === 'highlighter' ? 'multiply' : 'normal'
-                  }"
-                />
-              </g>
-
-              <!-- Currently active in-progress stroke -->
-              <path
-                v-if="isDrawing && currentPoints.length > 0 && currentBrush !== 'eraser'"
-                :d="pointsToSvgPath(currentPoints)"
-                :stroke="brushColor"
-                :stroke-width="brushWidth"
-                :stroke-linecap="currentBrush === 'highlighter' ? 'square' : 'round'"
-                :stroke-linejoin="currentBrush === 'highlighter' ? 'bevel' : 'round'"
-                fill="none"
-                :style="{
-                  opacity: currentBrush === 'highlighter' ? 0.45 : 1,
-                  mixBlendMode: currentBrush === 'highlighter' ? 'multiply' : 'normal'
-                }"
-              />
-            </svg>
             <!-- Background Texture / Pattern Overlay Layer -->
             <div
               v-if="frameBg.texture"
@@ -5364,30 +4316,10 @@ onBeforeUnmount(() => {
                 >
                   <defs>
                     <path :id="'curve-path-' + el.id" :d="getCurvedPathD(el)" fill="none" />
-                    <filter v-if="el.effect === 'shadow'" :id="'curved-shadow-' + el.id" x="-30%" y="-30%" width="160%" height="160%">
-                      <feDropShadow
-                        :dx="el.effectSettings?.shadow?.offsetX || 3"
-                        :dy="el.effectSettings?.shadow?.offsetY || 3"
-                        :stdDeviation="(el.effectSettings?.shadow?.blur || 4) / 2"
-                        :flood-color="el.effectSettings?.shadow?.color || '#000000'"
-                        :flood-opacity="el.effectSettings?.shadow?.opacity !== undefined ? el.effectSettings?.shadow?.opacity : 0.6"
-                      />
-                    </filter>
                   </defs>
-                  <!-- Background highlight badge when curved -->
-                  <path
-                    v-if="el.effect === 'badge'"
-                    :d="getCurvedPathD(el)"
-                    fill="none"
-                    :stroke="el.effectSettings?.badge?.color || '#FFD166'"
-                    :stroke-width="(el.fontSize || 22) + (el.effectSettings?.badge?.padding || 8) * 1.5"
-                    stroke-linecap="round"
-                  />
                   <!-- Text Along Curved Path -->
                   <text
-                    :fill="el.effect === 'stroke' && el.effectSettings?.stroke?.isHollow !== false ? 'transparent' : (el.color || '#0F172A')"
-                    :stroke="el.effect === 'stroke' ? (el.effectSettings?.stroke?.color || el.color || '#0F172A') : (el.effect === 'echo' ? (el.effectSettings?.echo?.color || '#FF4081') : 'none')"
-                    :stroke-width="el.effect === 'stroke' ? (el.effectSettings?.stroke?.width || 3) : (el.effect === 'echo' ? 2 : 0)"
+                    :fill="el.color || '#0F172A'"
                     :style="{
                       fontFamily: el.fontFamily || `'Montserrat', sans-serif`,
                       fontSize: (el.fontSize || 22) + 'px',
@@ -5396,7 +4328,6 @@ onBeforeUnmount(() => {
                       letterSpacing: (el.letterSpacing || 0) + 'px'
                     }"
                     text-anchor="middle"
-                    :filter="el.effect === 'shadow' ? `url(#curved-shadow-${el.id})` : undefined"
                     dominant-baseline="central"
                   >
                     <textPath :href="'#curve-path-' + el.id" startOffset="50%">
@@ -5436,37 +4367,7 @@ onBeforeUnmount(() => {
                 </svg>
               </div>
 
-              <!-- Freehand Doodle Element (Converted Vector Element) -->
-              <div
-                v-else-if="el.type === 'doodle'"
-                class="element-doodle-wrapper"
-                :style="{
-                  width: el.width + 'px',
-                  height: el.height + 'px'
-                }"
-              >
-                <svg
-                  :viewBox="`0 0 ${el.originalWidth || el.width} ${el.originalHeight || el.height}`"
-                  :width="el.width"
-                  :height="el.height"
-                  class="doodle-svg-inner"
-                  style="overflow: visible; display: block;"
-                >
-                  <!-- Vector Path -->
-                  <path
-                    :d="el.pathData"
-                    :stroke="el.color || '#0F172A'"
-                    :stroke-width="el.strokeWidth || 6"
-                    :stroke-linecap="el.brushType === 'highlighter' ? 'square' : 'round'"
-                    :stroke-linejoin="el.brushType === 'highlighter' ? 'bevel' : 'round'"
-                    fill="none"
-                    :style="{
-                      opacity: el.opacity !== undefined ? el.opacity : (el.brushType === 'highlighter' ? 0.45 : 1),
-                      mixBlendMode: el.brushType === 'highlighter' ? 'multiply' : 'normal'
-                    }"
-                  />
-                </svg>
-              </div>
+
 
               <!-- Multi-Select Sub-Element Dashed Indicator (when part of a collective selection) -->
               <div
@@ -5491,20 +4392,6 @@ onBeforeUnmount(() => {
                         <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
                       </svg>
                       <span>Edit</span>
-                    </button>
-                    <div v-if="el.type === 'text'" class="floating-divider"></div>
-
-                    <!-- Quick Effects Button if text type -->
-                    <button
-                      v-if="el.type === 'text'"
-                      class="floating-tool-btn text-effects-btn"
-                      title="Text Effects & Curve"
-                      @click.stop="openEffectsDrawer"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" />
-                      </svg>
-                      <span>Effects</span>
                     </button>
                     <div v-if="el.type === 'text'" class="floating-divider"></div>
 
@@ -5881,7 +4768,7 @@ onBeforeUnmount(() => {
 
       <!-- Right Properties Panel (Bootstrap 5) -->
       <aside class="properties-panel bg-white border-start p-3 d-flex flex-column gap-3 overflow-y-auto flex-shrink-0" style="width: 320px;">
-        <!-- Text Typography & Effects Card when Text Element Selected -->
+        <!-- Text Typography Card when Text Element Selected -->
         <template v-if="activeTextElement">
           <div class="d-flex align-items-center justify-content-between border-bottom pb-2">
             <h6 class="fw-bold text-dark m-0 fs-6">Typography</h6>
@@ -5899,26 +4786,7 @@ onBeforeUnmount(() => {
             />
           </div>
 
-          <div class="d-flex flex-column gap-1">
-            <div class="d-flex justify-content-between align-items-center mb-1">
-              <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Effect & Style</label>
-              <button class="btn btn-link btn-sm p-0 text-decoration-none text-primary fw-bold" style="font-size: 0.76rem;" @click="openEffectsDrawer">
-                Effects Drawer ✨
-              </button>
-            </div>
-            <div class="d-flex gap-1 flex-wrap">
-              <button
-                v-for="eff in ['none', 'shadow', 'stroke', 'echo', 'badge']"
-                :key="eff"
-                class="btn btn-sm py-1 px-2 rounded-pill"
-                :class="activeTextElement.effect === eff ? 'btn-primary' : 'btn-outline-secondary'"
-                style="font-size: 0.72rem;"
-                @click="setEffect(eff)"
-              >
-                {{ eff === 'none' ? 'Flat' : eff.charAt(0).toUpperCase() + eff.slice(1) }}
-              </button>
-            </div>
-          </div>
+
 
           <div class="d-flex flex-column gap-1">
             <div class="d-flex justify-content-between align-items-center mb-1">
@@ -7517,42 +6385,6 @@ onBeforeUnmount(() => {
 
 
 
-.thickness-preview-dot {
-  display: inline-block;
-  border-radius: 50%;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  transition: all 0.12s ease;
-}
-
-/* Text Effect Card Previews (Custom text-shadow and webkit-text-stroke) */
-.effect-preview-none {
-  color: #1e293b;
-}
-
-.effect-preview-shadow {
-  color: #1e293b;
-  text-shadow: 2px 2px 3px rgba(0, 0, 0, 0.4);
-}
-
-.effect-preview-stroke {
-  color: transparent !important;
-  -webkit-text-stroke: 1.5px #1e293b;
-  -webkit-text-fill-color: transparent;
-}
-
-.effect-preview-echo {
-  color: #2f5bea;
-  text-shadow: 2px 2px 0 #ff4081;
-}
-
-.effect-preview-badge {
-  background-color: #ffd166;
-  color: #0f172a;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 13px;
-}
-
 /* Canvas Text Elements & Curved SVG */
 .element-text-container {
   display: inline-block;
@@ -7647,54 +6479,5 @@ onBeforeUnmount(() => {
   border-radius: inherit;
 }
 
-/* Doodle Drawing Surface & Freehand Canvas */
-
-.active-doodle-drawing-surface {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  z-index: 100;
-  pointer-events: auto;
-  touch-action: none;
-  overflow: visible;
-}
-
-.active-doodle-drawing-surface.is-pen {
-  cursor: crosshair;
-}
-
-.active-doodle-drawing-surface.is-highlighter {
-  cursor: crosshair;
-}
-
-.active-doodle-drawing-surface.is-eraser {
-  cursor: cell;
-}
-
-.photostrip-frame.in-draw-mode {
-  user-select: none;
-  -webkit-user-select: none;
-}
-
-.element-doodle-wrapper {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  pointer-events: none;
-}
-
-.doodle-svg-inner {
-  pointer-events: none;
-}
-
-.layer-doodle-preview {
-  font-size: 14px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
 </style>
 

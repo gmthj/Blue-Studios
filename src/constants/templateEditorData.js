@@ -433,12 +433,12 @@ export const FONT_CATEGORIES = [
 ]
 
 export const TEXT_PRESETS = [
-  { label: 'Y2K Retro Title', text: 'Blue Studios 📸', fontFamily: "'Righteous', cursive", fontSize: 24, fontWeight: '700', color: '#2F5BEA', effect: 'shadow', effectSettings: { shadow: { offsetX: 3, offsetY: 3, blur: 0, opacity: 0.8, color: '#FFD166' } } },
+  { label: 'Y2K Retro Title', text: 'Blue Studios 📸', fontFamily: "'Righteous', cursive", fontSize: 24, fontWeight: '700', color: '#2F5BEA' },
   { label: 'Cute Handwritten', text: 'forever friends ♡', fontFamily: "'Caveat', cursive", fontSize: 22, fontWeight: '600', color: '#E11D48', fontStyle: 'italic' },
-  { label: 'Chunky Bubble', text: 'SMILE & POSE', fontFamily: "'Fredoka', sans-serif", fontSize: 22, fontWeight: '700', color: '#0F172A', effect: 'badge', effectSettings: { badge: { color: '#EFF4FE', padding: 8, borderRadius: 12 } } },
+  { label: 'Chunky Bubble', text: 'SMILE & POSE', fontFamily: "'Fredoka', sans-serif", fontSize: 22, fontWeight: '700', color: '#0F172A' },
   { label: 'Korean 4-Cut Timestamp', text: '2026.10.16 23:40', fontFamily: "'Space Mono', monospace", fontSize: 13, fontWeight: '700', color: '#64748B', letterSpacing: 2 },
   { label: 'Editorial Magazine', text: 'MEMORIES COLLECTION', fontFamily: "'Playfair Display', serif", fontSize: 16, fontWeight: '700', color: '#0F172A', letterSpacing: 3, textTransform: 'uppercase' },
-  { label: 'Street Marker Doodle', text: 'BESTIES ONLY!', fontFamily: "'Permanent Marker', cursive", fontSize: 20, fontWeight: '400', color: '#7C3AED', effect: 'echo', effectSettings: { echo: { offset: 3, color: '#F472B6' } } }
+  { label: 'Street Marker Doodle', text: 'BESTIES ONLY!', fontFamily: "'Permanent Marker', cursive", fontSize: 20, fontWeight: '400', color: '#7C3AED' }
 ]
 
 // =============================================================================
