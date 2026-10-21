@@ -78,6 +78,20 @@ test('lookup finds an account by email or uid', async () => {
   assert.equal((await callApi(adminToken, { action: 'lookup', uid: '../../etc' })).status, 400)
 })
 
+test('list returns every login (accounts and guests) with their profile names, admins only', async () => {
+  assert.equal((await callApi(aliceToken, { action: 'list' })).status, 403)
+  const result = await callApi(adminToken, { action: 'list' })
+  assert.equal(result.status, 200)
+  assert.equal(result.body.nextPageToken, '')
+  const bob = result.body.accounts.find((account) => account.uid === bobUid)
+  assert.equal(bob.displayName, 'Bob')
+  assert.equal(bob.email, 'bob@test.com')
+  assert.equal(bob.isAccount, true)
+  assert.equal(result.body.accounts.find((account) => account.uid === guestUid).isAccount, false)
+  assert.equal(result.body.accounts.find((account) => account.email === 'admin@test.com').admin, true)
+  assert.equal((await callApi(adminToken, { action: 'list', pageToken: 'x'.repeat(2001) })).status, 400)
+})
+
 test('cannot ban yourself, another admin, a guest, or without a reason', async () => {
   const me = (await adminAuth().getUserByEmail('admin@test.com')).uid
   assert.equal((await callApi(adminToken, { action: 'ban', uid: me, reason: 'x' })).status, 400)
@@ -119,6 +133,29 @@ test('unban: login switched back on, no longer marked banned, items stay hidden'
   assert.equal((await adminAuth().getUser(bobUid)).disabled, false)
   assert.equal((await adminDb().doc('users/' + bobUid).get()).data().banned, false)
   assert.equal((await adminDb().doc('templates/t1').get()).data().status, 'hidden')
+})
+
+test('deleteRoom: the room and everything inside it is gone, and it is logged', async () => {
+  const db = adminDb()
+  await db.doc('rooms/4321').set({ hostId: aliceUid, hostName: 'Alice', closed: false, createdAt: 1 })
+  await db.doc('rooms/4321/members/' + aliceUid).set({ name: 'Alice', lastSeen: 1 })
+  await db.doc('rooms/4321/photos/p1').set({ ownerId: aliceUid, image: 'data:image/jpeg;base64,x' })
+  await db.doc('rooms/4321/clips/c1/parts/x').set({ n: 1 }) // a teammate's list, nested deeper
+
+  assert.equal((await callApi(aliceToken, { action: 'deleteRoom', code: '4321' })).status, 403)
+  assert.equal((await callApi(adminToken, { action: 'deleteRoom', code: '../x' })).status, 400)
+  assert.equal((await callApi(adminToken, { action: 'deleteRoom', code: '9999' })).status, 404)
+
+  assert.equal((await callApi(adminToken, { action: 'deleteRoom', code: '4321', reason: 'Spam room' })).status, 200)
+  assert.equal((await db.doc('rooms/4321').get()).exists, false)
+  assert.equal((await db.collection('rooms/4321/members').get()).size, 0)
+  assert.equal((await db.collection('rooms/4321/photos').get()).size, 0)
+  assert.equal((await db.doc('rooms/4321/clips/c1/parts/x').get()).exists, false)
+
+  const log = await db.collection('adminLog').where('targetId', '==', '4321').get()
+  assert.equal(log.size, 1)
+  assert.equal(log.docs[0].data().action, 'deleteRoom')
+  assert.equal(log.docs[0].data().reason, 'Spam room')
 })
 
 test('unknown actions are refused', async () => {

@@ -9,6 +9,7 @@ import { useVideoCall } from '../composables/useVideoCall.js'
 import StreamVideo from '../components/StreamVideo.vue'
 import VideoCallCard from '../components/VideoCallCard.vue'
 import RoomGallery from '../components/RoomGallery.vue'
+import StageBar from '../components/StageBar.vue'
 
 // The camera page (a child of RoomLayout.vue, which has already joined the room and the call)
 
@@ -166,6 +167,7 @@ async function copyJoinLink() {
 </script>
 
 <template>
+  <StageBar current="shoot" />
   <!-- Full-screen flash and countdown (position: fixed, so they cover the whole screen) -->
   <!-- The flash is always here but invisible (opacity 0) until it fades in, see flashStyle -->
   <div class="flash-overlay" :style="flashStyle"></div>

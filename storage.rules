@@ -8,9 +8,8 @@ rules_version = '2';
 // Public files are readable only while their Firestore document says public AND not hidden
 // (firestore.get below reads the document).
 //
-// DEV MODE (19 Oct 2026): while the team is still building, room fields, room sub-lists and any NEW
-// collection or Storage folder are open to signed-in users (search for "DEV" below), so teammates are
-// not blocked. Accounts, My Studio, marketplace and reports stay strict. Tighten these before submission.
+// DEV MODE (20 Oct 2026): while the team is still building, ALL of Storage is open to signed-in users
+// (the DEV-OPEN block at the bottom), so teammates are not blocked. Delete it before submission.
 //
 // Deploy with:  firebase deploy --only storage
 // Test with:    npm run test:rules
@@ -86,20 +85,17 @@ service firebase.storage {
       allow delete: if isOwner(uid) || isAdmin();
     }
 
-    // ---------- DEV: new folders for teammates' features ----------
-    // While we are still building, anyone signed in (guests too) can read and write files in any NEW
-    // top-level folder (e.g. clips/, music/, exports/), up to 50 MB per file (no web pages or scripts),
-    // so teammates are not blocked.
-    // TODO lockdown: replace with real rules for each new folder, then delete this block.
+    // DEV-OPEN-START
+    // ---------- DEV: ALL of Storage is open to anyone signed in (guests too) ----------
+    // While we are still building, any signed-in user can read, upload, overwrite and delete ANY file,
+    // in any folder (including templates/, stickers/ and strips/), so teammates are not blocked.
+    // Firebase allows a request if ANY rule allows it, so this block overrides the strict rules above.
+    // The tests remove this block before testing, so they still check the strict rules.
+    // TODO lockdown: write real rules for each new folder (e.g. videos/), then delete this block.
 
-    match /{folder}/{allPaths=**} {
-      allow read: if signedIn() && !(folder in ['templates', 'stickers', 'strips']);
-      allow write: if signedIn()
-        && !(folder in ['templates', 'stickers', 'strips'])
-        && (request.resource == null || (
-              request.resource.size < 50 * 1024 * 1024
-              // no web pages or scripts: they could be used for phishing from a Firebase address
-              && !request.resource.contentType.matches('(?i).*(html|svg|javascript|xml).*')));
+    match /{allPaths=**} {
+      allow read, write: if signedIn();
     }
+    // DEV-OPEN-END
   }
 }

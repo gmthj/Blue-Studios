@@ -130,9 +130,9 @@ service cloud.firestore {
 
     match /rooms/{code} {
       // Anyone with the app can look up ONE room by its code (to join it).
-      // Listing every room is not allowed.
+      // Listing every room is only for admins (the Rooms tab of the admin page).
       allow get: if signedIn();
-      allow list: if false;
+      allow list: if isAdmin();
 
       // Create: I must be the host, and the room must start empty
       allow create: if signedIn()
@@ -245,6 +245,11 @@ service cloud.firestore {
           && !(listName in ['members', 'photos'])
           && isMember(code);
       }
+    }
+
+    // Admins can list the members of every room in one query (the Rooms tab of the admin page)
+    match /{path=**}/members/{memberId} {
+      allow list: if isAdmin();
     }
 
     // ---------- User profiles ----------

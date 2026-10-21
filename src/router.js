@@ -23,7 +23,7 @@ const routes = [
   { path: '/marketplace/:type(templates|stickers)/:id', component: MarketplaceItemView },
   // TEMPORARY: make test templates/stickers until the editors are merged (remove before submission)
   { path: '/test-upload', component: TestUploadView, meta: { requiresAccount: true } },
-  // Moderators only (accounts with the admin mark, see scripts/set-admin.mjs). /admin?tab=reports|hidden|accounts|rooms|log
+  // Moderators only (accounts with the admin mark, see scripts/set-admin.mjs). /admin?tab=overview|reports|items|accounts|rooms|log
   { path: '/admin', component: AdminView, meta: { requiresAdmin: true } },
   {
     // :code is a route parameter, e.g. /room/4821 gives route.params.code = '4821'

@@ -222,7 +222,7 @@ src/components/ItemDetailsForm.vue  rename a template/sticker and pick its categ
 src/components/admin/*.vue          admin tabs: Overview, Reports, Items, Accounts, Rooms, Log
 
 api/token.js               GET /api/token?code=1234 -> Agora token (room members only)
-api/admin.js               POST /api/admin (admins only): list, look up, ban, unban accounts
+api/admin.js               POST /api/admin (admins only): list, look up, ban, unban accounts; delete rooms
 api/_lib/firebaseAdmin.js  server-only Firebase Admin setup + getCaller(req). "_" = not a web address
 
 firestore.rules            Firestore security rules (who can read/write what)
@@ -375,7 +375,7 @@ They then log out and in again (or refresh), and an **Admin** button appears in 
 - **Reports:** reported items, grouped by item, with each reason; filter open / resolved / dismissed / all. "Hide item" takes it out of the marketplace and closes its reports as resolved. "Dismiss" closes the reports. "Owner's account..." opens the account tab.
 - **Items:** every template and sticker (public, private and hidden), with search and filters; hide or unhide.
 - **Accounts:** every login, accounts and guests (from Firebase Auth through `/api/admin`), with search and filters (accounts, guests, banned, admins). Pick one to see what they made and reported, then ban or unban it (a reason is required).
-- **Rooms:** the newest 200 rooms, open and closed. Open one to see who is in it, its photos, delete a photo, or close the room. Older rooms can be opened by code.
+- **Rooms:** the newest 200 rooms, open and closed, with who is in each one (green = here now, grey = left). Filter by open/closed, people and stage; sort by any column. Open one to see its photos, delete a photo, close the room, or delete it with everything inside (through `/api/admin`; an open room is closed first so everyone is sent home). Older rooms can be opened by code.
 - **Log:** everything moderators did, filterable by action.
 
 **What a ban does** (`api/admin.js`, which uses the Admin SDK because only the server can switch off a login):
