@@ -74,6 +74,7 @@ import {
 import {
   SVG_TEMPLATES,
   TEMPLATE_PRESETS,
+  LAYOUTS,
   ELEMENT_CATEGORIES,
   ELEMENT_TAG_FILTERS,
   FONT_CATEGORIES,
@@ -184,8 +185,7 @@ const {
 
 // --- Editor Navigation & Toolbar State ---
 const templateName = ref('Retro 4-cut')
-const activeLayout = ref('1x4') // '1x4' | '2x2' | '3x1'
-const slotCount = ref(4)
+const activeLayout = ref('retro-4-cut') // 'retro-4-cut' | 'polaroid-2x2' | 'film-3-cut' | 'music-4-cut'
 const slotShape = ref('Rounded') // 'Square' | 'Rounded' | 'Circle'
 const activeTool = ref('elements') // 'templates' | 'elements' | 'text' | 'background' | 'layers'
 const isDrawerOpen = ref(true)
@@ -314,20 +314,60 @@ const exportConfig = ref({
 // 3. Computed Properties & Layer Helpers
 // =============================================================================
 
-// Cutout Slots calculation (Width: 240px for single-column, 116px for 2x2)
-const currentSlots = computed(() => {
-  const count = slotCount.value
-  const list = []
-  const slotW = activeLayout.value === '2x2' ? 116 : 240
-  for (let i = 0; i < count; i++) {
-    list.push({
-      id: i + 1,
-      width: slotW,
-      height: 116
-    })
-  }
-  return list
+// Active Layout definition matching stripData.js convention
+const currentLayoutDef = computed(() => {
+  const id = activeLayout.value
+  return (
+    LAYOUTS.find((l) => l.id === id) ||
+    (id === '1x4' && LAYOUTS.find((l) => l.id === 'retro-4-cut')) ||
+    (id === '2x2' && LAYOUTS.find((l) => l.id === 'polaroid-2x2')) ||
+    (id === '3x1' && LAYOUTS.find((l) => l.id === 'film-3-cut')) ||
+    LAYOUTS[0]
+  )
 })
+
+// Cutout Slots calculation using percentage coordinates { x, y, w, h } directly from layout
+const currentSlots = computed(() => {
+  const layout = currentLayoutDef.value
+  return (layout.slots || []).map((s, idx) => ({
+    id: idx + 1,
+    x: s.x,
+    y: s.y,
+    w: s.w,
+    h: s.h
+  }))
+})
+
+// Slot count is fixed by the selected layout cut
+const slotCount = computed(() => currentSlots.value.length)
+
+function getLayoutSlots(layoutId) {
+  const l =
+    LAYOUTS.find((item) => item.id === layoutId) ||
+    (layoutId === '1x4' && LAYOUTS.find((item) => item.id === 'retro-4-cut')) ||
+    (layoutId === '2x2' && LAYOUTS.find((item) => item.id === 'polaroid-2x2')) ||
+    (layoutId === '3x1' && LAYOUTS.find((item) => item.id === 'film-3-cut')) ||
+    LAYOUTS[0]
+  return l ? l.slots : []
+}
+
+function getLayoutAspect(layoutId) {
+  const l =
+    LAYOUTS.find((item) => item.id === layoutId) ||
+    (layoutId === '1x4' && LAYOUTS.find((item) => item.id === 'retro-4-cut')) ||
+    (layoutId === '2x2' && LAYOUTS.find((item) => item.id === 'polaroid-2x2')) ||
+    (layoutId === '3x1' && LAYOUTS.find((item) => item.id === 'film-3-cut')) ||
+    LAYOUTS[0]
+  return l ? l.aspect : 3 / 10
+}
+
+function formatAspect(aspect) {
+  if (!aspect) return '3:10'
+  if (Math.abs(aspect - 3 / 10) < 0.01) return '3:10'
+  if (Math.abs(aspect - 3 / 4) < 0.01) return '3:4'
+  if (Math.abs(aspect - 3 / 8) < 0.01) return '3:8'
+  return Math.round(aspect * 100) / 100
+}
 
 const activeSelectedElement = computed(() => {
   if (selectedElementIds.value.length === 0) return null
@@ -509,8 +549,7 @@ function redo() {
 
 function applySnapshot(state) {
   if (state.templateName) templateName.value = state.templateName
-  if (state.activeLayout) activeLayout.value = state.activeLayout
-  if (state.slotCount) slotCount.value = state.slotCount
+  if (state.activeLayout || state.stripLayoutId) activeLayout.value = state.stripLayoutId || state.activeLayout
   if (state.categories && Array.isArray(state.categories) && state.categories.length) {
     chosenCategories.value = [...state.categories]
   }
@@ -530,8 +569,13 @@ function applySnapshot(state) {
   }
   if (state.borderColor !== undefined) borderColor.value = state.borderColor
   if (state.borderWidth !== undefined) borderWidth.value = state.borderWidth
-  if (state.slotShape) slotShape.value = state.slotShape
-  if (state.captionText !== undefined) captionText.value = state.captionText
+  if (state.slotShape || state.shape) {
+    const shapeStr = state.slotShape || state.shape
+    slotShape.value = shapeStr.charAt(0).toUpperCase() + shapeStr.slice(1).toLowerCase()
+  }
+  if (state.captionText !== undefined || state.caption !== undefined) {
+    captionText.value = state.captionText !== undefined ? state.captionText : state.caption
+  }
   if (state.captionColor !== undefined) captionColor.value = state.captionColor
   if (state.cutoutsLayerPosition) cutoutsLayerPosition.value = state.cutoutsLayerPosition
   if (state.showCutouts !== undefined) showCutouts.value = state.showCutouts
@@ -585,33 +629,10 @@ watch(isDrawerOpen, async () => {
 
 function setLayout(layout) {
   activeLayout.value = layout
-  if (layout === '1x4') slotCount.value = 4
-  else if (layout === '2x2') slotCount.value = 4
-  else if (layout === '3x1') slotCount.value = 3
   saveHistoryState()
   nextTick(() => {
     triggerFitToScreen()
   })
-}
-
-function incrementSlots() {
-  if (slotCount.value < 6) {
-    slotCount.value++
-    saveHistoryState()
-    nextTick(() => {
-      triggerFitToScreen()
-    })
-  }
-}
-
-function decrementSlots() {
-  if (slotCount.value > 1) {
-    slotCount.value--
-    saveHistoryState()
-    nextTick(() => {
-      triggerFitToScreen()
-    })
-  }
 }
 
 function toggleCutouts() {
@@ -628,7 +649,6 @@ function toggleCutoutsLayerPosition() {
 function applyTemplate(tpl) {
   templateName.value = tpl.name
   activeLayout.value = tpl.layout
-  slotCount.value = tpl.slots
   selectedBgColor.value = tpl.bg
   frameBg.value.type = tpl.bgType || 'color'
   frameBg.value.value = tpl.gradient || tpl.bg
@@ -710,20 +730,33 @@ function clearFrameTexture() {
 }
 
 function getFrameStyle() {
+  const isGradient = frameBg.value.type === 'gradient'
+  const baseBg = isGradient ? frameBg.value.value : (frameBg.value.baseColor || selectedBgColor.value)
+  const aspect = currentLayoutDef.value.aspect
+  const frameHeight = Math.round(280 / aspect)
+
+  const baseStyle = {
+    width: '280px',
+    height: frameHeight + 'px',
+    minHeight: frameHeight + 'px',
+    aspectRatio: String(aspect),
+    border: 'none',
+    position: 'relative'
+  }
+
   if (frameBg.value.type === 'image' && frameBg.value.value) {
     return {
+      ...baseStyle,
       backgroundImage: `url(${frameBg.value.value})`,
       backgroundPosition: 'center',
       backgroundSize: 'cover',
       backgroundRepeat: 'no-repeat',
       backgroundColor: frameBg.value.baseColor || '#ffffff',
-      border: 'none'
     }
   }
-  const isGradient = frameBg.value.type === 'gradient'
   return {
-    background: isGradient ? frameBg.value.value : (frameBg.value.baseColor || selectedBgColor.value),
-    border: 'none'
+    ...baseStyle,
+    background: baseBg,
   }
 }
 
@@ -2384,32 +2417,47 @@ async function executeSave({ asCopy = false } = {}) {
     const frameId = currentSavedFrameId.value || `frame_${Date.now()}`
     currentSavedFrameId.value = frameId
 
-    // Measure slot rects and aspect ratio for Germaine
-    const slotRects = measureSlots(stripRef.value)
-    const aspect = stripRef.value.offsetWidth / stripRef.value.offsetHeight
+    // Layout, slot rects and aspect ratio following stripData convention
+    const layoutDef = currentLayoutDef.value
+    const slotList = currentSlots.value.map((s) => ({
+      x: s.x,
+      y: s.y,
+      w: s.w,
+      h: s.h
+    }))
+    const aspect = layoutDef.aspect
 
     const safeName = templateName.value.trim().slice(0, 40) || 'Untitled frame'
     const safeCategories = (chosenCategories.value && chosenCategories.value.length >= 1)
       ? chosenCategories.value
       : ['other']
 
+    const isGradient = frameBg.value.type === 'gradient'
+    const bgVal = isGradient ? frameBg.value.value : (frameBg.value.baseColor || selectedBgColor.value)
+
     const projectData = {
       id: frameId,
       templateName: safeName,
       updatedAt: Date.now(),
       version: 1,
-      activeLayout: activeLayout.value,
+      activeLayout: layoutDef.id,
+      stripLayoutId: layoutDef.id,
       slotCount: Math.min(12, Math.max(1, slotCount.value || 4)),
       categories: safeCategories,
-      slotRects,
+      slots: slotList,
+      slotRects: slotList,
       aspect,
+      shape: slotShape.value.toLowerCase(),
+      slotShape: slotShape.value,
+      background: bgVal,
+      border: borderColor.value,
+      caption: captionText.value,
+      captionText: captionText.value,
+      captionColor: captionColor.value,
       selectedBgColor: selectedBgColor.value,
       frameBg: { ...frameBg.value },
       borderColor: borderColor.value,
       borderWidth: borderWidth.value,
-      slotShape: slotShape.value,
-      captionText: captionText.value,
-      captionColor: captionColor.value,
       cutoutsLayerPosition: cutoutsLayerPosition.value,
       showCutouts: false,
       canvasElements: JSON.parse(JSON.stringify(canvasElements.value)),
@@ -3984,25 +4032,53 @@ onBeforeUnmount(() => {
                   :class="{ 'border-primary shadow-sm bg-primary bg-opacity-10': templateName === tpl.name }"
                   @click="applyTemplate(tpl)"
                 >
-                  <div
-                    class="tpl-card-preview rounded mb-2 d-flex align-items-center justify-content-center position-relative overflow-hidden"
-                    :style="{
-                      background: tpl.bgType === 'gradient' ? tpl.gradient : tpl.bg,
-                      borderColor: tpl.border,
-                      height: '92px',
-                      borderWidth: (tpl.borderWidth > 0 ? Math.min(3, Math.max(1, Math.round(tpl.borderWidth / 2))) : 0) + 'px',
-                      borderStyle: 'solid'
-                    }"
-                  >
-                    <!-- Mini texture overlay preview if present -->
+                  <div class="tpl-card-preview rounded mb-2 d-flex align-items-center justify-content-center position-relative overflow-hidden bg-light" style="height: 114px;">
+                    <!-- Proportional Photostrip Frame Preview -->
                     <div
-                      v-if="tpl.texture"
-                      class="position-absolute top-0 start-0 w-100 h-100 pointer-events-none opacity-50"
-                      :style="{ backgroundImage: getTextureBackgroundImage(tpl.texture), backgroundSize: '12px 12px' }"
-                    ></div>
+                      class="tpl-mini-strip shadow-sm position-relative overflow-hidden"
+                      :style="{
+                        aspectRatio: String(tpl.aspect || getLayoutAspect(tpl.layout)),
+                        height: '100px',
+                        background: tpl.bgType === 'gradient' ? (tpl.gradient || tpl.bg) : tpl.bg,
+                        borderColor: tpl.border,
+                        borderWidth: (tpl.borderWidth > 0 ? Math.min(2, Math.max(1, Math.round(tpl.borderWidth / 2))) : 0) + 'px',
+                        borderStyle: 'solid',
+                        borderRadius: tpl.shape === 'Circle' ? '6px' : (tpl.shape === 'Square' ? '0px' : '3px')
+                      }"
+                    >
+                      <!-- Mini texture overlay preview if present -->
+                      <div
+                        v-if="tpl.texture"
+                        class="position-absolute top-0 start-0 w-100 h-100 pointer-events-none opacity-50"
+                        :style="{ backgroundImage: getTextureBackgroundImage(tpl.texture), backgroundSize: '12px 12px' }"
+                      ></div>
 
-                    <div class="mini-slots" :class="['mini-layout-' + tpl.layout]">
-                      <span v-for="n in tpl.slots" :key="n" class="mini-slot" :class="['shape-' + tpl.shape.toLowerCase()]"></span>
+                      <!-- Mini Cutout Slots accurately positioned via percentage coordinates -->
+                      <div
+                        v-for="(slot, idx) in getLayoutSlots(tpl.layout)"
+                        :key="idx"
+                        class="mini-slot position-absolute"
+                        :class="['shape-' + tpl.shape.toLowerCase()]"
+                        :style="{
+                          left: slot.x + '%',
+                          top: slot.y + '%',
+                          width: slot.w + '%',
+                          height: slot.h + '%'
+                        }"
+                      ></div>
+
+                      <!-- Mini bottom caption placeholder line -->
+                      <div
+                        class="mini-caption-line position-absolute start-50 translate-middle-x"
+                        :style="{
+                          bottom: '3%',
+                          width: '55%',
+                          height: '2px',
+                          backgroundColor: tpl.captionColor || tpl.border,
+                          borderRadius: '1px',
+                          opacity: 0.65
+                        }"
+                      ></div>
                     </div>
 
                     <!-- Mini Decorative Sticker Badge in corner if preset has previewIcon -->
@@ -4014,7 +4090,7 @@ onBeforeUnmount(() => {
                     <span class="small fw-bold text-dark text-truncate">{{ tpl.name }}</span>
                     <div class="d-flex align-items-center justify-content-between mt-1">
                       <span class="badge bg-secondary-subtle text-secondary" style="font-size: 0.65rem;">{{ tpl.tag }}</span>
-                      <span class="text-muted" style="font-size: 0.65rem;">{{ tpl.layout }}</span>
+                      <span class="text-muted" style="font-size: 0.65rem;">{{ formatAspect(tpl.aspect || getLayoutAspect(tpl.layout)) }}</span>
                     </div>
                   </div>
                 </div>
@@ -4661,7 +4737,7 @@ onBeforeUnmount(() => {
           :is-dragging-guide="isDraggingGuide"
           :dragged-guide="draggedGuide"
           :frame-width="stripRef?.offsetWidth || 280"
-          :frame-height="stripRef?.offsetHeight || 556"
+          :frame-height="stripRef?.offsetHeight || Math.round(280 / currentLayoutDef.aspect)"
           @start-drag-guide="onStartDragGuideFromRuler"
           @start-move-guide="onStartMoveExistingGuide"
           @remove-guide="removeGuide"
@@ -4673,7 +4749,7 @@ onBeforeUnmount(() => {
           <div
             ref="stripRef"
             class="photostrip-frame"
-            :class="'layout-' + activeLayout"
+            :class="'layout-' + currentLayoutDef.id"
             :style="getFrameStyle()"
             @click.stop="onFrameClick"
             @contextmenu.prevent.stop="openContextMenu($event, null)"
@@ -4701,7 +4777,7 @@ onBeforeUnmount(() => {
             <!-- Slot Layout Container (EMPTY CUTOUTS - UP-MOST LAYER) -->
             <div
               class="strip-slots-container"
-              :class="['layout-' + activeLayout, { 'cutouts-hidden': !showCutouts }]"
+              :class="['layout-' + currentLayoutDef.id, { 'cutouts-hidden': !showCutouts }]"
               :style="{ zIndex: showCutouts ? 80 : 0 }"
             >
               <div
@@ -4709,6 +4785,12 @@ onBeforeUnmount(() => {
                 :key="slot.id"
                 class="photostrip-slot cutout-slot"
                 :class="['shape-' + slotShape.toLowerCase(), { 'slot-hidden': !showCutouts }]"
+                :style="{
+                  left: slot.x + '%',
+                  top: slot.y + '%',
+                  width: slot.w + '%',
+                  height: slot.h + '%'
+                }"
               >
                 <!-- Empty Cutout Inner Aesthetic: Clean Photo Window or Mock Portrait -->
                 <div class="cutout-window">
@@ -5336,43 +5418,21 @@ onBeforeUnmount(() => {
           <!-- LAYOUT PRESETS -->
           <div class="d-flex flex-column gap-1">
             <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Layout Presets</label>
-            <div class="btn-group btn-group-sm w-100" role="group">
-              <button
-                type="button"
-                class="btn"
-                :class="activeLayout === '1x4' ? 'btn-primary' : 'btn-outline-secondary'"
-                @click="setLayout('1x4')"
-              >
-                1×4
-              </button>
-              <button
-                type="button"
-                class="btn"
-                :class="activeLayout === '2x2' ? 'btn-primary' : 'btn-outline-secondary'"
-                @click="setLayout('2x2')"
-              >
-                2×2
-              </button>
-              <button
-                type="button"
-                class="btn"
-                :class="activeLayout === '3x1' ? 'btn-primary' : 'btn-outline-secondary'"
-                @click="setLayout('3x1')"
-              >
-                3×1
-              </button>
+            <div class="row g-1">
+              <div v-for="l in LAYOUTS" :key="l.id" class="col-6">
+                <button
+                  type="button"
+                  class="btn btn-sm w-100 text-truncate px-1"
+                  :class="currentLayoutDef.id === l.id ? 'btn-primary' : 'btn-outline-secondary'"
+                  :title="l.name + ' (' + l.slots.length + ' slots)'"
+                  @click="setLayout(l.id)"
+                >
+                  {{ l.name }}
+                </button>
+              </div>
             </div>
           </div>
 
-          <!-- SLOTS -->
-          <div class="d-flex flex-column gap-1">
-            <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Slots</label>
-            <div class="input-group input-group-sm">
-              <button class="btn btn-outline-secondary" @click="decrementSlots">&minus;</button>
-              <span class="form-control text-center bg-white user-select-none">{{ slotCount }}</span>
-              <button class="btn btn-outline-secondary" @click="incrementSlots">&plus;</button>
-            </div>
-          </div>
 
           <!-- SHAPE -->
           <div class="d-flex flex-column gap-1">
@@ -6998,6 +7058,47 @@ onBeforeUnmount(() => {
   border-color: #3b82f6 !important;
 }
 
+.tpl-card-preview {
+  background: #f8fafc;
+  border-radius: 8px;
+  height: 114px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.tpl-mini-strip {
+  position: relative;
+  height: 100px;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12);
+  transition: transform 0.18s ease;
+}
+
+.template-preset-card:hover .tpl-mini-strip {
+  transform: scale(1.04);
+}
+
+.tpl-mini-strip .mini-slot {
+  background: rgba(255, 255, 255, 0.88);
+  border: 0.5px dashed rgba(100, 116, 139, 0.8);
+  box-sizing: border-box;
+}
+
+.tpl-mini-strip .mini-slot.shape-rounded {
+  border-radius: 2px;
+}
+
+.tpl-mini-strip .mini-slot.shape-square {
+  border-radius: 0px;
+}
+
+.tpl-mini-strip .mini-slot.shape-circle {
+  border-radius: 50%;
+}
+
 .mini-slots {
   display: flex;
   flex-direction: column;
@@ -7006,6 +7107,15 @@ onBeforeUnmount(() => {
   z-index: 2;
 }
 
+.mini-layout-retro-4-cut,
+.mini-layout-1x4 {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 32px;
+}
+
+.mini-layout-polaroid-2x2,
 .mini-layout-2x2 {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -7013,15 +7123,24 @@ onBeforeUnmount(() => {
   width: 48px;
 }
 
+.mini-layout-film-3-cut,
 .mini-layout-3x1 {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  width: 45px;
+  width: 36px;
 }
 
+.mini-layout-film-3-cut .mini-slot,
 .mini-layout-3x1 .mini-slot {
   height: 18px;
+}
+
+.mini-layout-music-4-cut {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  width: 42px;
 }
 
 .mini-slot {
@@ -7126,30 +7245,13 @@ onBeforeUnmount(() => {
   max-width: 280px;
   background-color: #fefbf6;
   border-radius: 18px;
-  padding: 12px 12px 18px 12px;
   box-shadow: 0 16px 38px rgba(15, 23, 42, 0.08);
-  display: flex;
-  flex-direction: column;
   position: absolute;
   top: 0;
   left: 0;
   box-sizing: border-box;
+  overflow: hidden;
   transition: box-shadow 0.2s ease;
-}
-
-.photostrip-frame.layout-1x4 {
-  min-height: 556px;
-  height: 556px;
-}
-
-.photostrip-frame.layout-3x1 {
-  min-height: 432px;
-  height: 432px;
-}
-
-.photostrip-frame.layout-2x2 {
-  min-height: 308px;
-  height: 308px;
 }
 
 .photostrip-border-overlay {
@@ -7168,11 +7270,13 @@ onBeforeUnmount(() => {
 }
 
 .strip-slots-container {
-  width: 240px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none !important;
   box-sizing: border-box;
 }
@@ -7181,20 +7285,10 @@ onBeforeUnmount(() => {
   pointer-events: none !important;
 }
 
-.strip-slots-container.layout-2x2 {
-  display: grid;
-  grid-template-columns: repeat(2, 116px);
-  gap: 8px;
-  justify-content: center;
-}
-
-/* Empty Cutout Slots - Solid Opaque Photo Windows */
+/* Empty Cutout Slots - Solid Opaque Photo Windows positioned by percentage */
 .cutout-slot {
-  width: 240px;
-  height: 116px;
-  flex-shrink: 0;
+  position: absolute;
   box-sizing: border-box;
-  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -7205,11 +7299,6 @@ onBeforeUnmount(() => {
   transition: opacity 0.25s ease, background 0.25s ease, border-color 0.25s ease;
   overflow: hidden;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
-}
-
-.strip-slots-container.layout-2x2 .cutout-slot {
-  width: 116px;
-  height: 116px;
 }
 
 /* Toggled OFF: Cutouts disappear completely while preserving the full strip height & layout */
@@ -7269,21 +7358,22 @@ onBeforeUnmount(() => {
 
 /* Strip Caption */
 .strip-caption {
-  margin-top: 18px;
-  height: 20px;
-  min-height: 20px;
+  position: absolute;
+  bottom: 1.5%;
+  left: 0;
+  width: 100%;
+  height: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
   text-align: center;
-  font-size: 0.88rem;
-  font-weight: 700;
+  font-size: 0.85rem;
+  font-weight: 600;
   color: #2f5bea;
   letter-spacing: -0.01em;
   box-sizing: border-box;
-  flex-shrink: 0;
   cursor: pointer;
-  position: relative;
+  z-index: 70;
   transition: outline 0.15s ease;
 }
 

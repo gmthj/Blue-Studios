@@ -1,3 +1,6 @@
+import { LAYOUTS } from '../stripData.js'
+export { LAYOUTS }
+
 /**
  * Blue Studios Photobooth - Template Editor Data & Presets
  *
@@ -110,7 +113,8 @@ export const TEMPLATE_PRESETS = [
     id: 'retro-4cut',
     name: 'Retro 4-Cut Classic',
     tag: 'Classic',
-    layout: '1x4',
+    layout: 'retro-4-cut',
+    aspect: 3 / 10,
     slots: 4,
     bgType: 'color',
     bg: '#FEFBF6',
@@ -122,18 +126,20 @@ export const TEMPLATE_PRESETS = [
     captionColor: '#475569',
     previewIcon: '📷',
     elements: [
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.retroCamera, name: 'Vintage Camera', width: 24, height: 20, x: 10, y: 518, rotation: -4 },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleStar, name: 'Cyber Sparkle', width: 20, height: 20, x: 248, y: 518, rotation: 8 }
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.retroCamera, name: 'Vintage Camera', width: 24, height: 20, x: 10, y: 885, rotation: -4 },
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleStar, name: 'Cyber Sparkle', width: 20, height: 20, x: 248, y: 885, rotation: 8 }
     ]
   },
   {
     id: 'haru-cloud',
     name: 'Haru Soft Cloud',
     tag: 'Pastel',
-    layout: '1x4',
+    layout: 'retro-4-cut',
+    aspect: 3 / 10,
     slots: 4,
     bgType: 'gradient',
     bg: 'linear-gradient(180deg, #E0F2FE 0%, #BAE6FD 50%, #F0F9FF 100%)',
+    gradient: 'linear-gradient(180deg, #E0F2FE 0%, #BAE6FD 50%, #F0F9FF 100%)',
     texture: null,
     border: '#BAE6FD',
     borderWidth: 2,
@@ -142,15 +148,16 @@ export const TEMPLATE_PRESETS = [
     captionColor: '#0284C7',
     previewIcon: '☁️',
     elements: [
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.cloudCute, name: 'Fluffy Cloud', width: 26, height: 18, x: 10, y: 519, rotation: -3 },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.daisy, name: 'Daisy Blossom', width: 22, height: 22, x: 248, y: 517, rotation: 10 }
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.cloudCute, name: 'Fluffy Cloud', width: 26, height: 18, x: 10, y: 885, rotation: -3 },
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.daisy, name: 'Daisy Blossom', width: 22, height: 22, x: 248, y: 885, rotation: 10 }
     ]
   },
   {
     id: 'y2k-cyber',
     name: 'Y2K Cyber Glitch',
     tag: 'Cyber',
-    layout: '1x4',
+    layout: 'retro-4-cut',
+    aspect: 3 / 10,
     slots: 4,
     bgType: 'color',
     bg: '#0F172A',
@@ -162,15 +169,16 @@ export const TEMPLATE_PRESETS = [
     captionColor: '#F43F5E',
     previewIcon: '⚡',
     elements: [
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleStar, name: 'Cyber Sparkle', width: 22, height: 22, x: 10, y: 517, rotation: 12 },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.smiley, name: 'Smiley Badge', width: 22, height: 22, x: 248, y: 517, rotation: -6 }
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleStar, name: 'Cyber Sparkle', width: 22, height: 22, x: 10, y: 885, rotation: 12 },
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.smiley, name: 'Smiley Badge', width: 22, height: 22, x: 248, y: 885, rotation: -6 }
     ]
   },
   {
     id: 'seoul-matcha',
     name: 'Seoul Cafe Matcha',
     tag: 'Aesthetic',
-    layout: '2x2',
+    layout: 'polaroid-2x2',
+    aspect: 3 / 4,
     slots: 4,
     bgType: 'color',
     bg: '#F0FDF4',
@@ -182,15 +190,16 @@ export const TEMPLATE_PRESETS = [
     captionColor: '#15803D',
     previewIcon: '🍵',
     elements: [
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.cherries, name: 'Twin Cherries', width: 22, height: 22, x: 10, y: 269, rotation: -8 },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.daisy, name: 'Matcha Blossom', width: 20, height: 20, x: 250, y: 269, rotation: 10 }
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.cherries, name: 'Twin Cherries', width: 22, height: 22, x: 10, y: 335, rotation: -8 },
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.daisy, name: 'Matcha Blossom', width: 20, height: 20, x: 250, y: 335, rotation: 10 }
     ]
   },
   {
     id: 'vintage-film',
     name: 'Vintage Film 1998',
     tag: 'Vintage',
-    layout: '1x4',
+    layout: 'retro-4-cut',
+    aspect: 3 / 10,
     slots: 4,
     bgType: 'color',
     bg: '#18181B',
@@ -202,18 +211,20 @@ export const TEMPLATE_PRESETS = [
     captionColor: '#D97706',
     previewIcon: '🎞️',
     elements: [
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.retroCamera, name: 'Vintage Camera', width: 24, height: 20, x: 10, y: 518, rotation: -2 },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.vinylRecord, name: 'Vinyl Disc', width: 22, height: 22, x: 248, y: 517, rotation: 15 }
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.retroCamera, name: 'Vintage Camera', width: 24, height: 20, x: 10, y: 885, rotation: -2 },
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.vinylRecord, name: 'Vinyl Disc', width: 22, height: 22, x: 248, y: 885, rotation: 15 }
     ]
   },
   {
     id: 'sakura-romance',
     name: 'Sakura Romance 2x2',
     tag: 'Pastel',
-    layout: '2x2',
+    layout: 'polaroid-2x2',
+    aspect: 3 / 4,
     slots: 4,
     bgType: 'gradient',
     bg: 'linear-gradient(135deg, #FFF1F2 0%, #FCE7F3 50%, #FBCFE8 100%)',
+    gradient: 'linear-gradient(135deg, #FFF1F2 0%, #FCE7F3 50%, #FBCFE8 100%)',
     texture: null,
     border: '#FBCFE8',
     borderWidth: 2,
@@ -222,18 +233,20 @@ export const TEMPLATE_PRESETS = [
     captionColor: '#DB2777',
     previewIcon: '🌸',
     elements: [
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.ribbonBow, name: 'Ribbon Bow', width: 24, height: 20, x: 10, y: 269, rotation: -4 },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleHeart, name: 'Sparkle Heart', width: 20, height: 20, x: 250, y: 269, rotation: 8 }
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.ribbonBow, name: 'Ribbon Bow', width: 24, height: 20, x: 10, y: 335, rotation: -4 },
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleHeart, name: 'Sparkle Heart', width: 20, height: 20, x: 250, y: 335, rotation: 8 }
     ]
   },
   {
     id: 'golden-sunset',
     name: 'Golden Sunset 3-Cut',
     tag: 'Warm',
-    layout: '3x1',
+    layout: 'film-3-cut',
+    aspect: 3 / 8,
     slots: 3,
     bgType: 'gradient',
     bg: 'linear-gradient(180deg, #FEF3C7 0%, #FDE68A 45%, #FCD34D 100%)',
+    gradient: 'linear-gradient(180deg, #FEF3C7 0%, #FDE68A 45%, #FCD34D 100%)',
     texture: 'polka',
     border: '#FDE68A',
     borderWidth: 2,
@@ -242,15 +255,16 @@ export const TEMPLATE_PRESETS = [
     captionColor: '#B45309',
     previewIcon: '🌅',
     elements: [
-      { type: 'shape', shapeType: 'star', name: 'Golden Star', color: '#FACC15', strokeColor: '#B45309', strokeWidth: 1.5, width: 20, height: 20, x: 12, y: 393, rotation: -5 },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleStar, name: 'Golden Sparkle', width: 20, height: 20, x: 248, y: 393, rotation: 15 }
+      { type: 'shape', shapeType: 'star', name: 'Golden Star', color: '#FACC15', strokeColor: '#B45309', strokeWidth: 1.5, width: 20, height: 20, x: 12, y: 700, rotation: -5 },
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleStar, name: 'Golden Sparkle', width: 20, height: 20, x: 248, y: 700, rotation: 15 }
     ]
   },
   {
     id: 'swiss-minimal',
     name: 'Swiss Minimal',
     tag: 'Minimal',
-    layout: '1x4',
+    layout: 'retro-4-cut',
+    aspect: 3 / 10,
     slots: 4,
     bgType: 'color',
     bg: '#FFFFFF',
@@ -262,18 +276,41 @@ export const TEMPLATE_PRESETS = [
     captionColor: '#0F172A',
     previewIcon: '📐',
     elements: [
-      { type: 'shape', shapeType: 'diamond', name: 'Gem Diamond', color: '#0F172A', strokeColor: '#0F172A', strokeWidth: 1, width: 16, height: 16, x: 14, y: 520, rotation: 0 },
-      { type: 'shape', shapeType: 'diamond', name: 'Gem Diamond', color: '#0F172A', strokeColor: '#0F172A', strokeWidth: 1, width: 16, height: 16, x: 250, y: 520, rotation: 0 }
+      { type: 'shape', shapeType: 'diamond', name: 'Gem Diamond', color: '#0F172A', strokeColor: '#0F172A', strokeWidth: 1, width: 16, height: 16, x: 14, y: 885, rotation: 0 },
+      { type: 'shape', shapeType: 'diamond', name: 'Gem Diamond', color: '#0F172A', strokeColor: '#0F172A', strokeWidth: 1, width: 16, height: 16, x: 250, y: 885, rotation: 0 }
+    ]
+  },
+  {
+    id: 'studio-circle',
+    name: 'Monochrome Circle 4-Cut',
+    tag: 'Minimal',
+    layout: 'retro-4-cut',
+    aspect: 3 / 10,
+    slots: 4,
+    bgType: 'color',
+    bg: '#F1F1F4',
+    texture: null,
+    border: '#9AA0B4',
+    borderWidth: 2,
+    shape: 'Circle',
+    caption: 'BLUE STUDIOS · CIRCLE',
+    captionColor: '#64748B',
+    previewIcon: '⚪',
+    elements: [
+      { type: 'shape', shapeType: 'diamond', name: 'Gem Diamond', color: '#9AA0B4', strokeColor: '#9AA0B4', strokeWidth: 1, width: 16, height: 16, x: 14, y: 885, rotation: 0 },
+      { type: 'shape', shapeType: 'diamond', name: 'Gem Diamond', color: '#9AA0B4', strokeColor: '#9AA0B4', strokeWidth: 1, width: 16, height: 16, x: 250, y: 885, rotation: 0 }
     ]
   },
   {
     id: 'lilac-haze',
     name: 'Lilac Haze 2x2',
     tag: 'Aesthetic',
-    layout: '2x2',
+    layout: 'polaroid-2x2',
+    aspect: 3 / 4,
     slots: 4,
     bgType: 'gradient',
     bg: 'linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 50%, #DDD6FE 100%)',
+    gradient: 'linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 50%, #DDD6FE 100%)',
     texture: null,
     border: '#DDD6FE',
     borderWidth: 2,
@@ -282,15 +319,16 @@ export const TEMPLATE_PRESETS = [
     captionColor: '#7C3AED',
     previewIcon: '💜',
     elements: [
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleStar, name: 'Cyber Sparkle', width: 20, height: 20, x: 12, y: 269, rotation: 0 },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.butterfly, name: 'Pastel Butterfly', width: 22, height: 20, x: 248, y: 269, rotation: 10 }
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleStar, name: 'Cyber Sparkle', width: 20, height: 20, x: 12, y: 335, rotation: 0 },
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.butterfly, name: 'Pastel Butterfly', width: 22, height: 20, x: 248, y: 335, rotation: 10 }
     ]
   },
   {
     id: 'warm-terracotta',
     name: 'Warm Terracotta 3-Cut',
     tag: 'Warm',
-    layout: '3x1',
+    layout: 'film-3-cut',
+    aspect: 3 / 8,
     slots: 3,
     bgType: 'color',
     bg: '#FFF7ED',
@@ -302,8 +340,29 @@ export const TEMPLATE_PRESETS = [
     captionColor: '#C2410C',
     previewIcon: '☕',
     elements: [
-      { type: 'shape', shapeType: 'heart', name: 'Sweetheart', color: '#FB923C', strokeColor: '#C2410C', strokeWidth: 1.5, width: 20, height: 20, x: 12, y: 393, rotation: -6 },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.polaroidFrame, name: 'Mini Frame', width: 18, height: 22, x: 250, y: 392, rotation: 6 }
+      { type: 'shape', shapeType: 'heart', name: 'Sweetheart', color: '#FB923C', strokeColor: '#C2410C', strokeWidth: 1.5, width: 20, height: 20, x: 12, y: 700, rotation: -6 },
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.polaroidFrame, name: 'Mini Frame', width: 18, height: 22, x: 250, y: 700, rotation: 6 }
+    ]
+  },
+  {
+    id: 'music-beats',
+    name: 'Music Vibes 4-Cut',
+    tag: 'Cyber',
+    layout: 'music-4-cut',
+    aspect: 3 / 10,
+    slots: 4,
+    bgType: 'color',
+    bg: '#18181B',
+    texture: 'noise',
+    border: '#A855F7',
+    borderWidth: 2,
+    shape: 'Rounded',
+    caption: 'BLUE TRACKS · 2026 🎵',
+    captionColor: '#C084FC',
+    previewIcon: '🎵',
+    elements: [
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.vinylRecord, name: 'Vinyl Disc', width: 22, height: 22, x: 10, y: 885, rotation: -10 },
+      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleStar, name: 'Cyber Sparkle', width: 20, height: 20, x: 248, y: 885, rotation: 8 }
     ]
   }
 ]
