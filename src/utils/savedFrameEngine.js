@@ -361,24 +361,98 @@ export async function captureEditablePng(stripEl, projectData) {
   }
 }
 
+
 /**
- * Parse an uploaded/dropped File (PNG or JSON) to retrieve project data
+ * Read a file as a base64 Data URL
+ */
+export function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) {
+      resolve(null)
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = (e) => resolve(e.target.result)
+    reader.onerror = (e) => reject(e)
+    reader.readAsDataURL(file)
+  })
+}
+
+/**
+ * Parse an uploaded/dropped File (PNG, JPG, JPEG, WEBP, SVG, or JSON) to retrieve project data.
+ * If the file is a standard image (not an exported Blue Studios project PNG with embedded metadata),
+ * it converts it into a custom frame template with the image as the frame background.
  */
 export async function parseProjectFromFile(file) {
   if (!file) return null
 
-  // If directly a JSON file
+  // 1. If directly a JSON file
   if (file.name.endsWith('.json') || file.type === 'application/json') {
-    const text = await file.text()
     try {
-      return JSON.parse(text)
-    } catch {
+      const text = await file.text()
+      const parsed = JSON.parse(text)
+      return parsed.projectData || parsed
+    } catch (err) {
+      console.warn('Failed to parse JSON template file:', err)
       return null
     }
   }
 
-  // If a PNG file
-  const buffer = await file.arrayBuffer()
-  const bytes = new Uint8Array(buffer)
-  return extractProjectFromPngBytes(bytes)
+  // 2. If a PNG file, check for embedded Blue Studios project metadata first
+  const isPng = file.type === 'image/png' || file.name.toLowerCase().endsWith('.png')
+  if (isPng) {
+    try {
+      const buffer = await file.arrayBuffer()
+      const bytes = new Uint8Array(buffer)
+      const embeddedProject = extractProjectFromPngBytes(bytes)
+      if (embeddedProject && (embeddedProject.canvasElements || embeddedProject.templateName || embeddedProject.slotCount || embeddedProject.frameBg)) {
+        return embeddedProject
+      }
+    } catch (err) {
+      console.warn('Could not extract embedded PNG project metadata, falling back to image import:', err)
+    }
+  }
+
+  // 3. Fallback for all images (PNG without embedded metadata, JPG, JPEG, WEBP, SVG, GIF):
+  // Convert into a custom frame template with the uploaded image as the frame background
+  const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|webp|svg|gif)$/i.test(file.name)
+  if (isImage) {
+    try {
+      const dataUrl = await readFileAsDataUrl(file)
+      if (!dataUrl) return null
+      const rawName = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ').trim()
+      const formattedName = rawName ? rawName.charAt(0).toUpperCase() + rawName.slice(1) : 'Uploaded Frame'
+
+      return {
+        id: `frame_${Date.now()}`,
+        templateName: formattedName,
+        activeLayout: 'strip-4',
+        slotCount: 4,
+        selectedBgColor: '#FFFFFF',
+        frameBg: {
+          type: 'image',
+          value: dataUrl,
+          baseColor: '#FFFFFF',
+          texture: null,
+          opacity: 1,
+          blendMode: 'normal',
+          scale: 1
+        },
+        borderColor: '#000000',
+        borderWidth: 0,
+        slotShape: 'RECTANGLE',
+        captionText: '',
+        canvasElements: [],
+        showCutouts: false,
+        thumbnail: dataUrl,
+        _isCustomImageFrame: true
+      }
+    } catch (err) {
+      console.error('Failed reading image file as frame:', err)
+      return null
+    }
+  }
+
+  return null
 }
+

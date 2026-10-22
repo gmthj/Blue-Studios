@@ -26,17 +26,17 @@
           </div>
 
           <div class="d-flex align-items-center gap-2">
-            <!-- Hidden file input for importing PNGs -->
+            <!-- Hidden file input for importing images or JSON templates -->
             <input
               ref="fileInputRef"
               type="file"
-              accept="image/png,application/json"
+              accept="image/*,.json,application/json"
               class="d-none"
               @change="handleFileInputChange"
             />
-            <button class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2 px-3 py-1 rounded-pill fw-semibold" title="Open PNG frame file from computer" @click="triggerFileInput">
+            <button class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2 px-3 py-1 rounded-pill fw-semibold" title="Upload template or frame image from computer" @click="triggerFileInput">
               <AppIcon name="upload" :size="15" :stroke-width="2" />
-              <span>Open from Computer</span>
+              <span>Upload from Computer</span>
             </button>
 
             <button type="button" class="btn-close ms-2" aria-label="Close" @click="$emit('close')"></button>
@@ -67,7 +67,22 @@
         </div>
 
         <!-- Frames Grid / List -->
-        <div class="modal-body p-4 bg-light bg-opacity-50 custom-scrollbar" style="min-height: 360px; max-height: 60vh;">
+        <div
+          class="modal-body p-4 bg-light bg-opacity-50 custom-scrollbar position-relative"
+          style="min-height: 360px; max-height: 60vh;"
+          @dragover.prevent="isDraggingOver = true"
+          @dragleave.prevent="isDraggingOver = false"
+          @drop.prevent="handleModalDrop"
+        >
+          <!-- Drag-over drop overlay -->
+          <div v-if="isDraggingOver" class="modal-drop-overlay">
+            <div class="text-center p-4 bg-white rounded-4 shadow-lg border border-primary border-2">
+              <div class="fs-1 mb-2">📥</div>
+              <h6 class="fw-bold text-primary mb-1">Drop to upload frame</h6>
+              <p class="text-muted small mb-0">Supports PNG, JPG, WEBP, SVG, and JSON template files</p>
+            </div>
+          </div>
+
           <!-- Empty State -->
           <div v-if="filteredFrames.length === 0" class="text-center py-5">
             <div class="fs-1 mb-2">📁</div>
@@ -76,12 +91,18 @@
               {{
                 searchQuery
                   ? 'Try a different search term.'
-                  : 'Click "Save Frame" on the top bar to save your editable photostrip templates here.'
+                  : 'Save frames from the top bar or upload custom frame images / templates from your computer.'
               }}
             </p>
-            <button v-if="!searchQuery" class="btn btn-primary rounded-pill px-4 btn-sm fw-semibold" @click="$emit('save-current')">
-              💾 Save Current Workspace Frame
-            </button>
+            <div class="d-flex align-items-center justify-content-center gap-2 flex-wrap">
+              <button v-if="!searchQuery" class="btn btn-primary rounded-pill px-4 btn-sm fw-semibold" @click="$emit('save-current')">
+                💾 Save Current Workspace Frame
+              </button>
+              <button class="btn btn-outline-primary rounded-pill px-3 btn-sm fw-semibold d-flex align-items-center gap-2" @click="triggerFileInput">
+                <AppIcon name="upload" :size="15" :stroke-width="2" />
+                <span>Upload from Computer</span>
+              </button>
+            </div>
           </div>
 
           <!-- Cards Grid -->
@@ -229,6 +250,7 @@ const emit = defineEmits([
 const searchQuery = ref('')
 const fileInputRef = ref(null)
 const confirmingDeleteId = ref(null)
+const isDraggingOver = ref(false)
 
 const filteredFrames = computed(() => {
   if (!searchQuery.value.trim()) return props.savedFrames
@@ -245,6 +267,14 @@ function triggerFileInput() {
 
 function handleFileInputChange(e) {
   const file = e.target.files?.[0]
+  if (file) {
+    emit('import-file', file)
+  }
+}
+
+function handleModalDrop(e) {
+  isDraggingOver.value = false
+  const file = e.dataTransfer?.files?.[0]
   if (file) {
     emit('import-file', file)
   }
@@ -279,6 +309,23 @@ function formatDate(timestamp) {
 .custom-scrollbar::-webkit-scrollbar-thumb {
   background: #cbd5e1;
   border-radius: 4px;
+}
+
+.modal-drop-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(248, 250, 252, 0.88);
+  backdrop-filter: blur(4px);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.15s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .frame-card {

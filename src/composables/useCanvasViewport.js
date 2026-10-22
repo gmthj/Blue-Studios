@@ -107,7 +107,7 @@ export function useCanvasViewport() {
 
     const scaleW = availW / frameW
     const scaleH = availH / frameH
-    const target = Math.max(MIN_SCALE, Math.min(2.5, Math.min(scaleW, scaleH)))
+    const target = Math.max(MIN_SCALE, Math.min(1.10, Math.min(scaleW, scaleH)))
 
     const roundedScale = Math.round(target * 20) / 20
     scale.value = roundedScale
