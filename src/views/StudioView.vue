@@ -199,7 +199,7 @@ function formatDate(time) {
       <div v-for="template in templates" :key="template.id" class="col-12 col-sm-6 col-lg-4">
         <div class="card h-100">
           <div class="row g-0 h-100">
-            <div class="col-4 preview"><StorageImage :path="template.thumbnailPath" :alt="template.name" /></div>
+            <div class="col-4 preview template-preview"><StorageImage :path="template.thumbnailPath" :alt="template.name" /></div>
             <div class="col-8">
               <div class="card-body">
                 <p class="fw-semibold text-truncate mb-0">{{ template.name }}</p>
@@ -211,7 +211,7 @@ function formatDate(time) {
 
                 <ItemDetailsForm v-if="editingId === template.id" :item="template" @saved="detailsSaved(template, $event)" @cancel="editingId = ''" />
                 <template v-else>
-                  <div class="form-check form-switch">
+                  <div class="form-check form-switch mb-2">
                     <input
                       :id="'vis-' + template.id"
                       class="form-check-input"
@@ -305,6 +305,22 @@ function formatDate(time) {
 
 .strip-preview {
   height: 220px;
+}
+
+.template-preview {
+  min-height: 180px;
+  max-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+}
+
+.template-preview :deep(.storage-image),
+.template-preview :deep(img) {
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain;
 }
 
 .sticker-preview {

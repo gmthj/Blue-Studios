@@ -9,6 +9,8 @@
     "preview": "vite preview",
     "set-admin": "node --env-file=.env scripts/set-admin.mjs",
     "set-cors": "node --env-file=.env scripts/set-cors.mjs",
+    "test": "vitest run tests/client.spec.js",
+    "test:unit": "vitest run tests/client.spec.js",
     "test:rules": "firebase emulators:exec --only auth,firestore,storage --project demo-blue-studios \"node --test --test-concurrency=1 tests/firestore.rules.test.js tests/storage.rules.test.js tests/admin.api.test.js\""
   },
   "dependencies": {
@@ -26,11 +28,22 @@
   "devDependencies": {
     "@firebase/rules-unit-testing": "^6.0.0",
     "@vitejs/plugin-vue": "^6.0.10",
-    "vite": "^8.3.4"
+    "@vue/test-utils": "^2.5.1",
+    "jsdom": "^29.1.1",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.5"
   },
   "overrides": {
     "jwks-rsa": {
       "jose": "^5.10.0"
     }
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@firebase/util",
+      "core-js",
+      "protobufjs",
+      "esbuild"
+    ]
   }
 }
