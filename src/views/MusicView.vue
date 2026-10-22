@@ -8,6 +8,7 @@ import { getPeaks } from '../waveform.js'
 import DeckCard from '../components/DeckCard.vue'
 import WaveformBars from '../components/WaveformBars.vue'
 import StageBar from '../components/StageBar.vue'
+import { renderMix } from '../mixRender.js'
 
 // RoomLayout already joined the room, so we just ask for the room code
 const { code, roomRef } = useRoom()
@@ -24,6 +25,9 @@ const playingA = ref(false)
 const playingB = ref(false)
 const loadingA = ref(false)
 const loadingB = ref(false)
+const rendering = ref(false)   // true while the mix is being rendered
+const previewUrl = ref('')     // a temporary address the <audio> player can play
+let mixBlob = null             // the finished WAV file (plain variable, like playerA)
 
 // ---------- Audio (Tone.js) ----------
 // playerA → gainA → crossFade.a ┐
@@ -172,6 +176,33 @@ function setCrossfade(value) {
   crossFadeNode.fade.value = value
 }
 
+// ----- Your mix -----
+// Renders the current mix (songs + speeds + volumes + crossfader) into a 5 second WAV
+async function makeMix() {
+  if (!playerA && !playerB) {
+    errorMessage.value = 'Load a song into a deck first.'
+    return
+  }
+  rendering.value = true
+
+  mixBlob = await renderMix({
+    bufferA: playerA ? playerA.buffer : null,
+    bufferB: playerB ? playerB.buffer : null,
+    speedA: speedA.value,
+    speedB: speedB.value,
+    volumeA: volumeA.value,
+    volumeB: volumeB.value,
+    crossfade: crossfade.value,
+  })
+
+  // URL.createObjectURL gives the file a temporary address that <audio> can play
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)   // free the previous one
+  }
+  previewUrl.value = URL.createObjectURL(mixBlob)
+  rendering.value = false
+}
+
 // Leaving the page: stop the music and free everything, otherwise it keeps playing on other pages!
 onBeforeUnmount(function () {
   stopAndRemove(playerA)
@@ -179,6 +210,10 @@ onBeforeUnmount(function () {
   gainA.dispose()
   gainB.dispose()
   crossFadeNode.dispose()
+
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+  }
 })
 
 // ---------- "Your mix" waveform ----------
@@ -332,15 +367,21 @@ onMounted(loadTracks)
           />
         </div>
 
-        <!-- YOUR MIX -->
+                <!-- YOUR MIX -->
         <div class="col-12">
           <div class="card">
             <div class="card-body">
               <h2 class="h5 mb-0">Your mix</h2>
               <p class="small text-muted">5 s loop · matches your video frame</p>
               <WaveformBars :bars="mixBars" class="mb-3" />
+
+              <!-- Shows up after Preview has made the mix -->
+              <audio v-if="previewUrl" :src="previewUrl" controls class="w-100 mb-3"></audio>
+
               <div class="d-flex flex-wrap gap-2 justify-content-end">
-                <button class="btn btn-outline-secondary">▷ Preview</button>
+                <button class="btn btn-outline-secondary" :disabled="rendering" @click="makeMix">
+                  {{ rendering ? 'Rendering...' : '▷ Preview' }}
+                </button>
                 <button class="btn btn-primary">Use this mix</button>
               </div>
             </div>
