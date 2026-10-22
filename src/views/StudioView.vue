@@ -188,11 +188,6 @@ function formatDate(time) {
       </div>
     </div>
 
-    <!-- Templates and stickers can be public (marketplace) or private -->
-    <div v-if="!user.emailVerified" class="alert alert-light border small">
-      Confirm your email to make your templates and stickers public in the marketplace.
-    </div>
-
     <h2 class="h4 mb-3">My templates</h2>
     <p v-if="templates.length === 0" class="text-muted small mb-5">No templates yet. Design one in the template editor.</p>
     <div v-else class="row g-3 mb-5">
