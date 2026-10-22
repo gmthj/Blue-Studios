@@ -1,4 +1,5 @@
 <script setup>
+import { updateDoc } from 'firebase/firestore'
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import axios from 'axios'
 import * as Tone from 'tone'   // NEW: not in syllabus (your X-factor)
@@ -8,7 +9,7 @@ import DeckCard from '../components/DeckCard.vue'
 import WaveformBars from '../components/WaveformBars.vue'
 
 // RoomLayout already joined the room, so we just ask for the room code
-const { code } = useRoom()
+const { code, roomRef } = useRoom()
 
 // ---------- Decks (what the page shows) ----------
 const trackA = ref(null)    // the song loaded in Deck A (null = empty)
@@ -252,6 +253,11 @@ function formatTime(seconds) {
   return mins + ':' + secs
 }
 
+// Moves everyone in the room back to the Decorate page (RoomLayout.vue follows the room's "stage")
+async function goBack() {
+  await updateDoc(roomRef(), { stage: 'decorate' })
+}
+
 // Load some songs as soon as the page opens
 onMounted(loadTracks)
 </script>
@@ -259,7 +265,7 @@ onMounted(loadTracks)
 <template>
   <div class="d-flex justify-content-between align-items-center mb-3">
     <h1 class="h4 mb-0">Music mixer</h1>
-    <router-link :to="'/room/' + code" class="btn btn-outline-secondary btn-sm">Back to room</router-link>
+    <button class="btn btn-outline-secondary btn-sm" @click="goBack">&larr; Decorate</button>
   </div>
 
   <div class="row g-4">
