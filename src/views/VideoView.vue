@@ -7,7 +7,7 @@ import { updateDoc, deleteField } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 // CLIP_SECONDS: how long a clip is. resolveTimeline: joins a timeline with the clip documents.
 // editedVideoList: the saved edits as a list. newEditedVideoId: a new random id for a saved edit.
-import { CLIP_SECONDS, resolveTimeline, editedVideoList, newEditedVideoId } from '../clips.js'
+import { CLIP_SECONDS, MAX_EDIT_SECONDS, resolveTimeline, editedVideoList, newEditedVideoId } from '../clips.js'
 import StageBar from '../components/StageBar.vue'
 import ClipThumb from '../components/ClipThumb.vue'
 import ClipSequencePlayer from '../components/ClipSequencePlayer.vue'
@@ -35,6 +35,17 @@ const message = ref('')    // a short message under the Save button, e.g. "Saved
 const entries = computed(() => resolveTimeline(room.value.videoTimeline, clips.value))
 // The edit's length: add up (end - start) of every clip
 const totalSeconds = computed(() => entries.value.reduce((sum, e) => sum + (e.end - e.start), 0))
+
+// ---- The 15 second limit (MAX_EDIT_SECONDS) ----
+// An edit can never be longer than this. Adding a clip that does not fit is blocked, and a trim stops at the limit.
+// (0.001 of extra room, because seconds like 0.1 are not exact numbers in a computer)
+const EXTRA = 0.001
+const secondsLeft = computed(() => Math.max(0, MAX_EDIT_SECONDS - totalSeconds.value))
+const canAddClip = computed(() => secondsLeft.value + EXTRA >= CLIP_SECONDS) // room for one more whole clip?
+// Only possible if two people add clips at the same moment, which can push the edit over the limit
+const overLimit = computed(() => totalSeconds.value > MAX_EDIT_SECONDS + EXTRA)
+const limitMessage = ref('') // shown under the meter, e.g. "Only 2 of 4 clips fit"
+
 // The ids of the clips already on the timeline, to show "On timeline" instead of the Add button
 const onTimeline = computed(() => new Set(entries.value.map((e) => e.clip.id)))
 
@@ -51,22 +62,37 @@ function currentList() {
 
 // Add button: put a clip at the end of the timeline, untrimmed (from 0 to the full length)
 async function addClip(clip) {
+  if (!canAddClip.value) { // blocked: the button is greyed out, this is for a click that sneaks in
+    limitMessage.value = 'No room for another clip: an edit can be ' + MAX_EDIT_SECONDS + ' seconds at most.'
+    return
+  }
+  limitMessage.value = ''
   await saveTimeline([...currentList(), { clipId: clip.id, start: 0, end: CLIP_SECONDS }])
 }
 
 // "Add session": put all of a session's clips that are not on the timeline yet at the end, in the order they were recorded
 async function addSession(session) {
   const list = currentList()
+  let free = secondsLeft.value // how many seconds are still free
+  let added = 0
+  let skipped = 0
   for (const clip of session.clips) {
-    if (!onTimeline.value.has(clip.id)) {
+    if (onTimeline.value.has(clip.id)) continue // already on the timeline
+    if (free + EXTRA >= CLIP_SECONDS) {
       list.push({ clipId: clip.id, start: 0, end: CLIP_SECONDS })
+      free -= CLIP_SECONDS
+      added++
+    } else {
+      skipped++ // does not fit
     }
   }
+  limitMessage.value = skipped > 0 ? 'Only ' + added + ' of ' + (added + skipped) + ' clips fit: an edit can be ' + MAX_EDIT_SECONDS + ' seconds at most.' : ''
   await saveTimeline(list)
 }
 
 // ✕ button: take the clip at this position off the timeline (the clip itself stays in the room)
 async function removeClip(index) {
+  limitMessage.value = ''
   const list = currentList()
   list.splice(index, 1) // splice(position, 1) removes one item
   await saveTimeline(list)
@@ -74,6 +100,7 @@ async function removeClip(index) {
 
 // Swap a clip with the one before it (-1) or after it (+1)
 async function moveClip(index, direction) {
+  limitMessage.value = ''
   const list = currentList()
   const other = index + direction // the position to swap with
   if (other < 0 || other >= list.length) return // already first or last
@@ -83,14 +110,29 @@ async function moveClip(index, direction) {
   await saveTimeline(list)
 }
 
-// Trim: key is 'start' or 'end' (seconds). The other end is pushed if they would get too close.
-async function trim(index, key, value) {
+// Trim: key is 'start' or 'end' (seconds), event is the slider's @change event.
+// The other end is pushed if they would get too close, and a trim that would make the edit longer than the limit
+// stops at the limit (the slider jumps back to where it stopped).
+async function trim(index, key, event) {
+  const value = Number(event.target.value)
   const list = currentList()
   const item = list[index]
   item[key] = value // set the new start or end
   // Keep at least 0.3 seconds between start and end: if you drag one past the other, it pushes the other along
   if (key === 'start' && item.end < value + 0.3) item.end = Math.min(CLIP_SECONDS, value + 0.3)
   if (key === 'end' && item.start > value - 0.3) item.start = Math.max(0, value - 0.3)
+
+  // How long this clip may be: the limit minus all the OTHER clips (never less than the 0.3 minimum)
+  const others = totalSeconds.value - (entries.value[index].end - entries.value[index].start)
+  const allowed = Math.max(0.3, MAX_EDIT_SECONDS - others)
+  limitMessage.value = ''
+  if (item.end - item.start > allowed + EXTRA) {
+    // too long: keep the end you did NOT move, and stop the moved one at the limit (rounded to 0.1)
+    if (key === 'end') item.end = Math.round((item.start + allowed) * 10) / 10
+    else item.start = Math.round((item.end - allowed) * 10) / 10
+    limitMessage.value = 'The ' + MAX_EDIT_SECONDS + ' second limit is reached: an edit can be ' + MAX_EDIT_SECONDS + ' seconds at most.'
+  }
+  event.target.value = item[key] // show where the slider really is (it may not be where it was dragged to)
   await saveTimeline(list)
 }
 
@@ -116,7 +158,7 @@ function nextName() {
 // Either way the timeline is emptied afterwards, ready for the next edit.
 async function saveEdit() {
   const list = currentList()
-  if (list.length === 0) return
+  if (list.length === 0 || overLimit.value) return // nothing to save, or too long (the button is greyed out too)
   const changes = { videoTimeline: [], videoEditing: null }
   let name
   if (editingEdit.value) {
@@ -204,8 +246,19 @@ async function goToStage(stage) {
           <!-- Says which saved edit is open, or that this is a new one -->
           <h2 class="h5 fw-bold">{{ editingEdit ? 'Changing ' + editingEdit.name : 'New edit' }}</h2>
           <!-- toFixed(1): one decimal place, e.g. 7.5 -->
-          <span class="small text-muted">{{ entries.length }} clip(s) · {{ totalSeconds.toFixed(1) }}s</span>
+          <span class="small" :class="overLimit ? 'text-danger fw-bold' : 'text-muted'">{{ entries.length }} clip(s) · {{ totalSeconds.toFixed(1) }} / {{ MAX_EDIT_SECONDS }}s</span>
         </div>
+        <!-- The length meter: the bar fills up to the limit, and turns red if the edit is over it -->
+        <div class="progress mb-1" style="height: 8px">
+          <div class="progress-bar" :class="{ 'bg-danger': overLimit }" :style="{ width: Math.min(100, (totalSeconds / MAX_EDIT_SECONDS) * 100) + '%' }"></div>
+        </div>
+        <p class="small text-muted mb-2">
+          An edited video can be up to {{ MAX_EDIT_SECONDS }} seconds. A strip with video is exported as a {{ MAX_EDIT_SECONDS }} second video, and shorter videos repeat.
+        </p>
+        <p v-if="limitMessage" class="small text-danger mb-2">{{ limitMessage }}</p>
+        <p v-if="overLimit" class="small text-danger mb-2">
+          This edit is over {{ MAX_EDIT_SECONDS }} seconds (someone added a clip at the same time). Remove or trim a clip to save it.
+        </p>
         <!-- Only shown while the timeline is empty -->
         <p v-if="entries.length === 0" class="small text-muted mb-0">
           Press Add on a clip (or Add session) to put it here. The clips play one after another, in this order.
@@ -226,16 +279,16 @@ async function goToStage(stage) {
             <!-- Trim: saved on @change (when the slider is let go), so Firestore is not written on every pixel -->
             <label class="form-label small d-flex justify-content-between mb-0">Start <span>{{ entry.start.toFixed(1) }}s</span></label>
             <input type="range" class="form-range" min="0" :max="CLIP_SECONDS" step="0.1" :value="entry.start"
-                   @change="trim(index, 'start', Number($event.target.value))" />
+                   @change="trim(index, 'start', $event)" />
             <label class="form-label small d-flex justify-content-between mb-0">End <span>{{ entry.end.toFixed(1) }}s</span></label>
             <input type="range" class="form-range" min="0" :max="CLIP_SECONDS" step="0.1" :value="entry.end"
-                   @change="trim(index, 'end', Number($event.target.value))" />
+                   @change="trim(index, 'end', $event)" />
           </li>
         </ol>
 
         <!-- Save: a new edit goes to the gallery (the timeline is emptied for the next one). Cancel only when changing a saved edit. -->
         <div class="d-flex gap-2 mt-3">
-          <button class="btn btn-success flex-fill" :disabled="entries.length === 0" @click="saveEdit">
+          <button class="btn btn-success flex-fill" :disabled="entries.length === 0 || overLimit" @click="saveEdit">
             {{ editingEdit ? 'Save changes' : 'Save to gallery' }}
           </button>
           <button v-if="editingEdit" class="btn btn-outline-secondary" @click="cancelEdit">Cancel</button>
@@ -267,7 +320,7 @@ async function goToStage(stage) {
           <div class="d-flex justify-content-between align-items-center mb-1">
             <h3 class="h6 mb-0">Session {{ session.shotNumber }}</h3>
             <!-- Puts all of this session's clips on the timeline, in the order they were recorded -->
-            <button class="btn btn-outline-primary btn-sm py-0" @click="addSession(session)">Add session</button>
+            <button class="btn btn-outline-primary btn-sm py-0" :disabled="!canAddClip" :title="canAddClip ? '' : 'No room left: ' + MAX_EDIT_SECONDS + ' second limit'" @click="addSession(session)">Add session</button>
           </div>
           <div class="row g-2">
             <div v-for="clip in session.clips" :key="clip.id" class="col-4">
@@ -275,7 +328,7 @@ async function goToStage(stage) {
               <p class="small text-muted text-truncate mb-1">{{ clip.name }}</p>
               <!-- A clip can be on the timeline once: "On timeline" if it is, otherwise the Add button -->
               <span v-if="onTimeline.has(clip.id)" class="badge text-bg-light">On timeline</span>
-              <button v-else class="btn btn-outline-primary btn-sm py-0" @click="addClip(clip)">Add</button>
+              <button v-else class="btn btn-outline-primary btn-sm py-0" :disabled="!canAddClip" :title="canAddClip ? '' : 'No room left: ' + MAX_EDIT_SECONDS + ' second limit'" @click="addClip(clip)">Add</button>
             </div>
           </div>
         </section>

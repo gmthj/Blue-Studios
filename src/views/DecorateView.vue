@@ -426,7 +426,9 @@ async function saveToStudio() {
           <button v-if="isAccount" class="btn btn-outline-primary btn-sm w-100 mt-2" :disabled="saving || hasVideoSlot" @click="saveToStudio">
             {{ saving ? 'Saving...' : 'Save to My Studio' }}
           </button>
-          <p v-if="hasVideoSlot" class="small text-muted text-center mt-2 mb-0">This strip has a video, so it will be exported as an MP4 (coming soon).</p>
+          <!-- A strip with video is exported as an MP4 on the Export page (the JPG buttons above are for photo strips) -->
+          <button v-if="hasVideoSlot" class="btn btn-primary btn-sm w-100 mt-2" @click="goToStage('export')">Export video &rarr;</button>
+          <p v-if="hasVideoSlot" class="small text-muted text-center mt-1 mb-0">This strip has a video, so it is exported as an MP4.</p>
           <p v-if="saveMessage" class="small text-center mt-2 mb-0">{{ saveMessage }}</p>
         </div>
       </div>

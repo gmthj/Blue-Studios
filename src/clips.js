@@ -21,6 +21,10 @@ import { getFileUrl } from './studio.js'
 // How long every clip is, in seconds. Used when recording, and as the longest a trim can be.
 export const CLIP_SECONDS = 3
 
+// The longest an edited video can be, in seconds (all its trimmed clips added up). Strips with video are
+// also exported as videos of this length (shorter videos repeat), so every video strip is the same length.
+export const MAX_EDIT_SECONDS = 15
+
 // ---------- Recording ----------
 
 // The video format this browser can record (Chrome and Firefox: webm, Safari: mp4)

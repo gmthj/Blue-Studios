@@ -9,7 +9,7 @@ import { isRoomFull, MAX_PEOPLE } from '../room.js'
 import { useRoom } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
 
-// The parent page for everything inside a room (/room/:code, /strip, /video, /decorate).
+// The parent page for everything inside a room (/room/:code, /strip, /video, /decorate, /export).
 // It joins the room and starts the video call ONCE. The child pages (RoomView, StripView)
 // are shown in <router-view>, so moving between them does not drop the call.
 // New room features can be added as more child pages in router.js.
@@ -70,6 +70,7 @@ const STAGE_PATHS = {
   strip: '/strip',       // /room/4821/strip    choosing photos for the strip (StripView)
   video: '/video',       // /room/4821/video    editing the clips into one video (VideoView)
   decorate: '/decorate', // /room/4821/decorate filters and stickers (DecorateView)
+  export: '/export',     // /room/4821/export   making the MP4 of a strip with video (ExportView)
   // PLACEHOLDER: add this when the page is on main
   // music: '/music',    // Shannon (music-mixer branch)
 }
