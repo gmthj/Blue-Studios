@@ -326,8 +326,18 @@ const currentLayoutDef = computed(() => {
   )
 })
 
-// Cutout Slots calculation using percentage coordinates { x, y, w, h } directly from layout
+// Cutout Slots calculation using percentage coordinates { x, y, w, h } directly from layout or loaded template
+const customSlots = ref(null)
 const currentSlots = computed(() => {
+  if (customSlots.value && customSlots.value.length) {
+    return customSlots.value.map((s, idx) => ({
+      id: s.id || idx + 1,
+      x: s.x,
+      y: s.y,
+      w: s.w,
+      h: s.h
+    }))
+  }
   const layout = currentLayoutDef.value
   return (layout.slots || []).map((s, idx) => ({
     id: idx + 1,
@@ -550,12 +560,28 @@ function redo() {
 function applySnapshot(state) {
   if (state.templateName) templateName.value = state.templateName
   if (state.activeLayout || state.stripLayoutId) activeLayout.value = state.stripLayoutId || state.activeLayout
+  if (state.slots && state.slots.length) {
+    customSlots.value = state.slots
+  } else {
+    customSlots.value = null
+  }
   if (state.categories && Array.isArray(state.categories) && state.categories.length) {
     chosenCategories.value = [...state.categories]
   }
   if (state.selectedBgColor) selectedBgColor.value = state.selectedBgColor
   if (state.frameBg) {
     frameBg.value = { ...state.frameBg }
+  } else if (state.background) {
+    const isGrad = state.background.includes('gradient')
+    frameBg.value = {
+      type: isGrad ? 'gradient' : 'color',
+      value: state.background,
+      baseColor: isGrad ? '#FEFBF6' : state.background,
+      texture: null,
+      opacity: 0.85,
+      blendMode: 'multiply',
+      scale: 1
+    }
   } else {
     frameBg.value = {
       type: 'color',
@@ -579,7 +605,8 @@ function applySnapshot(state) {
   if (state.captionColor !== undefined) captionColor.value = state.captionColor
   if (state.cutoutsLayerPosition) cutoutsLayerPosition.value = state.cutoutsLayerPosition
   if (state.showCutouts !== undefined) showCutouts.value = state.showCutouts
-  canvasElements.value = state.canvasElements || []
+  canvasElements.value = state.canvasElements ? JSON.parse(JSON.stringify(state.canvasElements)) : []
+  selectedElementIds.value = []
   if (state.customGuides) customGuides.value = state.customGuides || []
 }
 
@@ -628,6 +655,7 @@ watch(isDrawerOpen, async () => {
 })
 
 function setLayout(layout) {
+  customSlots.value = null
   activeLayout.value = layout
   saveHistoryState()
   nextTick(() => {
@@ -705,6 +733,159 @@ function applyTemplate(tpl) {
 // =============================================================================
 // 7. Frame Background, Texture & Border Operations
 // =============================================================================
+const customGradient = ref({
+  type: 'linear', // 'linear' | 'radial'
+  angle: 135,
+  color1: '#A8EDEA',
+  color2: '#FED6E3',
+  color3: ''
+})
+
+let isInternalGradUpdate = false
+
+function extractColorsFromGradient(gradStr) {
+  const colors = []
+  if (!gradStr || typeof gradStr !== 'string') return colors
+  const hexes = gradStr.match(/#(?:[0-9a-fA-F]{3,8})/g)
+  if (hexes && hexes.length) {
+    hexes.forEach(h => {
+      if (h.length === 4) {
+        colors.push('#' + h[1] + h[1] + h[2] + h[2] + h[3] + h[3])
+      } else {
+        colors.push(h.slice(0, 7))
+      }
+    })
+  } else {
+    const rgbRegex = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/gi
+    let match
+    while ((match = rgbRegex.exec(gradStr)) !== null) {
+      const hex = '#' + [match[1], match[2], match[3]].map(x => {
+        const h = parseInt(x, 10).toString(16)
+        return h.length === 1 ? '0' + h : h
+      }).join('')
+      colors.push(hex)
+    }
+  }
+  return colors
+}
+
+function parseGradientToCustom(gradStr) {
+  if (!gradStr || typeof gradStr !== 'string') return
+  const isRadial = /radial-gradient/i.test(gradStr)
+  let angle = 135
+  if (!isRadial) {
+    const angleMatch = gradStr.match(/(\d+)deg/i)
+    if (angleMatch) {
+      angle = parseInt(angleMatch[1], 10)
+    } else if (/to\s+bottom/i.test(gradStr)) {
+      angle = 180
+    } else if (/to\s+right/i.test(gradStr)) {
+      angle = 90
+    } else if (/to\s+top/i.test(gradStr)) {
+      angle = 0
+    } else if (/to\s+left/i.test(gradStr)) {
+      angle = 270
+    }
+  }
+
+  const colors = extractColorsFromGradient(gradStr)
+  let c1 = colors[0] || '#A8EDEA'
+  let c2 = colors.length > 1 ? colors[colors.length - 1] : '#FED6E3'
+  let c3 = colors.length > 2 ? colors[1] : ''
+
+  customGradient.value = {
+    type: isRadial ? 'radial' : 'linear',
+    angle,
+    color1: c1,
+    color2: c2,
+    color3: c3
+  }
+}
+
+function updateCustomGradient(triggerSave = true) {
+  const g = customGradient.value
+  let gradStr = ''
+  if (g.type === 'radial') {
+    gradStr = g.color3
+      ? `radial-gradient(circle at center, ${g.color1} 0%, ${g.color3} 55%, ${g.color2} 100%)`
+      : `radial-gradient(circle at center, ${g.color1} 0%, ${g.color2} 100%)`
+  } else {
+    gradStr = g.color3
+      ? `linear-gradient(${g.angle}deg, ${g.color1} 0%, ${g.color3} 55%, ${g.color2} 100%)`
+      : `linear-gradient(${g.angle}deg, ${g.color1} 0%, ${g.color2} 100%)`
+  }
+  isInternalGradUpdate = true
+  frameBg.value.type = 'gradient'
+  frameBg.value.value = gradStr
+  frameBg.value.baseColor = g.color1
+  nextTick(() => {
+    isInternalGradUpdate = false
+  })
+  if (triggerSave) {
+    debounceTextHistory()
+  }
+}
+
+function setGradientAngle(angle) {
+  customGradient.value.type = 'linear'
+  customGradient.value.angle = angle
+  updateCustomGradient(true)
+}
+
+function setGradientType(type) {
+  customGradient.value.type = type
+  updateCustomGradient(true)
+}
+
+function swapGradientColors() {
+  const tmp = customGradient.value.color1
+  customGradient.value.color1 = customGradient.value.color2
+  customGradient.value.color2 = tmp
+  updateCustomGradient(true)
+}
+
+function addGradientStop() {
+  if (!customGradient.value.color3) {
+    customGradient.value.color3 = '#FFE57F'
+    updateCustomGradient(true)
+  }
+}
+
+function removeGradientStop() {
+  customGradient.value.color3 = ''
+  updateCustomGradient(true)
+}
+
+function switchToGradientMode() {
+  if (frameBg.value.type !== 'gradient') {
+    const base = frameBg.value.baseColor || '#A8EDEA'
+    customGradient.value.color1 = base
+    if (!customGradient.value.color2 || customGradient.value.color2 === base) {
+      customGradient.value.color2 = '#FED6E3'
+    }
+    updateCustomGradient(true)
+  }
+}
+
+function switchToColorMode() {
+  frameBg.value.type = 'color'
+  const solid = frameBg.value.baseColor || customGradient.value.color1 || '#FFFFFF'
+  frameBg.value.value = solid
+  frameBg.value.baseColor = solid
+  selectedBgColor.value = solid
+  saveHistoryState()
+}
+
+watch(
+  () => [frameBg.value.type, frameBg.value.value],
+  ([type, val]) => {
+    if (type === 'gradient' && val && !isInternalGradUpdate) {
+      parseGradientToCustom(val)
+    }
+  },
+  { immediate: true }
+)
+
 function setFrameSolidColor(hex) {
   selectedBgColor.value = hex
   frameBg.value.type = 'color'
@@ -716,6 +897,7 @@ function setFrameSolidColor(hex) {
 function setFrameGradient(val) {
   frameBg.value.type = 'gradient'
   frameBg.value.value = val
+  parseGradientToCustom(val)
   saveHistoryState()
 }
 
@@ -828,6 +1010,8 @@ function addElement(item) {
 
 function addTextElement(preset) {
   const id = 'txt-' + Date.now()
+  const defaultWidth = preset.width || 200
+  const defaultHeight = preset.height || 40
   const newText = normalizeTextElement({
     id,
     type: 'text',
@@ -844,7 +1028,9 @@ function addTextElement(preset) {
     lineHeight: preset.lineHeight || 1.2,
     color: preset.color || '#0F172A',
     curveAmount: preset.curveAmount || 0,
-    x: 40,
+    width: defaultWidth,
+    height: defaultHeight,
+    x: Math.round((280 - defaultWidth) / 2),
     y: 40,
     rotation: 0,
     isLocked: false,
@@ -1619,16 +1805,19 @@ function flipElementV(el = activeSelectedElement.value) {
 function alignElementCenterH(el = activeSelectedElement.value) {
   if (!el || el.isLocked) return
   const frameWidth = stripRef.value?.offsetWidth || 280
-  const elW = el.width || 60
-  el.x = Math.round((frameWidth - elW) / 2)
+  const dom = stripRef.value?.querySelector(`[data-element-id="${el.id}"]`)
+  const elW = el.width || dom?.offsetWidth || (el.type === 'text' ? 200 : 60)
+  el.x = Math.max(0, Math.round((frameWidth - elW) / 2))
   saveHistoryState()
 }
 
 function alignElementCenterV(el = activeSelectedElement.value) {
   if (!el || el.isLocked) return
-  const frameHeight = stripRef.value?.offsetHeight || 556
-  const elH = el.height || 60
-  el.y = Math.round((frameHeight - elH) / 2)
+  const aspect = currentLayoutDef.value?.aspect || (3 / 10)
+  const frameHeight = stripRef.value?.offsetHeight || Math.round(280 / aspect)
+  const dom = stripRef.value?.querySelector(`[data-element-id="${el.id}"]`)
+  const elH = el.height || dom?.offsetHeight || (el.type === 'text' ? 40 : 60)
+  el.y = Math.max(0, Math.round((frameHeight - elH) / 2))
   saveHistoryState()
 }
 
@@ -1739,6 +1928,8 @@ function normalizeTextElement(el) {
   if (el.lineHeight === undefined) el.lineHeight = 1.2
   if (!el.color) el.color = '#0F172A'
   if (el.curveAmount === undefined) el.curveAmount = 0
+  if (!el.width && el.type === 'text') el.width = 200
+  if (!el.height && el.type === 'text') el.height = 40
   return el
 }
 
@@ -1799,6 +1990,9 @@ function toggleUppercase() {
 
 function setTextAlign(align) {
   if (!activeTextElement.value) return
+  if (!activeTextElement.value.width) {
+    activeTextElement.value.width = 200
+  }
   activeTextElement.value.textAlign = align
   debounceTextHistory()
 }
@@ -1827,7 +2021,9 @@ function getTextStyle(el) {
     textAlign: el.textAlign || 'center',
     letterSpacing: (el.letterSpacing || 0) + 'px',
     lineHeight: el.lineHeight || 1.2,
-    color: el.color || '#0F172A'
+    color: el.color || '#0F172A',
+    width: '100%',
+    display: 'block'
   }
 }
 
@@ -2391,7 +2587,7 @@ function saveFrame() {
     return
   }
   cloudErrorMessage.value = ''
-  isSaveModalOpen.value = true
+  executeSave()
 }
 
 async function executeSave({ asCopy = false } = {}) {
@@ -2510,6 +2706,11 @@ async function executeSave({ asCopy = false } = {}) {
       ? `Saved "${safeName}" to My Studio!`
       : `Saved "${safeName}" to device!`
     notify(msg)
+
+    // Redirect to templates homepage where user can see all their saved frames
+    if (isAccount.value) {
+      router.push('/studio')
+    }
   } catch (err) {
     console.error('Failed to save frame:', err)
     cloudErrorMessage.value = err.message || 'Failed to save frame. Please try again.'
@@ -2535,22 +2736,49 @@ function openSavedFrame(frameRecord) {
 async function loadTemplateFromQuery(templateId) {
   if (!templateId) return
   try {
-    notify('Loading template from cloud...')
-    const template = await getItem('templates', templateId)
-    if (template) {
-      const projectData = await loadTemplateProject(template)
+    notify('Loading template...')
+    let projectData = null
+    let template = null
+
+    // Try cloud first if logged in
+    try {
+      template = await getItem('templates', templateId)
+      if (template) {
+        projectData = await loadTemplateProject(template)
+      }
+    } catch (err) {
+      console.warn('Could not load from cloud, checking local storage:', err)
+    }
+
+    // Fallback to local IndexedDB
+    if (!projectData) {
+      const localFrames = await loadSavedFramesFromDB()
+      const localMatch = (localFrames || []).find((f) => f.id === templateId || f.cloudId === templateId)
+      if (localMatch && localMatch.projectData) {
+        projectData = localMatch.projectData
+        template = { name: localMatch.name, id: localMatch.cloudId || localMatch.id }
+      }
+    }
+
+    if (projectData) {
       applySnapshot(projectData)
-      if (template.name) templateName.value = template.name
-      if (template.categories && template.categories.length) {
+      if (template?.name) templateName.value = template.name
+      if (template?.categories && template.categories.length) {
         chosenCategories.value = [...template.categories]
       }
-      loadedTemplateOwnerId.value = template.ownerId
-      if (template.ownerId === getUid()) {
+      loadedTemplateOwnerId.value = template?.ownerId || getUid()
+      if (template?.ownerId === getUid() || !template?.ownerId) {
         cloudId.value = template.id
       } else {
         cloudId.value = null // Different owner -> save will create user's own copy
       }
-      notify(`Loaded template "${template.name}"!`)
+      currentSavedFrameId.value = projectData.id || templateId
+      history.value = [JSON.stringify(projectData)]
+      historyIndex.value = 0
+      nextTick(() => {
+        triggerFitToScreen()
+      })
+      notify(`Loaded template "${template?.name || templateName.value}"!`)
     } else {
       notify('Template not found or private.')
     }
@@ -3683,9 +3911,17 @@ onBeforeUnmount(() => {
       <!-- Otherwise: Standard Subheader Toolbar (Bootstrap 5) -->
       <template v-else>
         <div class="d-flex align-items-center gap-2 small">
-          <span class="text-muted">Templates</span>
+          <router-link to="/studio" class="text-decoration-none text-muted d-flex align-items-center gap-1" title="Back to My Studio">
+            <span>&larr;</span> <span>Templates</span>
+          </router-link>
           <span class="text-muted">/</span>
-          <span class="fw-bold text-dark">{{ templateName }}</span>
+          <input
+            v-model="templateName"
+            class="form-control form-control-sm border-0 fw-bold px-1 py-0 bg-transparent text-dark"
+            style="width: 170px; font-size: 0.95rem;"
+            placeholder="Untitled frame"
+            title="Click to rename template"
+          />
         </div>
 
         <div class="d-flex align-items-center gap-2">
@@ -3706,21 +3942,6 @@ onBeforeUnmount(() => {
           </div>
 
           <div class="vr my-1 mx-1"></div>
-
-          <!-- Hand / Pan Tool Toggle -->
-          <button
-            class="btn btn-sm"
-            :class="isHandToolActive ? 'btn-primary' : 'btn-outline-secondary'"
-            title="Hand / Pan Tool (H or hold Spacebar)"
-            @click="isHandToolActive = !isHandToolActive"
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0" />
-              <path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v2" />
-              <path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v8" />
-              <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" />
-            </svg>
-          </button>
 
           <!-- Zoom Stepper Controls -->
           <div class="input-group input-group-sm" style="width: auto;">
@@ -3853,12 +4074,16 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="d-flex align-items-center gap-2">
-          <!-- Saved Frames Folder Action Button -->
-          <button class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1" @click="isSavedFramesModalOpen = true" title="Saved Frames Folder (⌘O)">
+          <!-- Saved Frames Action Button (Links to /studio templates homepage) -->
+          <router-link
+            to="/studio"
+            class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1 text-decoration-none"
+            title="Go to My Templates in My Studio"
+          >
             <IconFolder :size="14" :stroke-width="2.2" />
-            <span>Saved Frames</span>
+            <span>My Templates</span>
             <span v-if="savedFramesList.length > 0" class="badge rounded-pill bg-primary ms-1">{{ savedFramesList.length }}</span>
-          </button>
+          </router-link>
 
           <!-- Save Frame Button (Shows 'Save Frame' if logged in, 'Login to save' if guest) -->
           <button
@@ -4316,12 +4541,6 @@ onBeforeUnmount(() => {
             <p class="small text-muted mb-2">Aesthetic solid colors, gradients, and tactile paper grains.</p>
           </div>
 
-          <!-- Active Custom Image Frame Banner -->
-          <div v-if="frameBg.type === 'image'" class="d-flex align-items-center justify-content-between p-2 bg-primary bg-opacity-10 border border-primary border-opacity-25 rounded-3 mb-2">
-            <span class="small fw-semibold text-primary text-truncate me-2">🖼️ Custom Frame Image Active</span>
-            <button class="btn btn-sm btn-outline-primary py-0 px-2 rounded-pill fw-semibold" style="font-size: 0.72rem;" @click="setFrameSolidColor('#FFFFFF')">Reset</button>
-          </div>
-
           <!-- Segmented Navigation Tabs (Single Row 3-Tab Segmented Control) -->
           <div class="btn-group btn-group-sm w-100 mb-2 p-1 bg-light border rounded-3" role="group">
             <button
@@ -4422,12 +4641,6 @@ onBeforeUnmount(() => {
 
           <!-- SUBSECTION 3: TEXTURES & PATTERNS -->
           <div v-if="activeBgTab === 'patterns'">
-            <!-- Active Texture Status / Clear Button -->
-            <div v-if="frameBg.texture" class="d-flex align-items-center justify-content-between p-2 bg-light border rounded-3 mb-3">
-              <span class="small fw-semibold text-dark">Active: {{ bgTextures.concat(bgPatterns).find(t => t.id === frameBg.texture)?.name || 'Custom Texture' }}</span>
-              <button class="btn btn-sm btn-outline-danger py-0 px-2 small" @click="clearFrameTexture">Remove</button>
-            </div>
-
             <!-- Tactile Textures -->
             <div class="mb-3">
               <label class="small fw-bold text-secondary text-uppercase mb-2 d-block">TACTILE PAPER GRAINS</label>
@@ -4465,88 +4678,6 @@ onBeforeUnmount(() => {
                     <span class="text-muted" style="font-size: 0.7rem;">{{ pat.desc }}</span>
                   </div>
                 </button>
-              </div>
-            </div>
-
-            <!-- Texture Controls (Intensity, Scale, Blend Mode) when a texture is selected -->
-            <div v-if="frameBg.texture" class="card p-3 bg-light border rounded-3 mb-2">
-              <label class="small fw-bold text-secondary text-uppercase mb-2 d-block">TEXTURE ADJUSTMENTS</label>
-
-              <!-- Opacity / Intensity Slider -->
-              <div class="mb-2">
-                <div class="d-flex justify-content-between align-items-center mb-1">
-                  <span class="small text-muted">Intensity / Opacity</span>
-                  <span class="badge bg-secondary-subtle text-secondary">{{ Math.round((frameBg.opacity || 0.85) * 100) }}%</span>
-                </div>
-                <input
-                  v-model.number="frameBg.opacity"
-                  type="range"
-                  min="0.1"
-                  max="1"
-                  step="0.05"
-                  class="form-range"
-                  @input="debounceTextHistory"
-                />
-              </div>
-
-              <!-- Tile Scale Slider -->
-              <div class="mb-2">
-                <div class="d-flex justify-content-between align-items-center mb-1">
-                  <span class="small text-muted">Tile Scale</span>
-                  <span class="badge bg-secondary-subtle text-secondary">{{ (frameBg.scale || 1).toFixed(1) }}x</span>
-                </div>
-                <input
-                  v-model.number="frameBg.scale"
-                  type="range"
-                  min="0.5"
-                  max="3"
-                  step="0.1"
-                  class="form-range"
-                  @input="debounceTextHistory"
-                />
-              </div>
-
-              <!-- Blend Mode Selector -->
-              <div class="mb-2">
-                <span class="small text-muted d-block mb-1">Blend Mode</span>
-                <div class="btn-group btn-group-sm w-100">
-                  <button
-                    class="btn"
-                    :class="frameBg.blendMode === 'multiply' ? 'btn-primary fw-bold' : 'btn-outline-secondary'"
-                    @click="frameBg.blendMode = 'multiply'; debounceTextHistory()"
-                  >
-                    Multiply
-                  </button>
-                  <button
-                    class="btn"
-                    :class="frameBg.blendMode === 'normal' ? 'btn-primary fw-bold' : 'btn-outline-secondary'"
-                    @click="frameBg.blendMode = 'normal'; debounceTextHistory()"
-                  >
-                    Normal
-                  </button>
-                  <button
-                    class="btn"
-                    :class="frameBg.blendMode === 'overlay' ? 'btn-primary fw-bold' : 'btn-outline-secondary'"
-                    @click="frameBg.blendMode = 'overlay'; debounceTextHistory()"
-                  >
-                    Overlay
-                  </button>
-                </div>
-              </div>
-
-              <!-- Underlay Base Color -->
-              <div class="mt-3">
-                <span class="small text-muted d-block mb-1">Base Underlay Color</span>
-                <div class="d-flex gap-1">
-                  <button
-                    v-for="c in ['#FEFBF6', '#FFFFFF', '#111827', '#F43F5E', '#EDE9FE', '#FDE68A', '#D1FAE5']"
-                    :key="c"
-                    class="btn p-0 rounded-circle border shadow-sm"
-                    :class="{ 'ring-2 ring-primary': frameBg.baseColor === c }"
-                    :style="{ backgroundColor: c, width: '24px', height: '24px' }"
-                    @click="setFrameSolidColor(c)"
-                  ></button>
-                </div>
               </div>
             </div>
           </div>
@@ -4915,6 +5046,10 @@ onBeforeUnmount(() => {
               <div
                 v-else-if="el.type === 'text'"
                 class="element-text-container"
+                :style="{
+                  width: (el.width || 200) + 'px',
+                  minWidth: '40px'
+                }"
               >
                 <!-- Direct Inline Editable Text Node (During Active Editing) -->
                 <div
@@ -4954,10 +5089,13 @@ onBeforeUnmount(() => {
                       fontStyle: el.fontStyle || 'normal',
                       letterSpacing: (el.letterSpacing || 0) + 'px'
                     }"
-                    text-anchor="middle"
+                    :text-anchor="el.textAlign === 'left' ? 'start' : (el.textAlign === 'right' ? 'end' : 'middle')"
                     dominant-baseline="central"
                   >
-                    <textPath :href="'#curve-path-' + el.id" startOffset="50%">
+                    <textPath
+                      :href="'#curve-path-' + el.id"
+                      :startOffset="el.textAlign === 'left' ? '5%' : (el.textAlign === 'right' ? '95%' : '50%')"
+                    >
                       {{ el.textTransform === 'uppercase' ? (el.text || '').toUpperCase() : (el.textTransform === 'lowercase' ? (el.text || '').toLowerCase() : el.text) }}
                     </textPath>
                   </text>
@@ -5474,9 +5612,33 @@ onBeforeUnmount(() => {
 
             <div class="d-flex gap-2">
               <!-- Color Box -->
-              <div class="input-group input-group-sm" style="flex: 1.2;">
-                <input type="color" v-model="borderColor" class="form-control form-control-color form-control-sm p-1" style="max-width: 38px;" @change="saveHistoryState" />
-                <input type="text" v-model="borderColor" class="form-control form-control-sm text-uppercase font-monospace" maxlength="7" spellcheck="false" @change="saveHistoryState" />
+              <div class="d-flex align-items-center gap-2" style="flex: 1.2;">
+                <label
+                  class="rounded-circle border shadow-sm cursor-pointer position-relative d-flex align-items-center justify-content-center flex-shrink-0 m-0"
+                  style="width: 28px; height: 28px; aspect-ratio: 1; min-width: 28px; min-height: 28px; transition: transform 0.15s ease;"
+                  :style="{
+                    backgroundColor: borderColor,
+                    boxShadow: '0 0 0 2px #fff, 0 0 0 2.5px #cbd5e1'
+                  }"
+                  title="Pick border color"
+                >
+                  <input
+                    type="color"
+                    v-model="borderColor"
+                    class="position-absolute opacity-0 pointer-events-none"
+                    style="width: 1px; height: 1px;"
+                    @change="saveHistoryState"
+                  />
+                </label>
+                <input
+                  type="text"
+                  v-model="borderColor"
+                  class="form-control form-control-sm text-uppercase font-monospace flex-grow-1"
+                  maxlength="7"
+                  spellcheck="false"
+                  placeholder="#2F5BEA"
+                  @change="saveHistoryState"
+                />
               </div>
 
               <!-- Stepper Box -->
@@ -5500,19 +5662,28 @@ onBeforeUnmount(() => {
           <div class="d-flex flex-column gap-2">
             <div class="d-flex justify-content-between align-items-center">
               <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Caption</label>
-              <div class="d-flex align-items-center gap-1">
-                <span class="small text-muted" style="font-size: 0.72rem;">Color</span>
+              <!-- Live Color Status Indicator Bubble (Strictly Round) -->
+              <label
+                class="rounded-circle border shadow-sm cursor-pointer position-relative d-inline-flex align-items-center justify-content-center flex-shrink-0 m-0"
+                style="width: 22px; height: 22px; aspect-ratio: 1; min-width: 22px; min-height: 22px; transition: transform 0.15s ease;"
+                :style="{
+                  backgroundColor: captionColor,
+                  boxShadow: '0 0 0 2px #fff, 0 0 0 3px ' + captionColor
+                }"
+                title="Click to pick caption color"
+              >
                 <input
                   type="color"
                   v-model="captionColor"
-                  class="form-control form-control-color form-control-sm p-0 border-0 rounded-circle cursor-pointer"
-                  style="width: 20px; height: 20px;"
-                  title="Caption text color"
+                  class="position-absolute opacity-0 pointer-events-none"
+                  style="width: 1px; height: 1px;"
+                  @input="debounceTextHistory"
                   @change="saveHistoryState"
                 />
-              </div>
+              </label>
             </div>
 
+            <!-- Text Input -->
             <input
               v-model="captionText"
               type="text"
@@ -5521,29 +5692,55 @@ onBeforeUnmount(() => {
               @input="debounceTextHistory"
             />
 
-            <!-- Caption Color Palette & Custom Hex -->
+            <!-- Live Caption Preview Display Pill -->
+            <div
+              class="p-2 rounded-2 border bg-light text-center d-flex align-items-center justify-content-center overflow-hidden"
+              style="min-height: 34px;"
+            >
+              <span
+                class="fw-semibold text-truncate font-monospace"
+                style="font-size: 0.85rem;"
+                :style="{ color: captionColor }"
+              >
+                {{ (captionText && captionText.trim()) ? captionText : 'Caption Preview' }}
+              </span>
+            </div>
+
+            <!-- Caption Color Selector Row (Round picker + Hex input + Match Border) -->
             <div class="d-flex align-items-center gap-2">
-              <div class="input-group input-group-sm" style="flex: 1.2;">
+              <label
+                class="rounded-circle border shadow-sm cursor-pointer position-relative d-flex align-items-center justify-content-center flex-shrink-0 m-0"
+                style="width: 28px; height: 28px; aspect-ratio: 1; min-width: 28px; min-height: 28px; transition: transform 0.15s ease;"
+                :style="{
+                  backgroundColor: captionColor,
+                  boxShadow: '0 0 0 2px #fff, 0 0 0 2.5px #cbd5e1'
+                }"
+                title="Pick custom caption color"
+              >
                 <input
                   type="color"
                   v-model="captionColor"
-                  class="form-control form-control-color form-control-sm p-1"
-                  style="max-width: 38px;"
-                  title="Pick caption color"
+                  class="position-absolute opacity-0 pointer-events-none"
+                  style="width: 1px; height: 1px;"
+                  @input="debounceTextHistory"
                   @change="saveHistoryState"
                 />
-                <input
-                  type="text"
-                  v-model="captionColor"
-                  class="form-control form-control-sm text-uppercase font-monospace"
-                  maxlength="7"
-                  spellcheck="false"
-                  placeholder="#2F5BEA"
-                  @change="saveHistoryState"
-                />
-              </div>
+              </label>
+
+              <input
+                type="text"
+                v-model="captionColor"
+                class="form-control form-control-sm text-uppercase font-monospace flex-grow-1"
+                maxlength="7"
+                spellcheck="false"
+                placeholder="#2F5BEA"
+                @input="debounceTextHistory"
+                @change="saveHistoryState"
+              />
+
               <button
-                class="btn btn-sm btn-outline-secondary px-2 py-1"
+                type="button"
+                class="btn btn-sm btn-outline-secondary px-2 py-1 flex-shrink-0"
                 style="font-size: 0.72rem; white-space: nowrap;"
                 title="Match photostrip border color"
                 @click="captionColor = borderColor; saveHistoryState()"
@@ -5552,17 +5749,20 @@ onBeforeUnmount(() => {
               </button>
             </div>
 
-            <!-- Quick Palette Swatches -->
+            <!-- Quick Palette Swatches (Guaranteed 1:1 round circles) -->
             <div class="d-flex align-items-center gap-1 flex-wrap">
               <button
                 v-for="swatch in ['#2F5BEA', '#111827', '#64748B', '#FFFFFF', '#EF4444', '#EC4899', '#8B5CF6', '#10B981', '#F59E0B']"
                 :key="swatch"
                 type="button"
-                class="btn p-0 rounded-circle border shadow-none"
+                class="btn p-0 rounded-circle border shadow-none flex-shrink-0"
                 :style="{
                   backgroundColor: swatch,
-                  width: '18px',
-                  height: '18px',
+                  width: '20px',
+                  height: '20px',
+                  minWidth: '20px',
+                  minHeight: '20px',
+                  aspectRatio: '1',
                   boxShadow: captionColor.toLowerCase() === swatch.toLowerCase() ? '0 0 0 2px #fff, 0 0 0 3.5px #2563eb' : 'none'
                 }"
                 :title="swatch"
@@ -5788,21 +5988,21 @@ onBeforeUnmount(() => {
 
             <!-- CANVAS ALIGNMENT -->
             <div class="d-flex flex-column gap-1">
-              <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Align on Strip</label>
+              <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Center</label>
               <div class="btn-group btn-group-sm w-100">
                 <button
                   class="btn btn-outline-secondary"
                   title="Center Horizontally"
                   @click="alignElementCenterH(activeSelectedElement)"
                 >
-                  Center H
+                  Horizontally
                 </button>
                 <button
                   class="btn btn-outline-secondary"
                   title="Center Vertically"
                   @click="alignElementCenterV(activeSelectedElement)"
                 >
-                  Center V
+                  Vertically
                 </button>
               </div>
             </div>
@@ -6138,21 +6338,21 @@ onBeforeUnmount(() => {
 
             <!-- ALIGN ON STRIP -->
             <div class="d-flex flex-column gap-1">
-              <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Align on Strip</label>
+              <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Center</label>
               <div class="btn-group btn-group-sm w-100">
                 <button
                   class="btn btn-outline-secondary"
                   title="Center Horizontally"
                   @click="alignElementCenterH(activeTextElement)"
                 >
-                  Center H
+                  Horizontally
                 </button>
                 <button
                   class="btn btn-outline-secondary"
                   title="Center Vertically"
                   @click="alignElementCenterV(activeTextElement)"
                 >
-                  Center V
+                  Vertically
                 </button>
               </div>
             </div>
@@ -6187,31 +6387,39 @@ onBeforeUnmount(() => {
         <!-- 4. BACKGROUND TAB: Customization & Opacity Controls               -->
         <!-- ================================================================= -->
         <template v-else-if="activeTool === 'background'">
-          <div class="d-flex align-items-center justify-content-between border-bottom pb-2">
+          <div class="d-flex align-items-center justify-content-between border-bottom pb-2 flex-shrink-0">
             <h6 class="fw-bold text-dark m-0 fs-6">Background Customizer</h6>
             <span class="badge bg-secondary bg-opacity-10 text-secondary border">Background</span>
           </div>
 
           <!-- Current Style Status Preview Banner -->
-          <div class="card p-2 border rounded-3 bg-light d-flex flex-row align-items-center gap-2">
-            <div
-              class="rounded border shadow-sm flex-shrink-0"
-              style="width: 36px; height: 36px;"
-              :style="{
-                backgroundColor: frameBg.baseColor || '#FFFFFF',
-                backgroundImage: frameBg.texture ? `url(${frameBg.texture})` : 'none',
-                backgroundSize: (frameBg.scale || 1) * 60 + 'px'
-              }"
-            ></div>
-            <div class="min-w-0 flex-grow-1">
-              <span class="small fw-bold text-dark d-block text-truncate">
-                {{ frameBg.texture ? 'Pattern / Textured Strip' : (frameBg.type === 'gradient' ? 'Gradient Strip' : 'Solid Color Strip') }}
-              </span>
-              <span class="small text-muted font-monospace" style="font-size: 0.72rem;">{{ frameBg.baseColor || '#FFFFFF' }}</span>
+          <div
+            class="card p-2 border rounded-3 bg-light d-flex flex-row align-items-center justify-content-between gap-2 flex-shrink-0 w-100 shadow-none"
+            style="min-height: 52px;"
+          >
+            <div class="d-flex align-items-center gap-2 min-w-0 flex-grow-1 overflow-hidden">
+              <div
+                class="rounded border shadow-sm flex-shrink-0"
+                style="width: 36px; height: 36px;"
+                :style="{
+                  background: frameBg.type === 'gradient' ? frameBg.value : (frameBg.baseColor || '#FFFFFF'),
+                  backgroundImage: frameBg.texture ? `url(${frameBg.texture})` : (frameBg.type === 'gradient' ? frameBg.value : 'none'),
+                  backgroundSize: (frameBg.scale || 1) * 60 + 'px'
+                }"
+              ></div>
+              <div class="min-w-0 flex-grow-1 overflow-hidden">
+                <span class="small fw-bold text-dark d-block text-truncate" style="font-size: 0.8rem; line-height: 1.25;">
+                  {{ frameBg.texture ? 'Pattern / Textured' : (frameBg.type === 'gradient' ? 'Gradient Strip' : 'Solid Color') }}
+                </span>
+                <span v-if="frameBg.type === 'gradient'" class="small text-muted font-monospace d-block text-truncate" style="font-size: 0.7rem; line-height: 1.25;">
+                  {{ customGradient.type === 'radial' ? 'Radial Bloom' : customGradient.angle + '°' }} · {{ customGradient.color1 }} → {{ customGradient.color2 }}
+                </span>
+                <span v-else class="small text-muted font-monospace d-block text-truncate" style="font-size: 0.7rem; line-height: 1.25;">{{ frameBg.baseColor || '#FFFFFF' }}</span>
+              </div>
             </div>
             <button
-              class="btn btn-sm btn-outline-secondary py-0 px-2"
-              style="font-size: 0.72rem;"
+              class="btn btn-sm btn-outline-secondary py-0 px-2 flex-shrink-0"
+              style="font-size: 0.75rem; height: 26px; line-height: 24px;"
               title="Reset to clean white background"
               @click="setFrameSolidColor('#FFFFFF')"
             >
@@ -6219,8 +6427,254 @@ onBeforeUnmount(() => {
             </button>
           </div>
 
-          <!-- BASE / SOLID COLOR PICKER -->
+          <!-- MODE SELECTOR: SOLID COLOR vs GRADIENT -->
           <div class="d-flex flex-column gap-2">
+            <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Background Type</label>
+            <div class="btn-group btn-group-sm w-100" role="group">
+              <button
+                type="button"
+                class="btn py-1"
+                :class="frameBg.type !== 'gradient' ? 'btn-primary fw-bold' : 'btn-outline-secondary'"
+                @click="switchToColorMode()"
+              >
+                Solid Color
+              </button>
+              <button
+                type="button"
+                class="btn py-1"
+                :class="frameBg.type === 'gradient' ? 'btn-primary fw-bold' : 'btn-outline-secondary'"
+                @click="switchToGradientMode()"
+              >
+                Gradient
+              </button>
+            </div>
+          </div>
+
+          <!-- ==================== GRADIENT EDITOR ==================== -->
+          <div v-if="frameBg.type === 'gradient'" class="d-flex flex-column gap-3">
+            <!-- Gradient Live Bar & Swap -->
+            <div class="d-flex flex-column gap-1">
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Gradient Preview</label>
+                <button
+                  type="button"
+                  class="btn btn-xs btn-outline-secondary py-0 px-2"
+                  style="font-size: 0.72rem;"
+                  title="Swap gradient start and end colors"
+                  @click="swapGradientColors()"
+                >
+                  ⇄ Reverse
+                </button>
+              </div>
+              <div
+                class="rounded-2 border shadow-sm w-100"
+                style="height: 26px;"
+                :style="{ background: frameBg.value }"
+              ></div>
+            </div>
+
+            <!-- Color Stops -->
+            <div class="d-flex flex-column gap-2">
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Color Stops</label>
+                <button
+                  v-if="!customGradient.color3"
+                  type="button"
+                  class="btn btn-link p-0 text-decoration-none text-primary"
+                  style="font-size: 0.72rem;"
+                  @click="addGradientStop()"
+                >
+                  + Add 3rd Stop
+                </button>
+                <button
+                  v-else
+                  type="button"
+                  class="btn btn-link p-0 text-decoration-none text-danger"
+                  style="font-size: 0.72rem;"
+                  @click="removeGradientStop()"
+                >
+                  ✕ Remove 3rd Stop
+                </button>
+              </div>
+
+              <!-- Stop 1 (Start) -->
+              <div class="d-flex align-items-center gap-2">
+                <span class="small text-muted fw-semibold" style="width: 50px; font-size: 0.75rem;">Start</span>
+                <div class="input-group input-group-sm flex-grow-1">
+                  <input
+                    type="color"
+                    v-model="customGradient.color1"
+                    class="form-control form-control-color form-control-sm p-1"
+                    style="max-width: 38px;"
+                    @input="updateCustomGradient(true)"
+                    @change="saveHistoryState"
+                  />
+                  <input
+                    type="text"
+                    v-model="customGradient.color1"
+                    class="form-control form-control-sm text-uppercase font-monospace"
+                    maxlength="7"
+                    spellcheck="false"
+                    @input="updateCustomGradient(true)"
+                    @change="saveHistoryState"
+                  />
+                </div>
+              </div>
+
+              <!-- Stop 3 (Middle / Optional) -->
+              <div v-if="customGradient.color3" class="d-flex align-items-center gap-2">
+                <span class="small text-muted fw-semibold" style="width: 50px; font-size: 0.75rem;">Middle</span>
+                <div class="input-group input-group-sm flex-grow-1">
+                  <input
+                    type="color"
+                    v-model="customGradient.color3"
+                    class="form-control form-control-color form-control-sm p-1"
+                    style="max-width: 38px;"
+                    @input="updateCustomGradient(true)"
+                    @change="saveHistoryState"
+                  />
+                  <input
+                    type="text"
+                    v-model="customGradient.color3"
+                    class="form-control form-control-sm text-uppercase font-monospace"
+                    maxlength="7"
+                    spellcheck="false"
+                    @input="updateCustomGradient(true)"
+                    @change="saveHistoryState"
+                  />
+                </div>
+              </div>
+
+              <!-- Stop 2 (End) -->
+              <div class="d-flex align-items-center gap-2">
+                <span class="small text-muted fw-semibold" style="width: 50px; font-size: 0.75rem;">End</span>
+                <div class="input-group input-group-sm flex-grow-1">
+                  <input
+                    type="color"
+                    v-model="customGradient.color2"
+                    class="form-control form-control-color form-control-sm p-1"
+                    style="max-width: 38px;"
+                    @input="updateCustomGradient(true)"
+                    @change="saveHistoryState"
+                  />
+                  <input
+                    type="text"
+                    v-model="customGradient.color2"
+                    class="form-control form-control-sm text-uppercase font-monospace"
+                    maxlength="7"
+                    spellcheck="false"
+                    @input="updateCustomGradient(true)"
+                    @change="saveHistoryState"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <!-- Direction & Angle Controls -->
+            <div class="d-flex flex-column gap-2">
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Direction / Style</label>
+                <span class="small text-muted font-monospace" style="font-size: 0.75rem;">
+                  {{ customGradient.type === 'radial' ? 'Radial Bloom' : customGradient.angle + '°' }}
+                </span>
+              </div>
+
+              <!-- Direction quick presets -->
+              <div class="btn-group btn-group-sm w-100" role="group">
+                <button
+                  type="button"
+                  class="btn btn-sm py-1"
+                  :class="customGradient.type === 'linear' && customGradient.angle === 180 ? 'btn-primary fw-bold' : 'btn-outline-secondary'"
+                  title="Top to Bottom (180°)"
+                  @click="setGradientAngle(180)"
+                >
+                  ↓ 180°
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm py-1"
+                  :class="customGradient.type === 'linear' && customGradient.angle === 135 ? 'btn-primary fw-bold' : 'btn-outline-secondary'"
+                  title="Diagonal (135°)"
+                  @click="setGradientAngle(135)"
+                >
+                  ↘ 135°
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm py-1"
+                  :class="customGradient.type === 'linear' && customGradient.angle === 90 ? 'btn-primary fw-bold' : 'btn-outline-secondary'"
+                  title="Left to Right (90°)"
+                  @click="setGradientAngle(90)"
+                >
+                  → 90°
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm py-1"
+                  :class="customGradient.type === 'linear' && customGradient.angle === 0 ? 'btn-primary fw-bold' : 'btn-outline-secondary'"
+                  title="Bottom to Top (0°)"
+                  @click="setGradientAngle(0)"
+                >
+                  ↑ 0°
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-sm py-1"
+                  :class="customGradient.type === 'radial' ? 'btn-primary fw-bold' : 'btn-outline-secondary'"
+                  title="Radial Bloom"
+                  @click="setGradientType('radial')"
+                >
+                  ☀️ Radial
+                </button>
+              </div>
+
+              <!-- Angle Range Slider (for linear gradients) -->
+              <div v-if="customGradient.type === 'linear'" class="d-flex flex-column gap-1 mt-1">
+                <div class="d-flex justify-content-between align-items-center">
+                  <span class="small text-muted" style="font-size: 0.72rem;">Custom Angle</span>
+                  <span class="badge bg-secondary-subtle text-secondary font-monospace" style="font-size: 0.7rem;">{{ customGradient.angle }}°</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="360"
+                  step="5"
+                  v-model.number="customGradient.angle"
+                  class="form-range"
+                  @input="updateCustomGradient(true)"
+                  @change="saveHistoryState"
+                />
+              </div>
+            </div>
+
+            <!-- Quick Gradient Presets Palette -->
+            <div class="d-flex flex-column gap-1">
+              <label class="form-label small fw-bold text-secondary text-uppercase mb-1" style="font-size: 0.72rem;">Studio Gradient Presets</label>
+              <div class="row row-cols-3 g-1">
+                <div
+                  v-for="grad in bgGradients"
+                  :key="grad.id"
+                  class="col"
+                >
+                  <button
+                    type="button"
+                    class="btn p-0 w-100 rounded-2 border position-relative"
+                    :class="{ 'border-primary shadow-sm': frameBg.value === grad.value }"
+                    :style="{
+                      background: grad.value,
+                      height: '28px',
+                      boxShadow: frameBg.value === grad.value ? '0 0 0 2px #fff, 0 0 0 3.5px #2563eb' : 'none'
+                    }"
+                    :title="grad.name"
+                    @click="setFrameGradient(grad.value)"
+                  ></button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ==================== SOLID COLOR PICKER ==================== -->
+          <div v-else class="d-flex flex-column gap-2">
             <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Strip Base Color</label>
             <div class="d-flex gap-2 align-items-center">
               <div class="input-group input-group-sm" style="flex: 1.2;">
@@ -6229,6 +6683,7 @@ onBeforeUnmount(() => {
                   v-model="frameBg.baseColor"
                   class="form-control form-control-color form-control-sm p-1"
                   style="max-width: 38px;"
+                  @input="frameBg.type = 'color'; frameBg.value = frameBg.baseColor; selectedBgColor = frameBg.baseColor; debounceTextHistory()"
                   @change="saveHistoryState"
                 />
                 <input
@@ -6238,6 +6693,7 @@ onBeforeUnmount(() => {
                   maxlength="7"
                   spellcheck="false"
                   placeholder="#FFFFFF"
+                  @input="frameBg.type = 'color'; frameBg.value = frameBg.baseColor; selectedBgColor = frameBg.baseColor; debounceTextHistory()"
                   @change="saveHistoryState"
                 />
               </div>
@@ -6490,41 +6946,10 @@ onBeforeUnmount(() => {
             </div>
           </div>
 
-          <!-- CASE B: No Image Selected: Quick Dropzone & Media Tray -->
-          <div v-else class="d-flex flex-column gap-3">
-            <div class="card p-3 bg-light border rounded-3 text-center">
-              <div class="fs-1 mb-1">📁</div>
-              <h6 class="fw-bold text-dark mb-1">Upload Media</h6>
-              <p class="small text-muted mb-3">Add your photos or transparent PNG stickers to the canvas.</p>
-              <button class="btn btn-sm btn-primary rounded-pill fw-semibold shadow-sm" @click="triggerFileUpload">
-                + Upload from Computer
-              </button>
-            </div>
-
-            <!-- Uploads Gallery Quick-Click -->
-            <div v-if="userUploads.length > 0">
-              <div class="d-flex justify-content-between align-items-center mb-2">
-                <span class="small fw-bold text-secondary text-uppercase">Your Uploads ({{ userUploads.length }})</span>
-                <span class="small text-muted" style="font-size: 0.7rem;">Click to place</span>
-              </div>
-              <div class="row row-cols-3 g-2">
-                <div v-for="item in userUploads.slice(0, 9)" :key="item.id" class="col">
-                  <button
-                    class="btn btn-sm btn-light border p-1 rounded-2 w-100 position-relative"
-                    style="height: 64px;"
-                    :title="'Click to add ' + item.name"
-                    @click="addUploadToCanvas(item)"
-                  >
-                    <img :src="item.dataUrl" class="w-100 h-100 rounded-1" style="object-fit: cover;" alt="Upload thumb" />
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div class="alert alert-light border small text-muted p-2 rounded-3 mb-0">
-              <span class="fw-bold d-block text-dark mb-1">💡 Transparent Stickers</span>
-              PNGs and SVGs with transparent backgrounds blend cleanly on top of photo cutouts and strip backgrounds.
-            </div>
+          <!-- CASE B: No Media Selected -->
+          <div v-else class="card border-dashed p-4 text-center my-auto bg-light rounded-3">
+            <div class="fs-1 mb-2">🖼️</div>
+            <p class="small text-muted mb-0 fw-medium">Click on media to edit features</p>
           </div>
         </template>
 
@@ -7250,7 +7675,7 @@ onBeforeUnmount(() => {
   top: 0;
   left: 0;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible;
   transition: box-shadow 0.2s ease;
 }
 
@@ -7428,13 +7853,17 @@ onBeforeUnmount(() => {
 }
 
 .element-text {
-  white-space: nowrap;
+  white-space: pre-wrap;
+  word-break: break-word;
   letter-spacing: -0.01em;
   user-select: none;
   -webkit-user-select: none;
   -webkit-user-drag: none;
   cursor: grab;
   pointer-events: auto;
+  width: 100%;
+  display: block;
+  box-sizing: border-box;
 }
 
 .element-shape {
@@ -7973,6 +8402,7 @@ onBeforeUnmount(() => {
   position: absolute;
   bottom: calc(100% + 10px);
   left: 50%;
+  transform: translate(-50%, 0);
   transform-origin: bottom center;
   display: flex;
   align-items: center;
@@ -7985,7 +8415,7 @@ onBeforeUnmount(() => {
   z-index: 120;
   white-space: nowrap;
   pointer-events: auto;
-  animation: floatingBarPop 180ms var(--ease-spring);
+  animation: floatingBarPop 180ms var(--ease-spring) forwards;
 }
 
 @keyframes floatingBarPop {
@@ -8228,9 +8658,10 @@ onBeforeUnmount(() => {
    =================================================== */
 
 .element-text-container {
-  display: inline-flex;
-  align-items: center;
+  display: block;
+  position: relative;
   user-select: none;
+  box-sizing: border-box;
 }
 
 .element-text.is-editing {
@@ -8246,8 +8677,11 @@ onBeforeUnmount(() => {
   caret-color: currentColor;
   padding: 0;
   margin: 0;
-  display: inline-block;
-  white-space: pre;
+  display: block;
+  width: 100%;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-sizing: border-box;
   line-height: inherit;
 }
 
@@ -8352,8 +8786,9 @@ onBeforeUnmount(() => {
 
 /* Canvas Text Elements & Curved SVG */
 .element-text-container {
-  display: inline-block;
+  display: block;
   position: relative;
+  box-sizing: border-box;
 }
 
 .element-curved-svg {
@@ -8368,6 +8803,10 @@ onBeforeUnmount(() => {
   cursor: grab;
   user-select: none;
   transition: outline 0.1s ease;
+  width: 100%;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-sizing: border-box;
 }
 
 .element-text.is-editing {
@@ -8376,7 +8815,9 @@ onBeforeUnmount(() => {
   outline: 2px solid #2f5bea;
   border-radius: 3px;
   min-width: 20px;
-  white-space: pre;
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-sizing: border-box;
 }
 
 /* Elements Drawer SVG sizing constraint */

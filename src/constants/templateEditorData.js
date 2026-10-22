@@ -344,27 +344,6 @@ export const TEMPLATE_PRESETS = [
       { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.polaroidFrame, name: 'Mini Frame', width: 18, height: 22, x: 250, y: 700, rotation: 6 }
     ]
   },
-  {
-    id: 'music-beats',
-    name: 'Music Vibes 4-Cut',
-    tag: 'Cyber',
-    layout: 'music-4-cut',
-    aspect: 3 / 10,
-    slots: 4,
-    bgType: 'color',
-    bg: '#18181B',
-    texture: 'noise',
-    border: '#A855F7',
-    borderWidth: 2,
-    shape: 'Rounded',
-    caption: 'BLUE TRACKS · 2026 🎵',
-    captionColor: '#C084FC',
-    previewIcon: '🎵',
-    elements: [
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.vinylRecord, name: 'Vinyl Disc', width: 22, height: 22, x: 10, y: 885, rotation: -10 },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleStar, name: 'Cyber Sparkle', width: 20, height: 20, x: 248, y: 885, rotation: 8 }
-    ]
-  }
 ]
 
 // =============================================================================

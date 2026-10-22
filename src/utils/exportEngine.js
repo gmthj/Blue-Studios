@@ -264,11 +264,13 @@ export async function exportPhotostrip(stripEl, options = {}) {
   // 3. Setup temporary styling for clean export
   const originalBackground = stripEl.style.background
   const originalBoxShadow = stripEl.style.boxShadow
+  const originalOverflow = stripEl.style.overflow
 
   if (transparentBg || (isOverlayMode && transparentBg)) {
     stripEl.style.background = 'transparent'
     stripEl.style.boxShadow = 'none'
   }
+  stripEl.style.overflow = 'hidden'
 
   let rawCanvas
   try {
@@ -299,6 +301,7 @@ export async function exportPhotostrip(stripEl, options = {}) {
     // Restore original styles
     stripEl.style.background = originalBackground
     stripEl.style.boxShadow = originalBoxShadow
+    stripEl.style.overflow = originalOverflow
   }
 
   // 4. Punch out Alpha Cutouts for Photobooth Overlay Mode
