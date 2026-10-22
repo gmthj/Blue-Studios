@@ -7,6 +7,7 @@ import { useRoom } from '../composables/useRoom.js'
 import { getPeaks } from '../waveform.js'
 import DeckCard from '../components/DeckCard.vue'
 import WaveformBars from '../components/WaveformBars.vue'
+import StageBar from '../components/StageBar.vue'
 
 // RoomLayout already joined the room, so we just ask for the room code
 const { code, roomRef } = useRoom()
@@ -263,12 +264,14 @@ onMounted(loadTracks)
 </script>
 
 <template>
-  <div class="d-flex justify-content-between align-items-center mb-3">
-    <h1 class="h4 mb-0">Music mixer</h1>
-    <button class="btn btn-outline-secondary btn-sm" @click="goBack">&larr; Decorate</button>
-  </div>
+    <StageBar current="music" />
 
-  <div class="row g-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="h4 mb-0">Music mixer</h2>
+        <button class="btn btn-outline-secondary btn-sm" @click="goBack">&larr; Decorate</button>
+    </div>
+
+    <div class="row g-4">
     <!-- LEFT: decks, mixer and your mix -->
     <div class="col-12 col-lg-9">
       <div class="row g-3">
