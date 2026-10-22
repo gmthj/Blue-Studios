@@ -66,6 +66,12 @@ async function logOutAndGoHome() {
       <div v-if="authError" class="alert alert-danger">{{ authError }}</div>
 
       <template v-else>
+        <div v-if="showVerifyReminder" class="alert alert-warning small">
+          Please confirm your email: open the link we sent to {{ user.email }}.
+          <span v-if="verificationSent">Sent again!</span>
+          <button v-else class="btn btn-link btn-sm p-0 align-baseline" @click="resend">Send it again</button>
+        </div>
+
         <!-- The page that matches the URL (see router.js) is shown here -->
         <router-view />
       </template>

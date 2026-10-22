@@ -309,9 +309,8 @@ export async function captureEditablePng(stripEl, projectData) {
     cutoutSlots.forEach((s) => s.classList.add('slot-hidden'))
   }
 
-  let rawCanvas
-  try {
-    rawCanvas = await htmlToImage.toCanvas(stripEl, {
+  const renderCanvas = () =>
+    htmlToImage.toCanvas(stripEl, {
       pixelRatio: 2,
       cacheBust: true,
       filter: (node) => {
@@ -331,6 +330,14 @@ export async function captureEditablePng(stripEl, projectData) {
         return true
       }
     })
+
+  let rawCanvas
+  try {
+    rawCanvas = await renderCanvas()
+  } catch (err) {
+    console.warn('Initial htmlToImage render failed, retrying once...', err)
+    await new Promise((r) => setTimeout(r, 150))
+    rawCanvas = await renderCanvas()
   } finally {
     if (slotsContainer && !hadCutoutsHidden) {
       slotsContainer.classList.remove('cutouts-hidden')
@@ -355,6 +362,7 @@ export async function captureEditablePng(stripEl, projectData) {
 
   return {
     blob: embeddedBlob,
+    rawBlob: rawBlob,
     thumbnail: thumbnailDataUrl,
     width: rawCanvas.width,
     height: rawCanvas.height

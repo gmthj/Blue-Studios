@@ -2599,7 +2599,6 @@ async function executeSave({ asCopy = false } = {}) {
   }
   isSavingFrame.value = true
   cloudErrorMessage.value = ''
-  notify('Saving template...')
 
   const prevSelected = [...selectedElementIds.value]
   const prevShowCutouts = showCutouts.value
@@ -2660,12 +2659,19 @@ async function executeSave({ asCopy = false } = {}) {
       customGuides: JSON.parse(JSON.stringify(customGuides.value))
     }
 
-    const { blob, thumbnail } = await captureEditablePng(stripRef.value, projectData)
+    const { blob, rawBlob, thumbnail } = await captureEditablePng(stripRef.value, projectData)
 
     // Save to user's account in Firebase (My Studio) if signed in as account
     if (isAccount.value) {
-      const rawBlob = await (await fetch(thumbnail)).blob()
-      const thumbnailBlob = await shrinkPng(rawBlob, 1400)
+      let targetBlob = rawBlob
+      if (!targetBlob) {
+        try {
+          targetBlob = await (await fetch(thumbnail)).blob()
+        } catch (_) {
+          targetBlob = blob
+        }
+      }
+      const thumbnailBlob = await shrinkPng(targetBlob, 1400)
 
       // If user requested a copy or doesn't own original template, save without id to create new
       const targetCloudId = (asCopy || !isOwner.value) ? undefined : (cloudId.value || undefined)
@@ -2702,10 +2708,6 @@ async function executeSave({ asCopy = false } = {}) {
     }
 
     isSaveModalOpen.value = false
-    const msg = isAccount.value
-      ? `Saved "${safeName}" to My Studio!`
-      : `Saved "${safeName}" to device!`
-    notify(msg)
 
     // Redirect to templates homepage where user can see all their saved frames
     if (isAccount.value) {
@@ -2714,7 +2716,6 @@ async function executeSave({ asCopy = false } = {}) {
   } catch (err) {
     console.error('Failed to save frame:', err)
     cloudErrorMessage.value = err.message || 'Failed to save frame. Please try again.'
-    notify('Failed to save frame.')
   } finally {
     selectedElementIds.value = prevSelected
     showCutouts.value = prevShowCutouts
