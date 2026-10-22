@@ -416,4 +416,9 @@ Admins can't ban themselves, other admins (remove the mark first), or guests (th
 
 **What I did:** reported the bug from the Vercel preview, reviewed the fix, and tested it on the preview with two devices.
 
-**What I learned:** a package can work locally but fail on the server when the Node setup is different, so the server logs (Vercel > Logs) are the first place to look. Some npm packages now only support `import` (ES modules), and `overrides` in `package.json` can pin one dependency's version without changing the others.
+**What I learned:** a package can work locally but fail on the server when the Node setup is different, so the server logs (Vercel > Logs) are the first place to look. Some npm packages now only support `import` (ES modules), and `overrides` in `package.json` can pin one dependency's version without changing the others
+
+germmmm
+
+
+hllo raeeee
