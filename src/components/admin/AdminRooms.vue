@@ -1,12 +1,12 @@
 <script setup>
 import { ref, computed } from 'vue'
-import { listRooms, getRoomWithPhotos, closeRoom, deleteRoom, deletePhoto } from '../../admin.js'
+import { listRooms, getRoomWithPhotos, closeRoom, deleteRoom, deletePhoto, deleteClip } from '../../admin.js'
 import { isActive } from '../../room.js'
 import { useAdminTab, useSort, formatTime } from '../../composables/useAdminTab.js'
 import SortHeader from './SortHeader.vue'
 
 // Rooms tab: the newest 200 rooms, open and closed, with who is in each one. Open one to see its
-// photos, delete a photo, close the room or delete it. Older rooms can still be opened by their code.
+// photos and videos, delete a photo or video clip, close the room or delete it. Older rooms can still be opened by their code.
 
 const rooms = ref([])
 const status = ref('all')
@@ -99,6 +99,32 @@ function removePhoto(photo) {
   }, 'Photo deleted.')
 }
 
+function removeClip(clip) {
+  if (!confirm('Delete this video clip for everyone in the room? Edited videos that use it will skip it.')) return
+  run(async () => {
+    await deleteClip(room.value.code, clip, note.value)
+    await openRoom(room.value.code)
+  }, 'Video clip deleted.')
+}
+
+// The opened room's edited videos (made on the Video page from its clips), oldest first:
+// [{ id, name, createdAt, clips: [{ clip, start, end }], seconds }]. Clips that were deleted are left out.
+const editedVideos = computed(() => {
+  if (!room.value) return []
+  return Object.entries(room.value.editedVideos || {}).map(([id, edit]) => {
+    const parts = (edit.timeline || [])
+      .map((item) => ({ clip: room.value.clips.find((c) => c.id === item.clipId), start: item.start || 0, end: item.end || 0 }))
+      .filter((part) => part.clip)
+    return {
+      id: id,
+      name: edit.name,
+      createdAt: edit.createdAt,
+      clips: parts,
+      seconds: parts.reduce((sum, part) => sum + Math.max(0, part.end - part.start), 0),
+    }
+  }).sort((a, b) => a.createdAt - b.createdAt)
+})
+
 function closeThisRoom() {
   if (!confirm('Close room ' + room.value.code + '? Everyone in it is sent back to the home page.')) return
   run(async () => {
@@ -110,7 +136,7 @@ function closeThisRoom() {
 function deleteThisRoom() {
   const code = room.value.code
   const warning = room.value.closed ? '' : ' It is still open: everyone in it is sent back to the home page.'
-  if (!confirm('Delete room ' + code + ' with all its photos for good?' + warning + ' This cannot be undone.')) return
+  if (!confirm('Delete room ' + code + ' with all its photos and videos for good?' + warning + ' This cannot be undone.')) return
   run(async () => {
     await deleteRoom(code, note.value)
     room.value = null
@@ -170,6 +196,34 @@ defineExpose({ refresh })
           <button class="btn btn-sm btn-outline-danger w-100" :disabled="busy" @click="removePhoto(photo)">Delete</button>
         </div>
       </div>
+
+      <h3 class="h6 mt-3">Video clips ({{ room.clips.length }})</h3>
+      <p v-if="room.clips.length === 0" class="small text-muted">No video clips.</p>
+      <div class="row g-2">
+        <div v-for="clip in room.clips" :key="clip.id" class="col-6 col-md-3">
+          <video
+            v-if="clip.url" :src="clip.url" class="w-100 rounded bg-dark"
+            controls muted loop playsinline preload="metadata" :aria-label="'Video clip by ' + clip.name"
+          ></video>
+          <div v-else class="missing rounded small text-muted">File missing</div>
+          <p class="small text-muted text-truncate mb-1">{{ clip.name }}, shot {{ clip.shotNumber }} &middot; {{ formatTime(clip.createdAt) }}</p>
+          <button class="btn btn-sm btn-outline-danger w-100" :disabled="busy" @click="removeClip(clip)">Delete</button>
+        </div>
+      </div>
+
+      <template v-if="editedVideos.length > 0">
+        <h3 class="h6 mt-3">Edited videos ({{ editedVideos.length }})</h3>
+        <ul class="list-unstyled small mb-0">
+          <li v-for="edit in editedVideos" :key="edit.id" class="mb-1">
+            <strong>{{ edit.name }}</strong>
+            <span class="text-muted">&middot; {{ edit.seconds.toFixed(1) }}s &middot; made {{ formatTime(edit.createdAt) }} &middot;</span>
+            <span v-if="edit.clips.length === 0" class="text-muted">no clips left</span>
+            <span v-else class="text-muted">
+              clips by {{ edit.clips.map((part) => part.clip.name + ' (shot ' + part.clip.shotNumber + ')').join(', ') }}
+            </span>
+          </li>
+        </ul>
+      </template>
     </div>
   </div>
 
@@ -256,6 +310,14 @@ defineExpose({ refresh })
   height: 0.5rem;
   border-radius: 50%;
   margin-right: 0.25rem;
+}
+
+.missing {
+  aspect-ratio: 4 / 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bs-light);
 }
 
 .person {

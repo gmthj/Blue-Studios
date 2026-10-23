@@ -6,7 +6,7 @@
 //   { action: 'list',   pageToken: '...' }                every login (accounts and guests), 1000 at a time
 //   { action: 'ban',    uid: 'Xk3v9...', reason: '...' }  block an account
 //   { action: 'unban',  uid: 'Xk3v9...', reason: '...' }  let them back in
-//   { action: 'deleteRoom', code: '1234', reason: '...' } delete a room and everything in it
+//   { action: 'deleteRoom', code: '1234', reason: '...' } delete a room and everything in it (video files too)
 //
 // Why a server function: banning has to switch off the account's login in Firebase Auth
 // (disable + log out everywhere), which only the Admin SDK can do, and the Admin SDK has full
@@ -15,7 +15,7 @@
 // Who is an admin: an account with the custom claim admin: true inside its login token.
 // Only scripts/set-admin.mjs (run by Gabriel on a laptop with the secret key) can give that mark.
 
-import { adminAuth, adminDb, getCaller } from './_lib/firebaseAdmin.js'
+import { adminAuth, adminDb, adminStorage, getCaller } from './_lib/firebaseAdmin.js'
 
 const UID_PATTERN = /^[A-Za-z0-9]{1,128}$/
 
@@ -83,10 +83,16 @@ async function list(body, res) {
     return res.status(400).json({ error: 'Invalid page token' })
   }
   const page = await adminAuth().listUsers(1000, pageToken)
+  // Only accounts have a profile, so guests (most logins) are not looked up
   const db = adminDb()
-  const profiles = page.users.length > 0 ? await db.getAll(...page.users.map((account) => db.doc('users/' + account.uid))) : []
+  const withProfile = page.users.filter((account) => account.providerData.length > 0)
+  const profiles = withProfile.length > 0 ? await db.getAll(...withProfile.map((account) => db.doc('users/' + account.uid))) : []
+  const profileOf = {}
+  withProfile.forEach((account, i) => {
+    profileOf[account.uid] = profiles[i]
+  })
   return res.status(200).json({
-    accounts: page.users.map((account, i) => summary(account, profiles[i])),
+    accounts: page.users.map((account) => summary(account, profileOf[account.uid] || { exists: false })),
     nextPageToken: page.pageToken || '',
   })
 }
@@ -103,6 +109,7 @@ function summary(account, profile) {
     email: account.email || '',
     displayName: profile.exists ? profile.data().displayName : account.displayName || '',
     isAccount: account.providerData.length > 0, // guests (anonymous) have no email/Google login
+    providers: account.providerData.map((provider) => provider.providerId), // e.g. ['google.com', 'password']
     disabled: account.disabled,
     banned: profile.exists && profile.data().banned === true,
     admin: Boolean(account.customClaims && account.customClaims.admin),
@@ -191,6 +198,7 @@ async function deleteRoom(body, caller, res) {
     await roomRef.update({ closed: true })
   }
   await db.recursiveDelete(roomRef)
+  await deleteRoomFiles(code)
 
   await db.collection('adminLog').add({
     adminId: caller.uid,
@@ -202,6 +210,18 @@ async function deleteRoom(body, caller, res) {
   })
 
   return res.status(200).json({ ok: true })
+}
+
+// Delete a room's video clip files in Storage (clips/{code}/..., see clips.js). Deleting the room's
+// documents does not delete them. Skipped when the bucket name is not set (the tests).
+async function deleteRoomFiles(code) {
+  const bucketName = process.env.VITE_FIREBASE_STORAGE_BUCKET
+  if (!bucketName) return
+  try {
+    await adminStorage().bucket(bucketName).deleteFiles({ prefix: 'clips/' + code + '/' })
+  } catch (error) {
+    console.error('Could not delete the files of room ' + code, error) // the room itself is already gone
+  }
 }
 
 // Hide every active template and sticker of this account. Returns how many were hidden.

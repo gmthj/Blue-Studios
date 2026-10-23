@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AdminOverview from '../components/admin/AdminOverview.vue'
 import AdminReports from '../components/admin/AdminReports.vue'
@@ -7,6 +7,7 @@ import AdminItems from '../components/admin/AdminItems.vue'
 import AdminAccounts from '../components/admin/AdminAccounts.vue'
 import AdminRooms from '../components/admin/AdminRooms.vue'
 import AdminLog from '../components/admin/AdminLog.vue'
+import { prefetchAccounts } from '../admin.js'
 
 // The admin page (/admin): the moderator dashboard. Only accounts with the admin mark see it (router.js),
 // and the security rules + /api/admin check the mark again, so it is safe even if someone opens it.
@@ -49,6 +50,12 @@ async function refresh() {
   refreshing.value = false
 }
 
+// The account list is the slowest tab to load, so start loading it now, whichever tab is open
+// (the Accounts tab then shows it at once). An error is shown when the tab itself is opened.
+onMounted(() => {
+  prefetchAccounts().catch(() => {})
+})
+
 // A new tab loads itself, so forget the last refresh time
 watch(() => route.fullPath, () => {
   refreshedAt.value = null
@@ -66,7 +73,9 @@ watch(() => route.fullPath, () => {
     </div>
   </div>
 
-  <ul class="nav nav-tabs mb-3 flex-nowrap overflow-auto">
+  <!-- Scrolls sideways on narrow screens. overflow-y-hidden: the tabs stick out 1px below the bar,
+       which would otherwise add a vertical scroll bar -->
+  <ul class="nav nav-tabs mb-3 flex-nowrap overflow-x-auto overflow-y-hidden">
     <li v-for="t in TABS" :key="t.id" class="nav-item">
       <button class="nav-link text-nowrap" :class="{ active: tab.id === t.id }" @click="openTab(t.id)">{{ t.label }}</button>
     </li>

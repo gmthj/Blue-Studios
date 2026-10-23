@@ -87,6 +87,8 @@ test('list returns every login (accounts and guests) with their profile names, a
   assert.equal(bob.displayName, 'Bob')
   assert.equal(bob.email, 'bob@test.com')
   assert.equal(bob.isAccount, true)
+  assert.deepEqual(bob.providers, ['password'])
+  assert.deepEqual(result.body.accounts.find((account) => account.uid === guestUid).providers, [])
   assert.equal(result.body.accounts.find((account) => account.uid === guestUid).isAccount, false)
   assert.equal(result.body.accounts.find((account) => account.email === 'admin@test.com').admin, true)
   assert.equal((await callApi(adminToken, { action: 'list', pageToken: 'x'.repeat(2001) })).status, 400)

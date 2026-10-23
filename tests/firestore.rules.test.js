@@ -251,6 +251,15 @@ test('only members can see photos, and nobody can edit them', async () => {
   await assertSucceeds(deleteDoc(doc(dbAsAdmin(), 'rooms/1234/photos/p1')))
 })
 
+test('an admin can see and delete the video clips of any room', async () => {
+  await seedRoom({ shotNumber: 1 })
+  await seed('rooms/1234/clips/c1', { ownerId: 'guest', name: 'Guest', shotNumber: 1, path: 'clips/1234/guest/c1.webm', createdAt: 1 })
+  await assertFails(getDocs(collection(dbAs('stranger'), 'rooms/1234/clips')))
+  await assertSucceeds(getDocs(collection(dbAsAdmin(), 'rooms/1234/clips')))
+  await assertFails(updateDoc(doc(dbAsAdmin(), 'rooms/1234/clips/c1'), { name: 'X' }))
+  await assertSucceeds(deleteDoc(doc(dbAsAdmin(), 'rooms/1234/clips/c1')))
+})
+
 // ---------- User profiles ----------
 
 test('an account can create and rename its own profile', async () => {

@@ -108,6 +108,15 @@ test('strips are private: only the owner can upload and download', async () => {
   await assertFails(getBytes(ref(storageAs('bob'), 'strips/alice/st1.jpg')))
 })
 
+test('video clips: an admin can play and delete them', async () => {
+  const webm = { contentType: 'video/webm' }
+  await seedFile('clips/1234/alice/c1.webm', webm)
+  await assertSucceeds(getBytes(ref(storageAsAdmin(), 'clips/1234/alice/c1.webm')))
+  await assertFails(getBytes(ref(storageAs('bob'), 'clips/1234/alice/c1.webm')))
+  await assertFails(deleteObject(ref(storageAs('bob'), 'clips/1234/alice/c1.webm')))
+  await assertSucceeds(deleteObject(ref(storageAsAdmin(), 'clips/1234/alice/c1.webm')))
+})
+
 test('only the owner or an admin can delete files', async () => {
   await seedFile('templates/alice/t1/thumbnail.png', png)
   await assertFails(deleteObject(ref(storageAs('bob'), 'templates/alice/t1/thumbnail.png')))

@@ -237,6 +237,12 @@ service cloud.firestore {
         allow delete: if isAdmin();
       }
 
+      // rooms/{code}/clips/{clipId}  video clips (clips.js). Admins can see and delete them on the admin page.
+      // TODO lockdown: members' rules for clips (for now they come from the DEV block below).
+      match /clips/{clipId} {
+        allow read, delete: if isAdmin();
+      }
+
       // DEV: any other list inside a room (e.g. rooms/{code}/clips, rooms/{code}/music) for teammates' features.
       // Only people in the room can read and write it.
       // TODO lockdown: replace with real rules for each one before submission.
@@ -458,8 +464,8 @@ service cloud.firestore {
       allow create: if isAdmin()
         && request.resource.data.keys().hasOnly(['adminId', 'action', 'targetType', 'targetId', 'reason', 'createdAt'])
         && request.resource.data.adminId == request.auth.uid
-        && request.resource.data.action in ['hide', 'unhide', 'resolveReport', 'dismissReport', 'closeRoom', 'deletePhoto']
-        && request.resource.data.targetType in ['templates', 'stickers', 'reports', 'rooms', 'photos']
+        && request.resource.data.action in ['hide', 'unhide', 'resolveReport', 'dismissReport', 'closeRoom', 'deletePhoto', 'deleteClip']
+        && request.resource.data.targetType in ['templates', 'stickers', 'reports', 'rooms', 'photos', 'clips']
         && request.resource.data.targetId is string
         && request.resource.data.targetId.size() >= 1
         && request.resource.data.targetId.size() <= 200

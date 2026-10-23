@@ -110,6 +110,7 @@ export const LOG_ACTIONS = {
   closeRoom: 'Closed room',
   deleteRoom: 'Deleted room',
   deletePhoto: 'Deleted photo',
+  deleteClip: 'Deleted video clip',
   ban: 'Banned account',
   unban: 'Unbanned account',
 }

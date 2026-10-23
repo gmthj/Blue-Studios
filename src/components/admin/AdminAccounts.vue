@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { listAccounts, lookupAccount, banAccount, unbanAccount, getAccountActivity } from '../../admin.js'
+import { listAccounts, prefetchAccounts, reloadAccounts, lookupAccount, banAccount, unbanAccount, getAccountActivity } from '../../admin.js'
 import { useAdminTab, useSort, formatTime } from '../../composables/useAdminTab.js'
 import SortHeader from './SortHeader.vue'
 
@@ -20,17 +20,30 @@ const FILTERS = [
   { id: 'admins', label: 'Admins', test: (a) => a.admin },
 ]
 
+// How each account logs in, for people ('password' = email and password)
+const PROVIDERS = { 'google.com': 'Google', password: 'Email' }
+
+function loginLabel(a) {
+  if (!a.isAccount) return 'Guest'
+  return (a.providers || []).map((id) => PROVIDERS[id] || id).join(', ')
+}
+
 const accounts = ref([])
 const nextPageToken = ref('')
-const filter = ref('all')
+const filter = ref('accounts') // guests are hidden at first: there are many and they rarely need moderating
 const search = ref('')
 
 const picked = ref(null) // the account shown in the card at the top
 const activity = ref(null)
 const reason = ref('')
 
+// The first load uses the page the admin page already started loading (see prefetchAccounts in
+// admin.js); Refresh and actions load it fresh.
+let loadedOnce = false
+
 const { loading, busy, errorMessage, message, run, reload } = useAdminTab(async () => {
-  const page = await listAccounts()
+  const page = await (loadedOnce ? reloadAccounts() : prefetchAccounts())
+  loadedOnce = true
   accounts.value = page.accounts
   nextPageToken.value = page.nextPageToken
   if (route.query.uid && !picked.value) await pick(String(route.query.uid))
@@ -85,6 +98,7 @@ function seenTest(a) {
 const sort = useSort({
   name: { get: (a) => a.displayName, first: 'asc' },
   email: { get: (a) => a.email, first: 'asc' },
+  login: { get: (a) => loginLabel(a), first: 'asc' },
   type: { get: (a) => (a.admin ? 0 : a.banned || a.disabled ? 1 : a.isAccount ? 2 : 3), first: 'asc' },
   createdAt: { get: (a) => timeOf(a.createdAt), first: 'desc' },
   lastLogin: { get: (a) => timeOf(a.lastLogin), first: 'desc' },
@@ -154,7 +168,7 @@ function unban() {
         <button type="button" class="btn-close" aria-label="Close" @click="picked = null"></button>
       </div>
       <p class="small text-muted mb-2 text-break">
-        {{ picked.email || 'no email' }} &middot; uid {{ picked.uid }}<br />
+        {{ picked.email || 'no email' }} &middot; logs in with {{ loginLabel(picked) }} &middot; uid {{ picked.uid }}<br />
         Joined {{ formatTime(picked.createdAt) }}<template v-if="picked.lastLogin"> &middot; last login {{ formatTime(picked.lastLogin) }}</template>
       </p>
       <p v-if="activity" class="small mb-3">
@@ -202,6 +216,7 @@ function unban() {
           <tr>
             <SortHeader :sort="sort" column="name" label="Name" />
             <SortHeader :sort="sort" column="email" label="Email" />
+            <SortHeader :sort="sort" column="login" label="Login" />
             <SortHeader :sort="sort" column="type" label="Type" />
             <SortHeader :sort="sort" column="createdAt" label="Joined" />
             <SortHeader :sort="sort" column="lastLogin" label="Last login" />
@@ -211,6 +226,7 @@ function unban() {
           <tr v-for="a in shown" :key="a.uid" class="clickable" :class="{ 'table-active': picked && picked.uid === a.uid }" @click="pick(a.uid)">
             <td class="text-break">{{ a.displayName || (a.isAccount ? '(no name)' : 'Guest') }}</td>
             <td class="text-break">{{ a.email }}</td>
+            <td class="text-nowrap">{{ loginLabel(a) }}</td>
             <td class="text-nowrap">
               <span v-if="a.admin" class="badge text-bg-primary">Admin</span>
               <span v-if="a.banned || a.disabled" class="badge text-bg-danger">Banned</span>

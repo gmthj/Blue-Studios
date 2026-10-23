@@ -85,6 +85,15 @@ service firebase.storage {
       allow delete: if isOwner(uid) || isAdmin();
     }
 
+    // ---------- Video clips (room gallery) ----------
+    // clips/{code}/{uid}/{clipId}.webm or .mp4   (see clips.js)
+    // Admins can play and delete them on the admin page.
+    // TODO lockdown: members' rules for clips (for now they come from the DEV block below).
+
+    match /clips/{code}/{uid}/{fileName} {
+      allow read, delete: if isAdmin();
+    }
+
     // DEV-OPEN-START
     // ---------- DEV: ALL of Storage is open to anyone signed in (guests too) ----------
     // While we are still building, any signed-in user can read, upload, overwrite and delete ANY file,

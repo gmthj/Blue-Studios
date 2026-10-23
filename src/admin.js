@@ -2,7 +2,8 @@ import axios from 'axios'
 import {
   collection, collectionGroup, doc, getDoc, getDocs, query, where, orderBy, limit, writeBatch, getCountFromServer,
 } from 'firebase/firestore'
-import { db, auth } from './firebase.js'
+import { ref, getDownloadURL, deleteObject } from 'firebase/storage'
+import { db, auth, storage } from './firebase.js'
 
 // Moderator tools for the admin page (/admin). Only accounts with the admin mark can use them:
 // the security rules (firestore.rules) and /api/admin check the mark again on Firebase's side,
@@ -162,6 +163,29 @@ export async function listAccounts(pageToken = '') {
   return await callAdminApi({ action: 'list', pageToken: pageToken })
 }
 
+// The first page of logins is slow to get (the server reads them all from Firebase Auth), so it is
+// kept while the admin page is open: the admin page starts loading it straight away (prefetchAccounts),
+// and the Accounts tab shows it at once. It is fetched again when it is over 5 minutes old.
+const ACCOUNTS_MAX_AGE = 5 * 60 * 1000
+let firstPage = null // { promise, at }
+
+export function prefetchAccounts() {
+  if (!firstPage || Date.now() - firstPage.at > ACCOUNTS_MAX_AGE) {
+    const promise = listAccounts()
+    promise.catch(() => {
+      if (firstPage && firstPage.promise === promise) firstPage = null // try again next time
+    })
+    firstPage = { promise: promise, at: Date.now() }
+  }
+  return firstPage.promise
+}
+
+// The first page, fresh (for Refresh, and after a ban or unban)
+export function reloadAccounts() {
+  firstPage = null
+  return prefetchAccounts()
+}
+
 // Ban: switches off their login, logs them out everywhere and hides all their items. Returns { hiddenCount, account }
 export async function banAccount(uid, reason) {
   return await callAdminApi({ action: 'ban', uid: uid, reason: reason })
@@ -206,19 +230,28 @@ export async function listRooms(count = 200) {
   }))
 }
 
-// A room with its members and photos (admins can see the photos of any room)
+// A room with its members, photos and video clips (admins can see these in any room).
+// Clips are recorded on the camera page in Video mode (clips.js): the file is in Storage and
+// rooms/{code}/clips/{clipId} points to it. Each clip gets a `url` to play it ('' if the file is missing).
 export async function getRoomWithPhotos(code) {
   const roomDoc = await getDoc(doc(db, 'rooms', code))
   if (!roomDoc.exists()) return null
-  const [members, photos] = await Promise.all([
+  const [members, photos, clips] = await Promise.all([
     getDocs(collection(db, 'rooms', code, 'members')),
     getDocs(collection(db, 'rooms', code, 'photos')),
+    getDocs(collection(db, 'rooms', code, 'clips')),
   ])
+  const clipList = await Promise.all(clips.docs.map(async (clipDoc) => {
+    const clip = { id: clipDoc.id, ...clipDoc.data() }
+    clip.url = clip.path ? await getDownloadURL(ref(storage, clip.path)).catch(() => '') : ''
+    return clip
+  }))
   return {
     code: code,
     ...roomDoc.data(),
     members: members.docs.map((memberDoc) => ({ id: memberDoc.id, ...memberDoc.data() })).sort((a, b) => a.joinedAt - b.joinedAt),
     photos: photos.docs.map((photoDoc) => ({ id: photoDoc.id, ...photoDoc.data() })).sort((a, b) => a.createdAt - b.createdAt),
+    clips: clipList.sort((a, b) => a.createdAt - b.createdAt),
   }
 }
 
@@ -239,6 +272,20 @@ export async function deletePhoto(code, photoId, reason) {
   const batch = writeBatch(db)
   batch.delete(doc(db, 'rooms', code, 'photos', photoId))
   addLog(batch, 'deletePhoto', 'photos', code + '/' + photoId, reason)
+  await batch.commit()
+}
+
+// Delete a video clip: its file in Storage, then the document that points to it.
+// Edited videos that used it simply skip it from then on (resolveTimeline in clips.js).
+export async function deleteClip(code, clip, reason) {
+  if (clip.path) {
+    await deleteObject(ref(storage, clip.path)).catch((error) => {
+      if (error.code !== 'storage/object-not-found') throw error // already gone is fine
+    })
+  }
+  const batch = writeBatch(db)
+  batch.delete(doc(db, 'rooms', code, 'clips', clip.id))
+  addLog(batch, 'deleteClip', 'clips', code + '/' + clip.id, reason)
   await batch.commit()
 }
 
