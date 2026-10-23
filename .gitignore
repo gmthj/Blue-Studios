@@ -150,3 +150,8 @@ firestore-debug.log*
 
 
 /figma
+
+
+.agents/
+.claude/
+skills-lock.json
