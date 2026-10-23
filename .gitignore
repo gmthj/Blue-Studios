@@ -154,4 +154,5 @@ firestore-debug.log*
 
 # Agents
 .agents/
+.claude/
 skills-lock.json
