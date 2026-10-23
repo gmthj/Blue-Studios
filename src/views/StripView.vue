@@ -20,9 +20,9 @@ const { isAccount } = useAuth()
 
 const selectedPhotoId = ref(null) // phones: the photo tapped (each person has their own)
 // const showCall = ref(true)        // the video call can be hidden so it does not cover the strip
-// const userTemplates = ref([])
+const userTemplates = ref([])
 const loadingTemplates = ref(false)
-// const exportingPng = ref(false)
+const exportingPng = ref(false)
 
 // What the room has chosen (the first layout / style if nothing is saved yet)
 const layout = computed(() => {
