@@ -107,6 +107,7 @@ const avatarColour = computed(() => {
   background: #000;
   border-radius: 10px;
   overflow: hidden;
+  container-type: inline-size; /* lets the badges below change size with the tile (@container) */
   /* Fades in when someone joins */
   transition: opacity 200ms cubic-bezier(0.23, 1, 0.32, 1), transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
 }
@@ -141,7 +142,7 @@ const avatarColour = computed(() => {
   aspect-ratio: 1;
   border-radius: 50%;
   color: #ffffff;
-  font-size: 1.1rem;
+  font-size: clamp(0.8rem, 13cqi, 2.5rem); /* cqi = 1% of the tile's width, so the letter grows with the tile */
   font-weight: 700;
   background: rgba(255, 255, 255, 0.25);
 }
@@ -194,6 +195,37 @@ const avatarColour = computed(() => {
 
 .you {
   color: rgba(255, 255, 255, 0.6);
+}
+
+/* Small tiles (lots of people, or a narrow window): smaller badges, so they do not cover the whole tile */
+@container (max-width: 120px) {
+  .host-badge {
+    margin: 4px;
+    padding: 0 5px;
+    font-size: 0.55rem;
+  }
+
+  .muted-icon {
+    width: 16px;
+    height: 16px;
+    margin: 4px;
+  }
+
+  .muted-icon svg {
+    width: 9px;
+    height: 9px;
+  }
+
+  .name-pill {
+    max-width: calc(100% - 8px);
+    margin: 4px;
+    padding: 0 6px;
+    font-size: 0.6rem;
+  }
+
+  .you {
+    display: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

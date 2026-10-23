@@ -11,8 +11,8 @@ import VideoTile from './VideoTile.vue'
 // The video call window: everyone in the room (live video, name, device, mute icon),
 // plus the mute/unmute, leave and close room buttons, all in a small title bar to save space.
 // It floats over the page (position: fixed). Drag the title bar to put it anywhere on the screen,
-// and drag the grip in the bottom-right corner to resize it.
-// The "–" button minimises it to just the title bar. The call keeps running while minimised.
+// and drag the grip in its bottom corner to resize it.
+// The "–" button (or double-clicking the title bar) minimises it to just the title bar. The call keeps running while minimised.
 // It is shown once by RoomLayout.vue, so it is on every page inside a room.
 
 const router = useRouter()
@@ -45,56 +45,114 @@ async function toggleMinimised() {
   minimised.value = !minimised.value
   saveSetting('callMinimised', minimised.value ? 'yes' : 'no')
   await nextTick()  // wait for the new size...
-  keepOnScreen()    // ...then make sure it did not grow off the bottom / right of the screen
+  keepOnScreen()    // ...then make sure it did not grow off the screen
+}
+
+// Double-click the title bar (not a button) to minimise / show the call, like a window on a computer
+function onTitleDoubleClick(event) {
+  if (event.target.closest('button')) return
+  toggleMinimised()
+}
+
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(value, max))
 }
 
 // ---------- POSITION AND DRAGGING ----------
-// pos = the window's top-left corner, in pixels from the top-left of the screen
-const EDGE = 8 // gap kept between the window and the edge of the screen
+// The window is "docked" to the corner of the screen it is closest to:
+//   dock.right / dock.bottom = which corner (false = left / top)
+//   dock.x / dock.y          = the gap in pixels between the window and those two edges of the screen
+// So when the window changes size (minimise, resize, someone joins) or the screen changes size
+// (phone turned sideways), it stays in its corner and grows / shrinks towards the middle of the screen.
+const EDGE = 8  // smallest gap between the window and the edge of the screen
+const SNAP = 24 // dragged closer than this to an edge: it sticks to the edge
 const windowEl = ref(null)
-const pos = ref({ x: 0, y: 0 })
+const dock = ref(loadDock())
 const dragging = ref(false)
-let grabOffset = { x: 0, y: 0 } // where on the window the pointer grabbed it
+let dragPointer = null           // the finger / mouse doing the drag or resize (other fingers are ignored)
+let grabOffset = { x: 0, y: 0 }  // where on the window the pointer grabbed it
 
-// Moves the window back inside the screen (after dragging, resizing the browser, or un-minimising)
+// Where it was last time, or the bottom-right corner the first time
+function loadDock() {
+  try {
+    const saved = JSON.parse(loadSetting('callDock', ''))
+    if (typeof saved.x === 'number' && typeof saved.y === 'number') return saved
+  } catch {
+    // nothing saved yet: use the default below
+  }
+  return { x: EDGE, y: EDGE, right: true, bottom: true }
+}
+
+// left / right and top / bottom for the style, depending on the corner it is docked to
+const windowStyle = computed(() => {
+  const style = { width: minimised.value ? 'auto' : width.value + 'px' }
+  style[dock.value.right ? 'right' : 'left'] = dock.value.x + 'px'
+  style[dock.value.bottom ? 'bottom' : 'top'] = dock.value.y + 'px'
+  return style
+})
+
+// Moves the window back inside the screen (after resizing it, un-minimising, or the screen changing size)
 function keepOnScreen() {
   if (!windowEl.value) return
   const maxX = window.innerWidth - windowEl.value.offsetWidth - EDGE
   const maxY = window.innerHeight - windowEl.value.offsetHeight - EDGE
-  pos.value = {
-    x: Math.max(EDGE, Math.min(pos.value.x, maxX)),
-    y: Math.max(EDGE, Math.min(pos.value.y, maxY)),
-  }
+  dock.value = { ...dock.value, x: clamp(dock.value.x, EDGE, maxX), y: clamp(dock.value.y, EDGE, maxY) }
 }
 
 function startDrag(event) {
-  // Only the title bar starts a drag, not the buttons in it
-  if (event.target.closest('button')) return
-  grabOffset = { x: event.clientX - pos.value.x, y: event.clientY - pos.value.y }
+  // Only the title bar starts a drag, not the buttons in it. A second finger is ignored, or the window would jump.
+  if (event.target.closest('button') || dragPointer !== null) return
+  const box = windowEl.value.getBoundingClientRect()
+  grabOffset = { x: event.clientX - box.left, y: event.clientY - box.top }
+  dragPointer = event.pointerId
   dragging.value = true
   // Pointer capture: keep getting pointermove events even if the pointer leaves the title bar
   event.currentTarget.setPointerCapture(event.pointerId)
 }
 
 function onDrag(event) {
-  if (!dragging.value) return
-  pos.value = { x: event.clientX - grabOffset.x, y: event.clientY - grabOffset.y }
-  keepOnScreen()
+  if (!dragging.value || event.pointerId !== dragPointer) return
+  const w = windowEl.value.offsetWidth
+  const h = windowEl.value.offsetHeight
+
+  // Where its top-left corner would be, kept on the screen
+  const left = clamp(event.clientX - grabOffset.x, EDGE, window.innerWidth - w - EDGE)
+  const top = clamp(event.clientY - grabOffset.y, EDGE, window.innerHeight - h - EDGE)
+
+  // Dock to the closest corner: is the middle of the window in the right half / bottom half of the screen?
+  const right = left + w / 2 > window.innerWidth / 2
+  const bottom = top + h / 2 > window.innerHeight / 2
+  let x = right ? window.innerWidth - w - left : left
+  let y = bottom ? window.innerHeight - h - top : top
+
+  // Close to an edge: stick to it
+  if (x < SNAP) x = EDGE
+  if (y < SNAP) y = EDGE
+  dock.value = { x, y, right, bottom }
 }
 
-function endDrag() {
-  if (!dragging.value) return
+function endDrag(event) {
+  if (!dragging.value || event.pointerId !== dragPointer) return
   dragging.value = false
-  saveSetting('callPos', JSON.stringify(pos.value))
+  dragPointer = null
+  saveSetting('callDock', JSON.stringify(dock.value))
 }
 
 // ---------- RESIZING ----------
-// Drag the grip in the bottom-right corner to make the window wider or narrower.
+// Drag the grip in the bottom corner to make the window wider or narrower. The grip is on the side
+// facing the middle of the screen (bottom-left when docked on the right), so the window grows away from its edge.
 // Only the width is set: the height follows, because every tile keeps its 4:3 shape.
 const MIN_WIDTH = 220 // wide enough for all the title bar buttons on one line
-const width = ref(Number(loadSetting('callWidth', '300')) || 300)
+const width = ref(Number(loadSetting('callWidth', '')) || defaultWidth())
 const resizing = ref(false)
 let resizeStart = { x: 0, width: 0 }
+
+// The first time: about a fifth of the screen, but at least 260px (2 tiles side by side) and at most 400px.
+// Short screens (phones held sideways) get a wider window, because the tiles have to go 3 across to fit the height.
+function defaultWidth() {
+  const share = window.innerHeight <= 500 ? 0.4 : 0.22
+  return Math.round(clamp(window.innerWidth * share, 260, 400))
+}
 
 // Never narrower than MIN_WIDTH, never wider than the screen
 function clampWidth(w) {
@@ -102,38 +160,73 @@ function clampWidth(w) {
 }
 
 function startResize(event) {
+  if (dragPointer !== null) return
   resizeStart = { x: event.clientX, width: windowEl.value.offsetWidth }
+  dragPointer = event.pointerId
   resizing.value = true
   event.currentTarget.setPointerCapture(event.pointerId)
 }
 
 async function onResize(event) {
-  if (!resizing.value) return
-  width.value = clampWidth(resizeStart.width + event.clientX - resizeStart.x)
+  if (!resizing.value || event.pointerId !== dragPointer) return
+  // Docked on the right, the grip is on the left: dragging it left makes the window wider
+  const moved = event.clientX - resizeStart.x
+  width.value = clampWidth(resizeStart.width + (dock.value.right ? -moved : moved))
   await nextTick() // wait for the new size...
-  keepOnScreen()   // ...then pull it back in if it grew off the right / bottom of the screen
+  keepOnScreen()   // ...then pull it back in if it grew off the screen
 }
 
-function endResize() {
-  if (!resizing.value) return
+function endResize(event) {
+  if (!resizing.value || event.pointerId !== dragPointer) return
   resizing.value = false
+  dragPointer = null
   saveSetting('callWidth', String(width.value))
 }
 
-// When the browser window changes size: keep the window narrower than the screen, and on the screen
+// ---------- TILE LAYOUT ----------
+// How many tiles go across. The rows are balanced (4 people: 2 + 2, not 3 + 1), and the tiles never
+// make the window taller than the screen allows: a phone held sideways gets more, smaller tiles across
+// instead of having to scroll. A shorter last row is centred (see .tiles in the CSS).
+const MIN_TILE = 96 // narrowest a tile gets because of the width (in pixels)
+const GAP = 6       // space between the tiles, and around them (same as the CSS)
+const screenHeight = ref(window.innerHeight)
+
+const columns = computed(() => {
+  const count = Math.max(activeMembers.value.length, 1)
+  const inner = width.value - GAP * 2 - 2 // minus the padding and the 1px border
+  const fitAcross = Math.max(1, Math.floor((inner + GAP) / (MIN_TILE + GAP)))
+
+  // As few rows as possible, then the tiles spread evenly over those rows
+  const rows = Math.ceil(count / Math.min(count, fitAcross))
+  let across = Math.ceil(count / rows)
+
+  // Too tall? Put more across (smaller tiles) until it fits.
+  // The tiles get 60% of the screen height (45% on short screens, like phones held sideways), the same as
+  // the max-height of .call-body in the CSS, minus its padding.
+  const maxHeight = screenHeight.value * (screenHeight.value <= 500 ? 0.45 : 0.6) - GAP
+  while (across < count && tilesHeight(count, across, inner) > maxHeight) {
+    across++
+  }
+  return across
+})
+
+// Height of all the rows of tiles, if `across` tiles go in each row
+function tilesHeight(count, across, inner) {
+  const rows = Math.ceil(count / across)
+  const tileWidth = (inner - GAP * (across - 1)) / across
+  return rows * tileWidth * 0.75 + GAP * (rows - 1) // tiles are 4:3, so the height is 3/4 of the width
+}
+
+// When the screen changes size (browser window resized, phone turned): keep the window narrower than
+// the screen, and on the screen
 async function onWindowResize() {
+  screenHeight.value = window.innerHeight
   width.value = clampWidth(width.value)
   await nextTick()
   keepOnScreen()
 }
 
 onMounted(() => {
-  // Start where it was last time, or in the bottom-right corner the first time
-  try {
-    pos.value = JSON.parse(loadSetting('callPos', ''))
-  } catch {
-    pos.value = { x: window.innerWidth, y: window.innerHeight } // keepOnScreen pulls it into the corner
-  }
   onWindowResize()
   window.addEventListener('resize', onWindowResize)
 })
@@ -167,7 +260,7 @@ async function closeRoom() {
     ref="windowEl"
     class="call-window"
     :class="{ minimised, dragging: dragging || resizing }"
-    :style="{ left: pos.x + 'px', top: pos.y + 'px', width: minimised ? 'auto' : width + 'px' }"
+    :style="windowStyle"
   >
     <!-- Title bar: drag it to move the window. All the buttons live here to save space. -->
     <div
@@ -177,6 +270,7 @@ async function closeRoom() {
       @pointermove="onDrag"
       @pointerup="endDrag"
       @pointercancel="endDrag"
+      @dblclick="onTitleDoubleClick"
     >
       <!-- Grip: 6 dots, the usual sign for "you can drag this" -->
       <svg class="grip" viewBox="0 0 24 24" aria-hidden="true">
@@ -188,7 +282,7 @@ async function closeRoom() {
       <!-- Green dot = the call is live -->
       <span class="people-count me-auto" :title="'In this room: ' + activeMembers.length + ' of ' + MAX_PEOPLE">
         <span class="live-dot" aria-hidden="true"></span>
-        {{ activeMembers.length }}<span class="people-max">/{{ MAX_PEOPLE }}</span>
+        <span>{{ activeMembers.length }}<span class="people-max">/{{ MAX_PEOPLE }}</span></span>
       </span>
 
       <!-- Mic: red while muted, so it is obvious nobody can hear you -->
@@ -261,7 +355,8 @@ async function closeRoom() {
     <div v-show="!minimised" class="call-body">
       <p v-if="callError" class="call-error small mb-1">{{ callError }}</p>
 
-      <div class="tiles">
+      <!-- --columns: how many tiles go across (worked out in the script, see TILE LAYOUT) -->
+      <div class="tiles" :style="{ '--columns': columns }">
         <VideoTile
           v-for="member in activeMembers"
           :key="member.id"
@@ -272,10 +367,11 @@ async function closeRoom() {
       </div>
     </div>
 
-    <!-- Resize grip (bottom-right corner) -->
+    <!-- Resize grip: bottom corner, on the side facing the middle of the screen -->
     <div
       v-show="!minimised"
       class="resize-grip"
+      :class="dock.right ? 'grip-left' : 'grip-right'"
       title="Drag to resize"
       @pointerdown="startResize"
       @pointermove="onResize"
@@ -461,28 +557,46 @@ async function closeRoom() {
   color: #FCA5A5;
 }
 
-/* As many columns as fit (each tile at least 100px wide), all the same width.
-   auto-fit drops the empty columns, so 1 person fills the whole width instead of leaving a gap on the right. */
+/* --columns tiles across, all the same width (set by the script). Flexbox, not grid,
+   so a shorter last row is centred instead of leaving a gap on the right. */
 .tiles {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 6px;
 }
 
-/* Resize grip: two short diagonal lines in the bottom-right corner, sitting on top of the tiles.
+.tiles > * {
+  flex: 0 0 calc((100% - (var(--columns) - 1) * 6px) / var(--columns));
+}
+
+/* Resize grip: two short diagonal lines in a bottom corner, sitting on top of the tiles.
    touch-action: none stops phones scrolling the page while resizing. */
 .resize-grip {
   position: absolute;
-  right: 0;
   bottom: 0;
   width: 18px;
   height: 18px;
-  cursor: nwse-resize;
   touch-action: none;
   opacity: 0.6;
   transition: opacity 150ms ease;
+}
+
+.grip-right {
+  right: 0;
+  cursor: nwse-resize;
   background: linear-gradient(
     135deg,
+    transparent 55%, #ffffff 55%, #ffffff 62%, transparent 62%,
+    transparent 75%, #ffffff 75%, #ffffff 82%, transparent 82%
+  );
+}
+
+.grip-left {
+  left: 0;
+  cursor: nesw-resize;
+  background: linear-gradient(
+    225deg,
     transparent 55%, #ffffff 55%, #ffffff 62%, transparent 62%,
     transparent 75%, #ffffff 75%, #ffffff 82%, transparent 82%
   );
@@ -493,8 +607,8 @@ async function closeRoom() {
   opacity: 1;
 }
 
-/* Phones held sideways are short, so the tiles get less of the height */
-@media (orientation: landscape) and (max-height: 500px) {
+/* Short screens (like phones held sideways): the tiles get less of the height (the script uses the same 500px) */
+@media (max-height: 500px) {
   .call-body {
     max-height: 45vh;
     max-height: 45dvh;
