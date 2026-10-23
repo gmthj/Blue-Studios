@@ -4,6 +4,7 @@ import LoginView from './views/LoginView.vue'
 import RoomLayout from './views/RoomLayout.vue'
 import RoomView from './views/RoomView.vue'
 import StripView from './views/StripView.vue'
+import TemplateEditorView from './views/TemplateEditorView.vue'
 import DecorateView from './views/DecorateView.vue'
 import StudioView from './views/StudioView.vue'
 import MarketplaceView from './views/MarketplaceView.vue'
@@ -14,6 +15,7 @@ import { useAuth } from './composables/useAuth.js'
 
 const routes = [
   { path: '/', component: HomeView },
+  { path: '/template-editor', component: TemplateEditorView },
   { path: '/login', component: LoginView }, // /login?mode=signup shows the sign up tab
   // meta.requiresAccount: guests are sent to the log in page first (see beforeEach below)
   { path: '/studio', component: StudioView, meta: { requiresAccount: true } },
