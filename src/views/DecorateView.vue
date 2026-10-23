@@ -8,7 +8,6 @@ import { saveStrip } from '../studio.js'
 import { LAYOUTS, FRAME_STYLES, STICKERS, FILTERS, filterCss, saveField, saveFields } from '../stripData.js'
 import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
-import VideoCallCard from '../components/VideoCallCard.vue'
 
 // The "Decorate" page (a child of RoomLayout.vue): filters and stickers.
 //   Left:   filters and adjustments for the photo tapped on the strip
@@ -23,7 +22,6 @@ const selectedSlot = ref(0)          // the photo the filters change ("Applied t
 const selectedStickerId = ref(null)  // the sticker being resized / rotated
 const trayTab = ref('mine')          // 'mine' | 'giphy' | 'dynamic'
 const selectedTrayId = ref(null)     // phones: the tray sticker tapped
-const showCall = ref(true)
 const exporting = ref(false)
 
 // Accounts can also save the strip to My Studio
@@ -332,14 +330,7 @@ async function saveToStudio() {
         />
         <p class="small text-muted text-center mt-2 mb-0">
           Drag stickers onto the strip, then drag to move. Phone: tap a sticker in the tray, then tap the strip.
-        </p>
-
-        <!-- Video call: below the strip on smaller screens, floating bottom-left from "xl" (1200px) up -->
-        <div class="call-float">
-          <button class="btn btn-sm btn-dark mb-1" @click="showCall = !showCall">{{ showCall ? 'Hide call' : 'Show call' }}</button>
-          <VideoCallCard v-show="showCall" layout="row" />
-        </div>
-      </div>
+        </p>      </div>
     </div>
 
     <!-- RIGHT: sticker tray, selected sticker, layers -->
@@ -554,23 +545,4 @@ async function saveToStudio() {
 
 .icon-btn:disabled {
   opacity: 0.3;
-}
-
-/* Video call: below the strip by default */
-.call-float {
-  margin-top: 12px;
-  width: 100%;
-}
-
-/* Bootstrap "xl" (1200px+): the video call floats over the bottom-left of the canvas */
-@media (min-width: 1200px) {
-  .call-float {
-    position: absolute;
-    bottom: 12px;
-    left: 12px;
-    width: 300px;
-    margin-top: 0;
-    z-index: 50;
-  }
-}
-</style>
+}</style>

@@ -205,12 +205,12 @@ src/views/MarketplaceView.vue    marketplace (/marketplace, anyone): browse by t
 src/views/MarketplaceItemView.vue  one item (/marketplace/templates/{id}): save to My Studio, report
 src/views/AdminView.vue          admin page (/admin, admins only); each tab is in src/components/admin/
 src/views/TestUploadView.vue     TEMPORARY (/test-upload): makes test templates/stickers. Remove before submission
-src/views/RoomLayout.vue         parent page of a room: joins the room + call once, moves everyone with the room's stage
-src/views/RoomView.vue           (child, /room/1234) camera, shutter, countdown, join card, call card, gallery
+src/views/RoomLayout.vue         parent page of a room: joins the room + call once, shows the floating call window, moves everyone with the room's stage
+src/views/RoomView.vue           (child, /room/1234) camera, shutter, countdown, join card, gallery
 src/views/StripView.vue          (child, /room/1234/strip) "Pick": choose the cut and frame, drag photos into slots
 src/views/DecorateView.vue       (child, /room/1234/decorate) filters, stickers, Download JPG, Save to My Studio
 
-src/components/VideoCallCard.vue    the call card: everyone's tiles + Mute/Unmute, Leave, Close room
+src/components/VideoCallCard.vue    the floating call window (drag anywhere, minimise): tiles + Mute/Unmute, Leave, Close room
 src/components/VideoTile.vue        one person: live video, name, device type, mute icon
 src/components/StreamVideo.vue      a <video> showing my camera
 src/components/RoomGallery.vue      the shared gallery (grouped by shot) + Make photostrip button
@@ -263,7 +263,7 @@ rooms/{code}/photos/{auto}   { ownerId, name, shotNumber, image, createdAt }
 4. **Video call:** each device asks our server for a token (`GET /api/token?code={code}`, see "Who gets a token" below), joins that Agora channel and sends ("publishes") its camera. When Agora says someone published video or audio (`user-published` event), we subscribe; `VideoTile.vue` plays their video, and audio just plays.
    - **Everyone starts muted:** the microphone is not opened when joining. "Unmute" opens the mic and publishes it; "Mute" unpublishes and closes it (so the mic is fully off).
    - **Stays connected between pages:** the call is started by `RoomLayout.vue`, the parent of all the room pages, so switching pages does not drop the call.
-   - **Adding it to another page:** make the page a child route of `/room/:code` in `router.js`, and put `<VideoCallCard />` on it.
+   - **Adding it to another page:** make the page a child route of `/room/:code` in `router.js`. `RoomLayout.vue` shows `<VideoCallCard />` as a floating window over every child page, so do not add it to your page. Drag its title bar to move it anywhere (it stays docked to the nearest corner when the screen or window changes size); the "–" button or a double-click on the title bar minimises it.
 5. **Synchronised countdown (anyone can press the shutter):** pressing the round shutter button adds 1 to `shotNumber` using a Firestore **transaction**: it only adds 1 if `shotNumber` is still the number this device saw. If two people press at the same moment, the second transaction sees the number has already changed and does nothing, so only one countdown starts. Every device watches `shotNumber` and starts its own 3-2-1 when it goes up.
 6. **Capture:** the current video frame is drawn on a canvas, turned into a small JPEG (data URL), and saved to `photos` with the shot number. A white flash fades in shortly before the photo and fades out shortly after it. Devices hear about the shutter at slightly different times, so this makes sure every screen is still lit up when every device takes its photo. The timing, fade length and brightness are the `FLASH_*` settings at the top of `RoomView.vue`.
 7. **Shared gallery:** every device listens to `photos`, so new photos appear on everyone's screen. Photos are grouped by shot number.
