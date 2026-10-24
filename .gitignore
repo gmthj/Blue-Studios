@@ -156,3 +156,8 @@ firestore-debug.log*
 .agents/
 .claude/
 skills-lock.json
+
+# pnpm
+pnpm-lock.yaml
+.pnpm-store/
+

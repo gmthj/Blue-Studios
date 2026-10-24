@@ -37,13 +37,5 @@
     "jwks-rsa": {
       "jose": "^5.10.0"
     }
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "@firebase/util",
-      "core-js",
-      "protobufjs",
-      "esbuild"
-    ]
   }
 }
