@@ -98,9 +98,14 @@ test('a user cannot create a room pretending someone else is the host', async ()
   await assertFails(setDoc(doc(dbAs('stranger'), 'rooms/5555'), newRoom('host')))
 })
 
+// TODO: when the 'camera' option is removed from the room create rule, change assertSucceeds to assertFails here
+test('new rooms start at shoot (old code still making rooms at "camera" is allowed for now)', async () => {
+  await assertSucceeds(setDoc(doc(dbAs('host'), 'rooms/5555'), { ...newRoom('host'), stage: 'shoot' }))
+  await assertSucceeds(setDoc(doc(dbAs('host'), 'rooms/5556'), { ...newRoom('host'), stage: 'camera' }))
+})
+
 test('a room code must be 4 digits, and a new room must start empty', async () => {
   await assertFails(setDoc(doc(dbAs('host'), 'rooms/abcd'), newRoom('host')))
-  await assertFails(setDoc(doc(dbAs('host'), 'rooms/5555'), { ...newRoom('host'), stage: 'camera' })) // not a stage name (rooms start at 'shoot')
   await assertFails(setDoc(doc(dbAs('host'), 'rooms/5555'), { ...newRoom('host'), stage: 'decorate' }))
   await assertFails(setDoc(doc(dbAs('host'), 'rooms/5555'), { ...newRoom('host'), shotNumber: 7 }))
   await assertFails(setDoc(doc(dbAs('host'), 'rooms/5555'), { ...newRoom('host'), closed: true }))
