@@ -7,9 +7,10 @@ import { listMySaved, unsaveItem } from '../marketplace.js'
 import StorageImage from '../components/StorageImage.vue'
 import ItemDetailsForm from '../components/ItemDetailsForm.vue'
 import MarketplaceCard from '../components/MarketplaceCard.vue'
+import AppIcon from '../components/AppIcon.vue'
 
 // My Studio (/studio): everything this account has saved. Accounts only (see router.js).
-//   - shortcuts: design a frame, start a room, join a room
+//   - shortcuts: make a frame, make a sticker
 //   - my photostrips, my templates, my stickers
 //   - templates and stickers can be made public (shown in the marketplace) or private,
 //     renamed, and given categories
@@ -27,11 +28,9 @@ const loading = ref(true)
 const errorMessage = ref('')
 const busyId = ref('') // the item being changed right now (its buttons are disabled)
 
-const joinCode = ref('')
-const codeComplete = computed(() => /^[0-9]{4}$/.test(joinCode.value.trim()))
-
-// The template editor is a teammate's page; only link to it once it is part of the app
+// The template editor and sticker maker are teammates' pages; only link to them once they are part of the app
 const hasTemplateEditor = router.resolve('/template-editor').matched.length > 0
+const hasStickerMaker = router.resolve('/sticker-maker').matched.length > 0
 
 const firstName = computed(() => user.value.displayName.split(' ')[0])
 
@@ -116,186 +115,258 @@ async function unsave(savedItem) {
   busyId.value = ''
 }
 
-function joinRoom() {
-  if (codeComplete.value) {
-    router.push('/?code=' + joinCode.value.trim())
-  }
-}
-
 function formatDate(time) {
   return new Date(time).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
 }
 </script>
 
 <template>
-  <h1 class="h3 mb-1">Hey {{ firstName }}</h1>
-  <p class="text-muted mb-4">Pick up where you left off, or start something new.</p>
+  <div class="app-page">
+    <header class="page-header">
+      <h1 class="page-title">Hey {{ firstName }}</h1>
+      <p class="page-sub">Pick up where you left off, or start something new.</p>
+    </header>
 
-  <!-- Shortcuts -->
-  <div class="row g-3 mb-5">
-    <div class="col-12 col-md-4">
-      <div class="card h-100">
-        <div class="card-body d-flex flex-column">
-          <h2 class="h5">Design</h2>
-          <p class="text-muted small flex-grow-1">Build a strip template with drag and drop slots.</p>
-          <router-link v-if="hasTemplateEditor" to="/template-editor" class="btn btn-primary">+ New frame</router-link>
-          <button v-else class="btn btn-primary" disabled>Template editor coming soon</button>
-        </div>
-      </div>
-    </div>
-    <div class="col-12 col-md-4">
-      <div class="card h-100">
-        <div class="card-body d-flex flex-column">
-          <h2 class="h5">Start a room</h2>
-          <p class="text-muted small flex-grow-1">Invite friends with a 4-digit code and shoot together.</p>
-          <router-link to="/" class="btn btn-outline-primary">Start a room</router-link>
-        </div>
-      </div>
-    </div>
-    <div class="col-12 col-md-4">
-      <div class="card h-100">
-        <div class="card-body d-flex flex-column">
-          <h2 class="h5">Join with code</h2>
-          <p class="text-muted small flex-grow-1">Enter a friend's 4-digit room code.</p>
-          <div class="input-group">
-            <input v-model="joinCode" type="text" inputmode="numeric" maxlength="4" class="form-control" placeholder="4-digit code" @keyup.enter="joinRoom" />
-            <button class="btn btn-outline-primary" :disabled="!codeComplete" @click="joinRoom">Join</button>
+    <!-- Shortcuts: make something new -->
+    <div class="row g-3 mb-5">
+      <div class="col-12 col-md-6">
+        <div class="card h-100 shortcut">
+          <div class="card-body d-flex flex-column">
+            <span class="shortcut-icon"><AppIcon name="layout" :size="20" /></span>
+            <h2 class="shortcut-title">Make a frame</h2>
+            <p class="shortcut-text flex-grow-1">Build a strip template with drag and drop slots.</p>
+            <router-link v-if="hasTemplateEditor" to="/template-editor" class="btn btn-primary">
+              <AppIcon name="plus" :size="16" /> New frame
+            </router-link>
+            <button v-else class="btn btn-primary" disabled>Template editor coming soon</button>
           </div>
         </div>
       </div>
-    </div>
-  </div>
-
-  <div v-if="errorMessage" class="alert alert-danger">{{ errorMessage }}</div>
-  <p v-if="loading" class="text-muted">Loading your studio...</p>
-
-  <template v-else>
-    <!-- Photostrips -->
-    <h2 class="h4 mb-3">My photostrips</h2>
-    <p v-if="strips.length === 0" class="text-muted small mb-5">
-      No strips yet. In a room, make your photostrip and press "Save to My Studio".
-    </p>
-    <div v-else class="row g-3 mb-5">
-      <div v-for="strip in strips" :key="strip.id" class="col-6 col-md-3 col-xl-2">
-        <div class="card h-100">
-          <div class="preview strip-preview"><StorageImage :path="strip.imagePath" :alt="strip.title" /></div>
-          <div class="card-body p-2">
-            <p class="small fw-semibold text-truncate mb-0">{{ strip.title }}</p>
-            <p class="small text-muted mb-2">{{ formatDate(strip.createdAt) }}</p>
-            <button class="btn btn-sm btn-outline-danger w-100" :disabled="busyId === strip.id" @click="remove(strip)">Delete</button>
+      <div class="col-12 col-md-6">
+        <div class="card h-100 shortcut">
+          <div class="card-body d-flex flex-column">
+            <span class="shortcut-icon"><AppIcon name="sparkle" :size="20" /></span>
+            <h2 class="shortcut-title">Make a sticker</h2>
+            <p class="shortcut-text flex-grow-1">Turn a photo or a drawing into a sticker for your strips.</p>
+            <router-link v-if="hasStickerMaker" to="/sticker-maker" class="btn btn-primary">
+              <AppIcon name="plus" :size="16" /> New sticker
+            </router-link>
+            <button v-else class="btn btn-primary" disabled>Sticker maker coming soon</button>
           </div>
         </div>
       </div>
     </div>
 
-    <h2 class="h4 mb-3">My templates</h2>
-    <p v-if="templates.length === 0" class="text-muted small mb-5">No templates yet. Design one in the template editor.</p>
-    <div v-else class="row g-3 mb-5">
-      <div v-for="template in templates" :key="template.id" class="col-12 col-sm-6 col-lg-4">
-        <div class="card h-100">
-          <div class="row g-0 h-100">
-            <div class="col-4 preview template-preview"><StorageImage :path="template.thumbnailPath" :alt="template.name" /></div>
-            <div class="col-8">
-              <div class="card-body">
-                <p class="fw-semibold text-truncate mb-0">{{ template.name }}</p>
-                <p class="small text-muted mb-1">{{ template.slotCount }} slots &middot; {{ template.saveCount }} saves</p>
-                <div class="d-flex flex-wrap gap-1 mb-2">
-                  <span v-for="c in template.categories" :key="c" class="badge rounded-pill text-bg-light border">{{ categoryLabel(c) }}</span>
+    <div v-if="errorMessage" class="alert alert-danger">{{ errorMessage }}</div>
+
+    <!-- Grey placeholders while everything loads -->
+    <div v-if="loading" aria-label="Loading your studio" role="status">
+      <div class="skeleton skeleton-title mb-3"></div>
+      <div class="row g-3 mb-5">
+        <div v-for="i in 6" :key="i" class="col-6 col-md-3 col-xl-2">
+          <div class="skeleton skeleton-card"></div>
+        </div>
+      </div>
+    </div>
+
+    <template v-else>
+      <!-- Photostrips -->
+      <section class="mb-5">
+        <h2 class="section-title">
+          <AppIcon name="film" :size="18" /> My photostrips
+          <span v-if="strips.length" class="section-count">{{ strips.length }}</span>
+        </h2>
+        <div v-if="strips.length === 0" class="empty-state">
+          <span class="empty-icon"><AppIcon name="film" :size="22" /></span>
+          No strips yet. In a room, make your photostrip and press "Save to My Studio".
+        </div>
+        <div v-else class="row g-3">
+          <div v-for="strip in strips" :key="strip.id" class="col-6 col-md-3 col-xl-2">
+            <div class="card h-100 overflow-hidden">
+              <div class="preview strip-preview"><StorageImage :path="strip.imagePath" :alt="strip.title" /></div>
+              <div class="card-body item-body">
+                <p class="item-name text-truncate" :title="strip.title">{{ strip.title }}</p>
+                <p class="item-meta mb-2">{{ formatDate(strip.createdAt) }}</p>
+                <button class="btn btn-sm btn-outline-danger w-100" :disabled="busyId === strip.id" @click="remove(strip)">Delete</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Templates -->
+      <section class="mb-5">
+        <h2 class="section-title">
+          <AppIcon name="layout" :size="18" /> My templates
+          <span v-if="templates.length" class="section-count">{{ templates.length }}</span>
+        </h2>
+        <div v-if="templates.length === 0" class="empty-state">
+          <span class="empty-icon"><AppIcon name="layout" :size="22" /></span>
+          No templates yet. Design one in the template editor.
+        </div>
+        <div v-else class="row g-3">
+          <div v-for="template in templates" :key="template.id" class="col-12 col-sm-6 col-lg-4">
+            <div class="card h-100 overflow-hidden">
+              <div class="row g-0 h-100">
+                <div class="col-4 preview template-preview"><StorageImage :path="template.thumbnailPath" :alt="template.name" /></div>
+                <div class="col-8">
+                  <div class="card-body">
+                    <div class="d-flex align-items-start justify-content-between gap-2">
+                      <p class="item-name text-truncate" :title="template.name">{{ template.name }}</p>
+                      <span class="badge" :class="template.visibility === 'public' ? 'text-bg-success' : 'text-bg-light border'">
+                        {{ template.visibility === 'public' ? 'Public' : 'Private' }}
+                      </span>
+                    </div>
+                    <p class="item-meta mb-2">{{ template.slotCount }} slots &middot; {{ template.saveCount }} saves</p>
+                    <div class="d-flex flex-wrap gap-1 mb-2">
+                      <span v-for="c in template.categories" :key="c" class="badge text-bg-light border">{{ categoryLabel(c) }}</span>
+                    </div>
+                    <span v-if="template.status === 'hidden'" class="badge text-bg-warning mb-2">Hidden by a moderator</span>
+
+                    <ItemDetailsForm v-if="editingId === template.id" :item="template" @saved="detailsSaved(template, $event)" @cancel="editingId = ''" />
+                    <template v-else>
+                      <div class="form-check form-switch mb-2">
+                        <input
+                          :id="'vis-' + template.id"
+                          class="form-check-input"
+                          type="checkbox"
+                          :checked="template.visibility === 'public'"
+                          :disabled="!user.emailVerified || busyId === template.id"
+                          @change="toggleVisibility(template)"
+                        />
+                        <label class="form-check-label small" :for="'vis-' + template.id">Show in the marketplace</label>
+                      </div>
+                      <div class="item-actions">
+                        <button class="btn btn-sm btn-link px-0" @click="editingId = template.id">Edit</button>
+                        <router-link :to="'/template-editor?template=' + template.id" class="btn btn-sm btn-link px-0">Open in editor</router-link>
+                        <router-link v-if="isListed(template)" :to="'/marketplace/templates/' + template.id" class="btn btn-sm btn-link px-0">View</router-link>
+                        <button class="btn btn-sm btn-link text-danger px-0" :disabled="busyId === template.id" @click="remove(template)">Delete</button>
+                      </div>
+                    </template>
+                  </div>
                 </div>
-                <span v-if="template.status === 'hidden'" class="badge text-bg-warning mb-2">Hidden by a moderator</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
 
-                <ItemDetailsForm v-if="editingId === template.id" :item="template" @saved="detailsSaved(template, $event)" @cancel="editingId = ''" />
+      <!-- Stickers -->
+      <section class="mb-5">
+        <h2 class="section-title">
+          <AppIcon name="sparkle" :size="18" /> My stickers
+          <span v-if="stickers.length" class="section-count">{{ stickers.length }}</span>
+        </h2>
+        <div v-if="stickers.length === 0" class="empty-state">
+          <span class="empty-icon"><AppIcon name="sparkle" :size="22" /></span>
+          No stickers yet. Make one in the sticker maker.
+        </div>
+        <div v-else class="row g-3">
+          <div v-for="sticker in stickers" :key="sticker.id" class="col-6 col-md-3 col-xl-2">
+            <div class="card h-100 overflow-hidden">
+              <div class="preview sticker-preview"><StorageImage :path="sticker.imagePath" :alt="sticker.name" /></div>
+              <div class="card-body item-body">
+                <div class="d-flex align-items-start justify-content-between gap-1">
+                  <p class="item-name text-truncate" :title="sticker.name">{{ sticker.name }}</p>
+                  <span class="badge" :class="sticker.visibility === 'public' ? 'text-bg-success' : 'text-bg-light border'">
+                    {{ sticker.visibility === 'public' ? 'Public' : 'Private' }}
+                  </span>
+                </div>
+                <p class="item-meta mb-1">{{ sticker.kind }}</p>
+                <div class="d-flex flex-wrap gap-1 mb-1">
+                  <span v-for="c in sticker.categories" :key="c" class="badge text-bg-light border">{{ categoryLabel(c) }}</span>
+                </div>
+                <span v-if="sticker.status === 'hidden'" class="badge text-bg-warning mb-1">Hidden by a moderator</span>
+
+                <ItemDetailsForm v-if="editingId === sticker.id" :item="sticker" @saved="detailsSaved(sticker, $event)" @cancel="editingId = ''" />
                 <template v-else>
-                  <div class="form-check form-switch mb-2">
+                  <div class="form-check form-switch">
                     <input
-                      :id="'vis-' + template.id"
+                      :id="'vis-' + sticker.id"
                       class="form-check-input"
                       type="checkbox"
-                      :checked="template.visibility === 'public'"
-                      :disabled="!user.emailVerified || busyId === template.id"
-                      @change="toggleVisibility(template)"
+                      :checked="sticker.visibility === 'public'"
+                      :disabled="!user.emailVerified || busyId === sticker.id"
+                      @change="toggleVisibility(sticker)"
                     />
-                    <label class="form-check-label small" :for="'vis-' + template.id">
-                      {{ template.visibility === 'public' ? 'Public' : 'Private' }}
-                    </label>
+                    <label class="form-check-label small" :for="'vis-' + sticker.id">Public</label>
                   </div>
-                  <div class="d-flex flex-wrap gap-3">
-                    <button class="btn btn-sm btn-link px-0" @click="editingId = template.id">Edit</button>
-                    <router-link :to="'/template-editor?template=' + template.id" class="btn btn-sm btn-link px-0">Open in editor</router-link>
-                    <router-link v-if="isListed(template)" :to="'/marketplace/templates/' + template.id" class="btn btn-sm btn-link px-0">View</router-link>
-                    <button class="btn btn-sm btn-link text-danger px-0" :disabled="busyId === template.id" @click="remove(template)">Delete</button>
+                  <div class="item-actions">
+                    <button class="btn btn-sm btn-link px-0" @click="editingId = sticker.id">Edit</button>
+                    <router-link v-if="isListed(sticker)" :to="'/marketplace/stickers/' + sticker.id" class="btn btn-sm btn-link px-0">View</router-link>
+                    <button class="btn btn-sm btn-link text-danger px-0" :disabled="busyId === sticker.id" @click="remove(sticker)">Delete</button>
                   </div>
                 </template>
               </div>
             </div>
           </div>
         </div>
-      </div>
-    </div>
+      </section>
 
-    <h2 class="h4 mb-3">My stickers</h2>
-    <p v-if="stickers.length === 0" class="text-muted small mb-5">No stickers yet. Make one in the sticker maker.</p>
-    <div v-else class="row g-3 mb-5">
-      <div v-for="sticker in stickers" :key="sticker.id" class="col-6 col-md-3 col-xl-2">
-        <div class="card h-100">
-          <div class="preview sticker-preview"><StorageImage :path="sticker.imagePath" :alt="sticker.name" /></div>
-          <div class="card-body p-2">
-            <p class="small fw-semibold text-truncate mb-0">{{ sticker.name }}</p>
-            <p class="small text-muted mb-1">{{ sticker.kind }}</p>
-            <div class="d-flex flex-wrap gap-1 mb-1">
-              <span v-for="c in sticker.categories" :key="c" class="badge rounded-pill text-bg-light border">{{ categoryLabel(c) }}</span>
+      <!-- Saved from the marketplace -->
+      <section class="mb-5">
+        <h2 class="section-title">
+          <AppIcon name="bookmark" :size="18" /> Saved from the marketplace
+          <span v-if="saved.length" class="section-count">{{ saved.length }}</span>
+        </h2>
+        <div v-if="saved.length === 0" class="empty-state">
+          <span class="empty-icon"><AppIcon name="bookmark" :size="22" /></span>
+          <span>Nothing saved yet. <router-link to="/marketplace">Browse the marketplace</router-link> and save templates and stickers you like.</span>
+        </div>
+        <div v-else class="row g-3">
+          <div v-for="savedItem in saved" :key="savedItem.id" class="col-6 col-md-3 col-xl-2 d-flex flex-column">
+            <MarketplaceCard v-if="savedItem.item" :item="savedItem.item" />
+            <div v-else class="empty-state h-100 justify-content-center small">
+              No longer available: the maker made it private or removed it.
             </div>
-            <span v-if="sticker.status === 'hidden'" class="badge text-bg-warning mb-1">Hidden by a moderator</span>
-
-            <ItemDetailsForm v-if="editingId === sticker.id" :item="sticker" @saved="detailsSaved(sticker, $event)" @cancel="editingId = ''" />
-            <template v-else>
-              <div class="form-check form-switch">
-                <input
-                  :id="'vis-' + sticker.id"
-                  class="form-check-input"
-                  type="checkbox"
-                  :checked="sticker.visibility === 'public'"
-                  :disabled="!user.emailVerified || busyId === sticker.id"
-                  @change="toggleVisibility(sticker)"
-                />
-                <label class="form-check-label small" :for="'vis-' + sticker.id">
-                  {{ sticker.visibility === 'public' ? 'Public' : 'Private' }}
-                </label>
-              </div>
-              <div class="d-flex flex-wrap column-gap-3">
-                <button class="btn btn-sm btn-link px-0" @click="editingId = sticker.id">Edit</button>
-                <router-link v-if="isListed(sticker)" :to="'/marketplace/stickers/' + sticker.id" class="btn btn-sm btn-link px-0">View</router-link>
-                <button class="btn btn-sm btn-link text-danger px-0" :disabled="busyId === sticker.id" @click="remove(sticker)">Delete</button>
-              </div>
-            </template>
+            <button class="btn btn-sm btn-link text-danger" :disabled="busyId === savedItem.id" @click="unsave(savedItem)">Remove</button>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Saved from the marketplace -->
-    <h2 class="h4 mb-3">Saved from the marketplace</h2>
-    <p v-if="saved.length === 0" class="text-muted small mb-5">
-      Nothing saved yet. <router-link to="/marketplace">Browse the marketplace</router-link> and save templates and stickers you like.
-    </p>
-    <div v-else class="row g-3 mb-5">
-      <div v-for="savedItem in saved" :key="savedItem.id" class="col-6 col-md-3 col-xl-2 d-flex flex-column">
-        <MarketplaceCard v-if="savedItem.item" :item="savedItem.item" />
-        <div v-else class="card h-100">
-          <div class="card-body p-2 d-flex align-items-center justify-content-center text-center">
-            <p class="small text-muted mb-0">No longer available: the maker made it private or removed it.</p>
-          </div>
-        </div>
-        <button class="btn btn-sm btn-link text-danger" :disabled="busyId === savedItem.id" @click="unsave(savedItem)">Remove</button>
-      </div>
-    </div>
-  </template>
+      </section>
+    </template>
+  </div>
 </template>
 
 <style scoped>
+/* ---------- Shortcuts ---------- */
+.shortcut .card-body {
+  padding: 20px;
+}
+
+.shortcut-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  color: var(--brand);
+  background: var(--brand-tint);
+}
+
+.shortcut-title {
+  margin-bottom: 4px;
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.shortcut-text {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.shortcut .btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* ---------- Item cards ---------- */
 .preview {
-  background: #f1f3f5;
   overflow: hidden;
+  background: var(--soft);
 }
 
 .strip-preview {
@@ -303,23 +374,55 @@ function formatDate(time) {
 }
 
 .template-preview {
-  min-height: 180px;
-  max-height: 220px;
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 180px;
+  max-height: 220px;
   padding: 8px;
 }
 
 .template-preview :deep(.storage-image),
 .template-preview :deep(img) {
-  max-height: 100%;
   max-width: 100%;
+  max-height: 100%;
   object-fit: contain;
 }
 
 .sticker-preview {
   height: 120px;
-  padding: 8px;
+  padding: 10px;
+}
+
+.item-body {
+  padding: 10px 12px 12px;
+}
+
+.item-name {
+  min-width: 0;
+  margin: 0 0 2px;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.item-meta {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 14px;
+}
+
+/* ---------- Loading ---------- */
+.skeleton-title {
+  width: 200px;
+  height: 24px;
+}
+
+.skeleton-card {
+  height: 260px;
 }
 </style>

@@ -2,6 +2,7 @@
 import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from './composables/useAuth.js'
+import AppIcon from './components/AppIcon.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -29,6 +30,11 @@ async function resend() {
   }
 }
 
+// The first letter of the account's name, shown in a circle next to it
+const initial = computed(() => {
+  return (user.value.displayName || user.value.email || '?').charAt(0).toUpperCase()
+})
+
 async function logOutAndGoHome() {
   await logOut()
   router.push('/')
@@ -40,22 +46,46 @@ async function logOutAndGoHome() {
     <router-view />
   </template>
   <template v-else>
-    <nav class="navbar bg-primary mb-4">
-      <div :class="containerClass">
-        <router-link to="/" class="navbar-brand text-white fw-bold">Blue Studios<span class="d-none d-md-inline"> Photobooth</span></router-link>
+    <!--
+      White bar with the logo. Sticky: it stays at the top while the page scrolls (not in a room,
+      where the camera needs all the height). On phones the links become icons, so everything fits on one line.
+    -->
+    <nav class="app-nav mb-4" :class="{ sticky: !inRoom }">
+      <div class="nav-inner" :class="containerClass">
+        <router-link to="/" class="brand">
+          <!-- The camera and film strip from the logo (public/images/bluestudios.jpeg), cut out with a see-through background -->
+          <img src="/images/logo-mark.png" class="brand-mark" alt="" width="28" height="40" />
+          <span>Blue Studios</span>
+        </router-link>
 
         <!-- Hidden inside a room: logging out there would change your user id and drop you from the room -->
-        <div v-if="!inRoom" class="d-flex align-items-center gap-2">
-          <router-link to="/marketplace" class="btn btn-sm btn-outline-light">Marketplace</router-link>
+        <div v-if="!inRoom" class="nav-links">
+          <router-link to="/marketplace" class="nav-link-btn" title="Marketplace">
+            <AppIcon name="shop" :size="18" />
+            <span class="link-text">Marketplace</span>
+          </router-link>
           <template v-if="isAccount">
-            <router-link to="/studio" class="btn btn-sm btn-outline-light">My Studio</router-link>
-            <router-link v-if="isAdmin" to="/admin" class="btn btn-sm btn-warning">Admin</router-link>
-            <span class="text-white small text-truncate account-name d-none d-sm-inline">{{ user.displayName || user.email }}</span>
-            <button class="btn btn-sm btn-light" @click="logOutAndGoHome">Log out</button>
+            <router-link to="/studio" class="nav-link-btn" title="My Studio">
+              <AppIcon name="folder" :size="18" />
+              <span class="link-text">My Studio</span>
+            </router-link>
+            <router-link v-if="isAdmin" to="/admin" class="nav-link-btn nav-admin" title="Admin">
+              <AppIcon name="shield" :size="18" />
+              <span class="link-text">Admin</span>
+            </router-link>
+            <span class="nav-divider" aria-hidden="true"></span>
+            <span class="account" :title="user.displayName || user.email">
+              <span class="avatar" aria-hidden="true">{{ initial }}</span>
+              <span class="account-name text-truncate d-none d-lg-inline">{{ user.displayName || user.email }}</span>
+            </span>
+            <button class="nav-link-btn" title="Log out" @click="logOutAndGoHome">
+              <AppIcon name="log-out" :size="18" />
+              <span class="link-text">Log out</span>
+            </button>
           </template>
           <template v-else>
-            <router-link to="/login" class="btn btn-sm btn-outline-light">Log in</router-link>
-            <router-link to="/login?mode=signup" class="btn btn-sm btn-light">Sign up</router-link>
+            <router-link to="/login" class="nav-link-btn">Log in</router-link>
+            <router-link to="/login?mode=signup" class="nav-signup">Sign up</router-link>
           </template>
         </div>
       </div>
@@ -80,7 +110,228 @@ async function logOutAndGoHome() {
 </template>
 
 <style scoped>
+/* The same colours and font as the landing page */
+.app-nav {
+  --brand: #2F5BEA;
+  --brand-dark: #2449C4;
+  --brand-tint: #E8EEFF;
+  --ink: #14172B;
+  --muted: #6B7080;
+  --line: #E3E6EE;
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+
+  font-family: 'Plus Jakarta Sans', var(--bs-body-font-family);
+  background: rgba(255, 255, 255, 0.85);
+  border-bottom: 1px solid var(--line);
+}
+
+/* Stays at the top while scrolling. The see-through white with blur lets the page show faintly behind it.
+   z-index 1030: Bootstrap's value for sticky bars (below the video call window and modals). */
+.app-nav.sticky {
+  position: sticky;
+  top: 0;
+  z-index: 1030;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* 56px tall, the same as the old Bootstrap navbar (RoomView.vue counts on that for the camera's height) */
+.nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 56px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink);
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+/* The logo picture. transform-origin bottom: it wiggles from the bottom of the film, like it is waving */
+.brand-mark {
+  width: auto;
+  height: 40px;
+  transform-origin: 50% 90%;
+  transition: transform 300ms var(--ease-out);
+}
+
+.nav-links {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* Links: just an icon on phones, icon + words from 576px (sm) up */
+.nav-link-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 38px;
+  height: 38px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 10px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 150ms ease, background-color 150ms ease, transform 160ms var(--ease-out);
+}
+
+.link-text {
+  display: none;
+}
+
+@media (min-width: 576px) {
+  .link-text {
+    display: inline;
+  }
+}
+
+/* The page you are on (router-link adds this class by itself) */
+.nav-link-btn.router-link-active {
+  color: var(--brand);
+  background: var(--brand-tint);
+}
+
+.nav-admin {
+  color: #B45309;
+}
+
+.nav-signup {
+  display: inline-flex;
+  align-items: center;
+  height: 38px;
+  padding: 0 16px;
+  border-radius: 10px;
+  color: #ffffff;
+  background: var(--brand);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 150ms ease, transform 160ms var(--ease-out);
+}
+
+/* Shrinks a little when pressed */
+.nav-link-btn:active,
+.nav-signup:active {
+  transform: scale(0.97);
+}
+
+.nav-link-btn:focus-visible,
+.nav-signup:focus-visible,
+.brand:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* Hover only with a mouse: on phones a tap would leave it stuck in its hover colour */
+@media (hover: hover) and (pointer: fine) {
+  .nav-link-btn:hover {
+    color: var(--ink);
+    background: #F2F4F8;
+  }
+
+  .nav-link-btn.router-link-active:hover {
+    color: var(--brand);
+    background: var(--brand-tint);
+  }
+
+  .nav-signup:hover {
+    color: #ffffff;
+    background: var(--brand-dark);
+  }
+
+  /* The logo tilts a little */
+  .brand:hover .brand-mark {
+    transform: rotate(-8deg);
+  }
+}
+
+.nav-divider {
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  background: var(--line);
+}
+
+.account {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px;
+  color: var(--ink);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  color: #ffffff;
+  background: var(--brand);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
 .account-name {
   max-width: 10rem;
+}
+
+/* Very narrow phones: a little tighter so it all fits on one line */
+@media (max-width: 359px) {
+  .brand {
+    gap: 6px;
+    font-size: 0.95rem;
+  }
+
+  .brand-mark {
+    height: 32px;
+  }
+
+  .nav-links {
+    gap: 2px;
+  }
+
+  .nav-link-btn {
+    min-width: 34px;
+    padding: 0 6px;
+  }
+
+  .nav-signup {
+    padding: 0 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brand-mark,
+  .nav-link-btn,
+  .nav-signup {
+    transition: none;
+  }
+
+  .nav-link-btn:active,
+  .nav-signup:active {
+    transform: none;
+  }
 }
 </style>

@@ -344,7 +344,7 @@ describe('Critical UI components (AppIcon, StageBar, MarketplaceCard, ItemDetail
 
     // Toggle 'Friends' category on
     await friendsButton.trigger('click')
-    expect(friendsButton.classes()).toContain('btn-primary')
+    expect(friendsButton.classes()).toContain('active') // picked categories are chips with the 'active' class
   })
 
   // 30. ItemDetailsForm cancel event emission

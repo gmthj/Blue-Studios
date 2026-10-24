@@ -1,5 +1,6 @@
 import { createApp } from 'vue'
 import 'bootstrap/dist/css/bootstrap.min.css'
+import './styles/pages.css' // the look of Marketplace, My Studio and Admin (only inside .app-page)
 import App from './App.vue'
 import router from './router.js'
 import { startAuth } from './composables/useAuth.js'

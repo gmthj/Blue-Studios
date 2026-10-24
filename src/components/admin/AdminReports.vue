@@ -156,7 +156,8 @@ function dismiss(group) {
 <style scoped>
 .preview {
   height: 140px;
-  background: #f1f3f5;
+  background: var(--soft);
+  border-radius: 10px;
   overflow: hidden;
 }
 </style>
