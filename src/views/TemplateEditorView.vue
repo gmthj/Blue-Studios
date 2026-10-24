@@ -36,6 +36,7 @@
 // =============================================================================
 // 1. Imports
 // =============================================================================
+import { askConfirm } from '../composables/useDialog.js'
 import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
@@ -2803,8 +2804,14 @@ async function deleteFrame(id) {
   }
 }
 
-function confirmDeleteFrame(frame) {
-  if (confirm(`Are you sure you want to delete "${frame.name || 'this template'}" from your saved frames?`)) {
+async function confirmDeleteFrame(frame) {
+  const sure = await askConfirm({
+    title: `Delete "${frame.name || 'this template'}"?`,
+    message: 'It is removed from your saved frames.',
+    confirmLabel: 'Delete',
+    danger: true,
+  })
+  if (sure) {
     deleteFrame(frame.id)
   }
 }

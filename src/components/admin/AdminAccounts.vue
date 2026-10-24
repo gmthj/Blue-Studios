@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { listAccounts, prefetchAccounts, reloadAccounts, lookupAccount, banAccount, unbanAccount, getAccountActivity } from '../../admin.js'
 import { useAdminTab, useSort, formatTime } from '../../composables/useAdminTab.js'
 import SortHeader from './SortHeader.vue'
+import { askConfirm } from '../../composables/useDialog.js'
 import { profileOf } from '../../profiles.js'
 
 // Accounts tab: every login (accounts and guests) from Firebase Auth, through /api/admin.
@@ -136,8 +137,15 @@ function showUpdated(account) {
   reason.value = ''
 }
 
-function ban() {
-  if (!confirm('Ban ' + (picked.value.displayName || picked.value.email) + '? They are logged out and all their items are hidden.')) return
+async function ban() {
+  const sure = await askConfirm({
+    title: 'Ban ' + (picked.value.displayName || picked.value.email) + '?',
+    message: 'They are logged out and all their items are hidden.',
+    confirmLabel: 'Ban account',
+    danger: true,
+    icon: 'lock',
+  })
+  if (!sure) return
   run(async () => {
     const result = await banAccount(picked.value.uid, reason.value)
     showUpdated(result.account)

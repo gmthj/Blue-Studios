@@ -4,6 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from './composables/useAuth.js'
 import AppIcon from './components/AppIcon.vue'
 import ProfileDialog from './components/ProfileDialog.vue'
+import AppDialog from './components/AppDialog.vue'
 import { profileOf } from './profiles.js'
 
 const route = useRoute()
@@ -111,6 +112,10 @@ async function logOutAndGoHome() {
       </template>
     </main>
   </template>
+
+  <!-- In-app popups for questions and messages (askConfirm / askText / showNotice in useDialog.js).
+       Outside the v-if above, so the template editor can use it too. -->
+  <AppDialog />
 </template>
 
 <style scoped>

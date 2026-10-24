@@ -7,6 +7,7 @@ import { LAYOUTS, FRAME_STYLES, filterCss, saveFields } from '../stripData.js'
 import { listMyItems, getFileUrl, loadTemplateProject } from '../studio.js'
 import { loadSavedFramesFromDB } from '../utils/savedFrameEngine.js'
 import StageBar from '../components/StageBar.vue'
+import { askConfirm } from '../composables/useDialog.js'
 import PhotoStrip from '../components/PhotoStrip.vue'
 
 // The "Pick" page (a child of RoomLayout.vue): choose a frame and drag photos into it.
@@ -213,7 +214,16 @@ function onSlotClick(index) {
 // A different cut has different slots, so the slots are emptied (ask first if photos would be lost)
 async function chooseLayout(id) {
   if (id === layout.value.id && !room.value.stripCustomTemplate) return
-  if (filledCount.value > 0 && !confirm('Changing the cut will clear the photos on the strip. Continue?')) return
+  if (filledCount.value > 0) {
+    const sure = await askConfirm({
+      title: 'Change the cut?',
+      message: 'This clears the photos on the strip for everyone.',
+      confirmLabel: 'Change cut',
+      danger: true,
+      icon: 'layout',
+    })
+    if (!sure) return
+  }
   await saveFields(roomRef(), { stripLayoutId: id, stripCustomTemplate: null, stripSlots: {}, stripEdits: {} })
 }
 
@@ -245,9 +255,14 @@ async function chooseCustomTemplate(tpl) {
     const captionColor = project?.captionColor || border
 
     if (filledCount.value > 0 && slots.length !== layout.value.slots.length) {
-      if (!confirm('Applying this template changes the slot count and will clear photos on the strip. Continue?')) {
-        return
-      }
+      const sure = await askConfirm({
+        title: 'Use this template?',
+        message: 'It has a different number of photo slots, so the photos on the strip are cleared for everyone.',
+        confirmLabel: 'Use template',
+        danger: true,
+        icon: 'layout',
+      })
+      if (!sure) return
     }
 
     await saveFields(roomRef(), {

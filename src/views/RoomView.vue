@@ -10,6 +10,7 @@ import StreamVideo from '../components/StreamVideo.vue'
 import RoomGallery from '../components/RoomGallery.vue'
 import StageBar from '../components/StageBar.vue'
 import AppIcon from '../components/AppIcon.vue'
+import { showNotice } from '../composables/useDialog.js'
 
 // The camera page (a child of RoomLayout.vue, which has already joined the room and the call)
 
@@ -161,7 +162,7 @@ async function copyJoinLink() {
   } catch (error) {
     // Some browsers block the clipboard, so show the link for the user to copy themselves
     console.error(error)
-    alert('Copy this link: ' + joinLink)
+    showNotice({ title: 'Copy this link', message: 'Send it to your friends so they can join this room.', copyText: joinLink, icon: 'duplicate' })
   }
 }
 </script>

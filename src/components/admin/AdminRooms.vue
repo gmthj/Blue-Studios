@@ -4,6 +4,7 @@ import { listRooms, getRoomWithPhotos, closeRoom, deleteRoom, deletePhoto, delet
 import { isActive } from '../../room.js'
 import { useAdminTab, useSort, formatTime } from '../../composables/useAdminTab.js'
 import SortHeader from './SortHeader.vue'
+import { askConfirm } from '../../composables/useDialog.js'
 import { ROOM_STAGES, stageIndex } from '../../composables/useRoom.js'
 
 // Rooms tab: the newest 200 rooms, open and closed, with who is in each one. Open one to see its
@@ -95,16 +96,16 @@ async function openRoom(code) {
   busy.value = false
 }
 
-function removePhoto(photo) {
-  if (!confirm('Delete this photo for everyone in the room?')) return
+async function removePhoto(photo) {
+  if (!(await askConfirm({ title: 'Delete this photo?', message: 'It is deleted for everyone in the room.', confirmLabel: 'Delete', danger: true }))) return
   run(async () => {
     await deletePhoto(room.value.code, photo.id, note.value)
     await openRoom(room.value.code)
   }, 'Photo deleted.')
 }
 
-function removeClip(clip) {
-  if (!confirm('Delete this video clip for everyone in the room? Edited videos that use it will skip it.')) return
+async function removeClip(clip) {
+  if (!(await askConfirm({ title: 'Delete this video clip?', message: 'It is deleted for everyone in the room. Edited videos that use it will skip it.', confirmLabel: 'Delete', danger: true }))) return
   run(async () => {
     await deleteClip(room.value.code, clip, note.value)
     await openRoom(room.value.code)
@@ -129,18 +130,24 @@ const editedVideos = computed(() => {
   }).sort((a, b) => a.createdAt - b.createdAt)
 })
 
-function closeThisRoom() {
-  if (!confirm('Close room ' + room.value.code + '? Everyone in it is sent back to the home page.')) return
+async function closeThisRoom() {
+  if (!(await askConfirm({ title: 'Close room ' + room.value.code + '?', message: 'Everyone in it is sent back to the home page.', confirmLabel: 'Close room', danger: true, icon: 'lock' }))) return
   run(async () => {
     await closeRoom(room.value.code, note.value)
     await openRoom(room.value.code)
   }, 'Room closed.')
 }
 
-function deleteThisRoom() {
+async function deleteThisRoom() {
   const code = room.value.code
   const warning = room.value.closed ? '' : ' It is still open: everyone in it is sent back to the home page.'
-  if (!confirm('Delete room ' + code + ' with all its photos and videos for good?' + warning + ' This cannot be undone.')) return
+  const sure = await askConfirm({
+    title: 'Delete room ' + code + ' for good?',
+    message: 'All its photos and videos are deleted too.' + warning + ' This cannot be undone.',
+    confirmLabel: 'Delete room',
+    danger: true,
+  })
+  if (!sure) return
   run(async () => {
     await deleteRoom(code, note.value)
     room.value = null

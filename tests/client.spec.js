@@ -8,6 +8,7 @@ import { embedProjectInPngBytes } from '../src/utils/savedFrameEngine.js'
 import AppIcon from '../src/components/AppIcon.vue'
 import StageBar from '../src/components/StageBar.vue'
 import { ROOM_STAGES, stageIndex } from '../src/composables/useRoom.js'
+import { dialog, askConfirm, askText, showNotice, answer, cancelDialog } from '../src/composables/useDialog.js'
 import MarketplaceCard from '../src/components/MarketplaceCard.vue'
 import ItemDetailsForm from '../src/components/ItemDetailsForm.vue'
 
@@ -390,5 +391,44 @@ describe('Room stages (useRoom.js)', () => {
     const steps = wrapper.findAll('.step-pill')
     expect(steps[0].classes()).toContain('current')
     expect(steps[0].text()).toContain('Shoot')
+  })
+})
+
+// ============================================================================
+// PART 5: In-app popups (useDialog.js), instead of alert / confirm / prompt
+// ============================================================================
+describe('In-app popups (useDialog.js)', () => {
+  it('askConfirm resolves true for the main button and false for cancel', async () => {
+    const yes = askConfirm({ title: 'Delete it?', danger: true })
+    expect(dialog.value.kind).toBe('confirm')
+    expect(dialog.value.danger).toBe(true)
+    answer(true)
+    expect(await yes).toBe(true)
+    expect(dialog.value).toBe(null)
+
+    const no = askConfirm({ title: 'Delete it?' })
+    cancelDialog()
+    expect(await no).toBe(false)
+  })
+
+  it('askText resolves the typed text, or null when cancelled', async () => {
+    const typed = askText({ title: 'Note?' })
+    answer('copied from someone')
+    expect(await typed).toBe('copied from someone')
+
+    const cancelled = askText({ title: 'Note?' })
+    cancelDialog()
+    expect(await cancelled).toBe(null)
+  })
+
+  it('opening a second popup cancels the first one', async () => {
+    const first = askConfirm({ title: 'First' })
+    const second = showNotice({ title: 'Second', copyText: 'https://example.com' })
+    expect(await first).toBe(false)
+    expect(dialog.value.title).toBe('Second')
+    expect(dialog.value.confirmLabel).toBe('Done')
+    answer(undefined)
+    await second
+    expect(dialog.value).toBe(null)
   })
 })

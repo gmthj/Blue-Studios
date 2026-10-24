@@ -9,6 +9,7 @@ import ItemDetailsForm from '../components/ItemDetailsForm.vue'
 import MarketplaceCard from '../components/MarketplaceCard.vue'
 import AppIcon from '../components/AppIcon.vue'
 import { profileOf } from '../profiles.js'
+import { askConfirm } from '../composables/useDialog.js'
 
 // My Studio (/studio): everything this account has saved. Accounts only (see router.js).
 //   - shortcuts: make a frame, make a sticker
@@ -81,7 +82,8 @@ const listsByType = { strips: strips, templates: templates, stickers: stickers }
 
 async function remove(item) {
   const name = item.name || item.title
-  if (!confirm('Delete "' + name + '"? This cannot be undone.')) return
+  const sure = await askConfirm({ title: 'Delete "' + name + '"?', message: 'This cannot be undone.', confirmLabel: 'Delete', danger: true })
+  if (!sure) return
   busyId.value = item.id
   try {
     await deleteItem(item)
