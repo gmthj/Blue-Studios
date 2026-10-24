@@ -9,6 +9,8 @@ import DeckCard from '../components/DeckCard.vue'
 import WaveformBars from '../components/WaveformBars.vue'
 import StageBar from '../components/StageBar.vue'
 import { renderMix } from '../mixRender.js'
+import { ref as storageRef, uploadBytes } from 'firebase/storage'
+import { storage } from '../firebase.js'
 
 // RoomLayout already joined the room, so we just ask for the room code
 const { code, roomRef } = useRoom()
@@ -28,6 +30,8 @@ const loadingB = ref(false)
 const rendering = ref(false)   // true while the mix is being rendered
 const previewUrl = ref('')     // a temporary address the <audio> player can play
 let mixBlob = null             // the finished WAV file (plain variable, like playerA)
+const saving = ref(false)   // true while uploading
+const saved = ref(false)    // true after the mix is saved to the room
 
 // ---------- Audio (Tone.js) ----------
 // playerA → gainA → crossFade.a ┐
@@ -203,6 +207,34 @@ async function makeMix() {
   rendering.value = false
 }
 
+// Saves the mix for the Export page: uploads the WAV to Firebase Storage,
+// then writes where it is on the room, so every page in the room can find it.
+async function useMix() {
+  saved.value = false
+
+  // Always render again, so the saved mix matches the sliders RIGHT NOW
+  // (the user may have changed something since pressing Preview)
+  await makeMix()
+  if (!mixBlob) return   // no songs loaded: makeMix already showed a message
+
+  saving.value = true
+
+  // code is a ref, so inside the script we need code.value (the template does this for us)
+  const audioPath = 'music/' + code.value + '/mix.wav'
+
+  try {
+    // 1. Upload the file to Firebase Storage
+    await uploadBytes(storageRef(storage, audioPath), mixBlob, { contentType: 'audio/wav' })
+    // 2. Save its location on the room, for Jun Han's Export page
+    await updateDoc(roomRef(), { music: { audioPath: audioPath, duration: 5 } })
+    saved.value = true
+  } catch (error) {
+    console.error(error)
+    errorMessage.value = 'Could not save the mix. Please try again.'
+  }
+  saving.value = false
+}
+
 // Leaving the page: stop the music and free everything, otherwise it keeps playing on other pages!
 onBeforeUnmount(function () {
   stopAndRemove(playerA)
@@ -367,7 +399,7 @@ onMounted(loadTracks)
           />
         </div>
 
-                <!-- YOUR MIX -->
+        <!-- YOUR MIX -->
         <div class="col-12">
           <div class="card">
             <div class="card-body">
@@ -382,7 +414,9 @@ onMounted(loadTracks)
                 <button class="btn btn-outline-secondary" :disabled="rendering" @click="makeMix">
                   {{ rendering ? 'Rendering...' : '▷ Preview' }}
                 </button>
-                <button class="btn btn-primary">Use this mix</button>
+                <button class="btn btn-primary" :disabled="saving || rendering" @click="useMix">
+                    {{ saving ? 'Saving...' : saved ? 'Saved ✓' : 'Use this mix' }}
+                </button>
               </div>
             </div>
           </div>
