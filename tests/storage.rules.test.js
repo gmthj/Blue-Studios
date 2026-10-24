@@ -117,6 +117,15 @@ test('video clips: an admin can play and delete them', async () => {
   await assertSucceeds(deleteObject(ref(storageAsAdmin(), 'clips/1234/alice/c1.webm')))
 })
 
+test('profile pictures: the owner uploads a small JPEG, anyone signed in can see it', async () => {
+  await assertSucceeds(uploadBytes(ref(storageAs('alice'), 'avatars/alice/avatar.jpg'), PNG, jpeg))
+  await assertSucceeds(getBytes(ref(storageAsGuest('g1'), 'avatars/alice/avatar.jpg')))
+  await assertFails(uploadBytes(ref(storageAs('bob'), 'avatars/alice/avatar.jpg'), PNG, jpeg))
+  await assertFails(uploadBytes(ref(storageAsGuest('g1'), 'avatars/g1/avatar.jpg'), PNG, jpeg))
+  await assertFails(uploadBytes(ref(storageAs('alice'), 'avatars/alice/avatar.jpg'), PNG, png))
+  await assertFails(uploadBytes(ref(storageAs('alice'), 'avatars/alice/avatar.jpg'), new Uint8Array(1024 * 1024), jpeg))
+})
+
 test('only the owner or an admin can delete files', async () => {
   await seedFile('templates/alice/t1/thumbnail.png', png)
   await assertFails(deleteObject(ref(storageAs('bob'), 'templates/alice/t1/thumbnail.png')))

@@ -3,10 +3,12 @@ import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from './composables/useAuth.js'
 import AppIcon from './components/AppIcon.vue'
+import ProfileDialog from './components/ProfileDialog.vue'
+import { profileOf } from './profiles.js'
 
 const route = useRoute()
 const router = useRouter()
-const { user, isAccount, isAdmin, authError, logOut, resendVerification } = useAuth()
+const { user, isAccount, isAdmin, authError, avatar, logOut, resendVerification } = useAuth()
 
 // Room pages use the full width of the screen (Bootstrap container-fluid), so big laptop and
 // computer screens get a bigger camera and bigger video call tiles.
@@ -30,10 +32,8 @@ async function resend() {
   }
 }
 
-// The first letter of the account's name, shown in a circle next to it
-const initial = computed(() => {
-  return (user.value.displayName || user.value.email || '?').charAt(0).toUpperCase()
-})
+// The "Edit profile" popup (ProfileDialog.vue), opened by clicking my picture and name
+const profileOpen = ref(false)
 
 async function logOutAndGoHome() {
   await logOut()
@@ -74,10 +74,12 @@ async function logOutAndGoHome() {
               <span class="link-text">Admin</span>
             </router-link>
             <span class="nav-divider" aria-hidden="true"></span>
-            <span class="account" :title="user.displayName || user.email">
-              <span class="avatar" aria-hidden="true">{{ initial }}</span>
-              <span class="account-name text-truncate d-none d-lg-inline">{{ user.displayName || user.email }}</span>
-            </span>
+            <!-- My picture and name: opens the Edit profile popup -->
+            <button class="account" title="Edit profile" aria-haspopup="dialog" @click="profileOpen = true">
+              <img :src="avatar" class="avatar" alt="" width="30" height="30" />
+              <span class="account-name text-truncate d-none d-lg-inline">{{ profileOf(user.uid).name || user.displayName || user.email }}</span>
+              <span class="visually-hidden">Edit profile</span>
+            </button>
             <button class="nav-link-btn" title="Log out" @click="logOutAndGoHome">
               <AppIcon name="log-out" :size="18" />
               <span class="link-text">Log out</span>
@@ -90,6 +92,8 @@ async function logOutAndGoHome() {
         </div>
       </div>
     </nav>
+
+    <ProfileDialog v-if="isAccount" v-model:open="profileOpen" />
 
     <main class="pb-3" :class="containerClass">
       <!-- Could not sign in (even as a guest), so nothing would be saved: show why instead of the page -->
@@ -270,27 +274,43 @@ async function logOutAndGoHome() {
   background: var(--line);
 }
 
+/* My picture and name: a button that opens the Edit profile popup */
 .account {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 0 4px;
+  height: 38px;
+  padding: 0 10px 0 4px;
+  border: 0;
+  border-radius: 999px;
   color: var(--ink);
+  background: transparent;
   font-size: 0.9rem;
   font-weight: 600;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 150ms ease, transform 160ms var(--ease-out);
+}
+
+.account:active {
+  transform: scale(0.97);
+}
+
+.account:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .account:hover {
+    background: #F2F4F8;
+  }
 }
 
 .avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   width: 30px;
   height: 30px;
   border-radius: 50%;
-  color: #ffffff;
-  background: var(--brand);
-  font-size: 0.85rem;
-  font-weight: 700;
+  background: var(--brand-tint);
 }
 
 .account-name {

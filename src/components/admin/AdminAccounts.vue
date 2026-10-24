@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { listAccounts, prefetchAccounts, reloadAccounts, lookupAccount, banAccount, unbanAccount, getAccountActivity } from '../../admin.js'
 import { useAdminTab, useSort, formatTime } from '../../composables/useAdminTab.js'
 import SortHeader from './SortHeader.vue'
+import { profileOf } from '../../profiles.js'
 
 // Accounts tab: every login (accounts and guests) from Firebase Auth, through /api/admin.
 // Pick one to see what they made and to ban / unban them.
@@ -224,7 +225,12 @@ function unban() {
         </thead>
         <tbody>
           <tr v-for="a in shown" :key="a.uid" class="clickable" :class="{ 'table-active': picked && picked.uid === a.uid }" @click="pick(a.uid)">
-            <td class="text-break">{{ a.displayName || (a.isAccount ? '(no name)' : 'Guest') }}</td>
+            <td class="text-break">
+              <span class="d-inline-flex align-items-center gap-2">
+                <img :src="profileOf(a.uid).avatar" class="row-avatar" alt="" width="24" height="24" loading="lazy" />
+                {{ a.displayName || (a.isAccount ? '(no name)' : 'Guest') }}
+              </span>
+            </td>
             <td class="text-break">{{ a.email }}</td>
             <td class="text-nowrap">{{ loginLabel(a) }}</td>
             <td class="text-nowrap">
@@ -247,5 +253,14 @@ function unban() {
 <style scoped>
 .clickable {
   cursor: pointer;
+}
+
+.row-avatar {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--brand-tint);
 }
 </style>

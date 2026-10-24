@@ -300,7 +300,7 @@ describe('Critical UI components (AppIcon, StageBar, MarketplaceCard, ItemDetail
       }
     })
     expect(wrapper.text()).toContain('Haru Soft Cloud')
-    expect(wrapper.text()).toContain('by Gabriel')
+    expect(wrapper.text()).toContain('Gabriel') // the maker's name, next to their picture
     expect(wrapper.text()).toContain('4 slots')
     expect(wrapper.text()).toContain('12 saves')
   })

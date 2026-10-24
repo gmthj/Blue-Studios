@@ -289,6 +289,18 @@ test('profile names must be 1-30 characters', async () => {
   await assertFails(setDoc(doc(dbAsAccount('alice'), 'users/alice'), { displayName: 'x'.repeat(31), createdAt: 1 }))
 })
 
+test('profile pictures: only my own uploaded file, no other links', async () => {
+  const mine = 'https://firebasestorage.googleapis.com/v0/b/demo.appspot.com/o/avatars%2Falice%2Favatar.jpg?alt=media&token=abc'
+  const someoneElses = 'https://firebasestorage.googleapis.com/v0/b/demo.appspot.com/o/avatars%2Fbob%2Favatar.jpg?alt=media&token=abc'
+  await seed('users/alice', { displayName: 'Alice', createdAt: 1 })
+  const alice = doc(dbAsAccount('alice'), 'users/alice')
+  await assertSucceeds(updateDoc(alice, { photoURL: mine }))
+  await assertSucceeds(updateDoc(alice, { photoURL: '' }))
+  await assertFails(updateDoc(alice, { photoURL: someoneElses }))
+  await assertFails(updateDoc(alice, { photoURL: 'https://evil.example.com/picture.jpg' }))
+  await assertFails(updateDoc(alice, { googlePhotoURL: 'https://lh3.googleusercontent.com/a/xyz=s96-c' })) // no other picture fields
+})
+
 test('signed-in users can read one profile but not list all users', async () => {
   await seed('users/alice', { displayName: 'Alice', createdAt: 1 })
   await assertSucceeds(getDoc(doc(dbAsGuest('g1'), 'users/alice')))

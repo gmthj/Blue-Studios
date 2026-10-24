@@ -6,6 +6,7 @@ import { getItem, isSaved, saveItem, unsaveItem, hasReported, reportItem, REPORT
 import { categoryLabel } from '../studio.js'
 import StorageImage from '../components/StorageImage.vue'
 import AppIcon from '../components/AppIcon.vue'
+import { profileOf } from '../profiles.js'
 
 // One marketplace item: /marketplace/templates/{id} or /marketplace/stickers/{id}
 // Anyone can look. Accounts can save it to their studio or report it to the admins.
@@ -25,6 +26,9 @@ const showReportForm = ref(false)
 const reportReason = ref('inappropriate')
 const reportDetails = ref('')
 const reporting = ref(false)
+
+// The maker's name and picture now (a new name or picture shows on older items too)
+const maker = computed(() => profileOf(item.value ? item.value.ownerId : ''))
 
 const isMine = computed(() => item.value && item.value.ownerId === user.value.uid)
 const inMarketplace = computed(() => item.value && item.value.visibility === 'public' && item.value.status === 'active')
@@ -128,8 +132,8 @@ function formatDate(time) {
 
         <!-- The maker, with the first letter of their name in a circle -->
         <p class="maker">
-          <span class="maker-avatar" aria-hidden="true">{{ (item.ownerName || '?').charAt(0).toUpperCase() }}</span>
-          by <strong>{{ item.ownerName }}</strong>
+          <img :src="maker.avatar" class="maker-avatar" alt="" width="28" height="28" />
+          by <strong>{{ maker.name || item.ownerName }}</strong>
         </p>
 
         <div v-if="item.categories && item.categories.length" class="d-flex flex-wrap gap-1 mb-4">
@@ -299,16 +303,11 @@ function formatDate(time) {
 }
 
 .maker-avatar {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   width: 28px;
   height: 28px;
   border-radius: 50%;
-  color: #ffffff;
-  background: var(--brand);
-  font-size: 0.8rem;
-  font-weight: 700;
+  object-fit: cover;
+  background: var(--brand-tint);
 }
 
 /* Three small boxes side by side: slots / saves / date */

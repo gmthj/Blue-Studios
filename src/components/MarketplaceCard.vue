@@ -1,13 +1,18 @@
 <script setup>
+import { computed } from 'vue'
 import StorageImage from './StorageImage.vue'
 import AppIcon from './AppIcon.vue'
+import { profileOf } from '../profiles.js'
 
 // One template or sticker in a marketplace grid (also used for "Saved" in My Studio).
 // Clicking it opens its page: /marketplace/templates/{id} or /marketplace/stickers/{id}
 
-defineProps({
+const props = defineProps({
   item: { type: Object, required: true },
 })
+
+// The maker's name and picture now (so a new name or picture shows on their older items too)
+const maker = computed(() => profileOf(props.item.ownerId))
 </script>
 
 <template>
@@ -17,7 +22,10 @@ defineProps({
     </div>
     <div class="card-body item-body">
       <p class="item-name text-truncate" :title="item.name">{{ item.name }}</p>
-      <p class="item-meta text-truncate">by {{ item.ownerName }}</p>
+      <p class="item-meta maker">
+        <img :src="maker.avatar" class="maker-avatar" alt="" width="18" height="18" loading="lazy" />
+        <span class="text-truncate">{{ maker.name || item.ownerName }}</span>
+      </p>
       <p class="item-meta d-flex align-items-center gap-1">
         <template v-if="item.type === 'templates'">{{ item.slotCount }} slots &middot;</template>
         <AppIcon name="bookmark" :size="12" />
@@ -70,6 +78,22 @@ defineProps({
   margin: 0 0 2px;
   font-size: 0.9rem;
   font-weight: 700;
+}
+
+.maker {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 2px 0 2px !important;
+}
+
+.maker-avatar {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #E8EEFF;
 }
 
 .item-meta {

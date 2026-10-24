@@ -8,6 +8,7 @@ import StorageImage from '../components/StorageImage.vue'
 import ItemDetailsForm from '../components/ItemDetailsForm.vue'
 import MarketplaceCard from '../components/MarketplaceCard.vue'
 import AppIcon from '../components/AppIcon.vue'
+import { profileOf } from '../profiles.js'
 
 // My Studio (/studio): everything this account has saved. Accounts only (see router.js).
 //   - shortcuts: make a frame, make a sticker
@@ -32,7 +33,8 @@ const busyId = ref('') // the item being changed right now (its buttons are disa
 const hasTemplateEditor = router.resolve('/template-editor').matched.length > 0
 const hasStickerMaker = router.resolve('/sticker-maker').matched.length > 0
 
-const firstName = computed(() => user.value.displayName.split(' ')[0])
+const me = computed(() => profileOf(user.value.uid))
+const firstName = computed(() => (me.value.name || user.value.displayName).split(' ')[0])
 
 onMounted(loadAll)
 
@@ -122,9 +124,12 @@ function formatDate(time) {
 
 <template>
   <div class="app-page">
-    <header class="page-header">
-      <h1 class="page-title">Hey {{ firstName }}</h1>
-      <p class="page-sub">Pick up where you left off, or start something new.</p>
+    <header class="page-header d-flex align-items-center gap-3">
+      <img :src="me.avatar" class="studio-avatar" alt="" width="64" height="64" />
+      <div>
+        <h1 class="page-title">Hey {{ firstName }}</h1>
+        <p class="page-sub">Pick up where you left off, or start something new.</p>
+      </div>
     </header>
 
     <!-- Shortcuts: make something new -->
@@ -328,6 +333,16 @@ function formatDate(time) {
 </template>
 
 <style scoped>
+.studio-avatar {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--brand-tint);
+  box-shadow: 0 0 0 3px #ffffff, 0 0 0 5px var(--brand-tint);
+}
+
 /* ---------- Shortcuts ---------- */
 .shortcut .card-body {
   padding: 20px;
