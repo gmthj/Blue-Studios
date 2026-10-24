@@ -72,7 +72,7 @@ const STAGE_PATHS = {
   decorate: '/decorate', // /room/4821/decorate filters and stickers (DecorateView)
   // PLACEHOLDER: add these when the pages are on main
   // video: '/video',    // Saw Jun Han
-  // music: '/music',    // Shannon (music-mixer branch)
+  music: '/music',       // /room/4821/music    the music mixer (MusicView)
 }
 
 function followStage() {

@@ -4,6 +4,7 @@ import LoginView from './views/LoginView.vue'
 import RoomLayout from './views/RoomLayout.vue'
 import RoomView from './views/RoomView.vue'
 import StripView from './views/StripView.vue'
+import MusicView from './views/MusicView.vue'
 import TemplateEditorView from './views/TemplateEditorView.vue'
 import DecorateView from './views/DecorateView.vue'
 import StudioView from './views/StudioView.vue'
@@ -36,6 +37,7 @@ const routes = [
       { path: '', component: RoomView },             // /room/4821          (camera)
       { path: 'strip', component: StripView },       // /room/4821/strip    (choose photos for the strip)
       { path: 'decorate', component: DecorateView }, // /room/4821/decorate (filters and stickers)
+      { path: 'music', component: MusicView },       // /room/4821/music    (music mixer)
     ],
   },
 ]

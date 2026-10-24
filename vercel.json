@@ -9,6 +9,7 @@
     { "source": "/room/:code", "destination": "/index.html" },
     { "source": "/room/:code/strip", "destination": "/index.html" },
     { "source": "/template-editor", "destination": "/index.html" },
-    { "source": "/room/:code/decorate", "destination": "/index.html" }
+    { "source": "/room/:code/decorate", "destination": "/index.html" },
+    { "source": "/room/:code/music", "destination": "/index.html" }
   ]
 }
