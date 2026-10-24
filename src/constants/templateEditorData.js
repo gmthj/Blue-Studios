@@ -361,7 +361,7 @@ export const ELEMENT_TAG_FILTERS = [
 
 export const ELEMENT_CATEGORIES = [
   {
-    title: 'Recolorable Vector Stickers',
+    title: 'Recolorable Vector Elements',
     tag: 'Y2K',
     items: [
       { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.daisy, name: 'Daisy Blossom', width: 44, height: 44, tags: ['Y2K', 'Doodles'] },

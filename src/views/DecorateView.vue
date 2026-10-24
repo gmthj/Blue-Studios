@@ -438,7 +438,7 @@ async function saveToStudio() {
         <div class="mt-auto">
           <!-- PLACEHOLDER (Shannon): the Music Mixer is at /room/:code/music on the music-mixer branch.
                When it is on main and 'music' is added to STAGE_PATHS in RoomLayout.vue, remove "disabled". -->
-          <button class="btn btn-primary w-100 mb-2" disabled title="Music Mixer coming soon" @click="goToStage('music')">Mix soundtrack</button>
+          <button class="btn btn-primary w-100 mb-2" @click="goToStage('music')">Mix soundtrack</button>
           <div class="d-flex gap-2">
             <button class="btn btn-outline-secondary btn-sm flex-fill" @click="goToStage('pick')">&larr; Pick</button>
             <button class="btn btn-outline-secondary btn-sm flex-fill" :disabled="exporting" @click="downloadJpg">
