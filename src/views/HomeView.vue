@@ -216,7 +216,7 @@ async function createRoom() {
       hostId: getUid(),
       hostName: name.value.trim(),
       shotNumber: 0,   // goes up by 1 every time someone presses the shutter
-      stage: 'camera', // 'camera' or 'strip': which page the whole room is on
+      stage: 'shoot', // which step the whole room is on: shoot, pick, ... (ROOM_STAGES in useRoom.js)
       stripSlots: {},  // the photostrip everyone is making: { 0: photoId, 1: photoId, ... }
       closed: false,
       createdAt: Date.now(),

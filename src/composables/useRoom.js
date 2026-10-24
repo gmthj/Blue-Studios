@@ -10,6 +10,7 @@ import { isActive, HEARTBEAT_MS } from '../room.js'
 //
 // Usage in a page:
 //   const { room, activeMembers, photos, roomRef } = useRoom()
+//   goToStage('pick')    move the whole room to another step (see STAGES below)
 
 const code = ref('')      // the room code, e.g. '0427'
 const room = ref(null)    // the room document: { hostId, hostName, shotNumber, stage, stripSlots, closed, ... }
@@ -31,6 +32,58 @@ const activeMembers = computed(() => {
 // The Firestore reference to this room's document (for updateDoc etc.)
 function roomRef() {
   return doc(db, 'rooms', code.value)
+}
+
+// ---------- STAGES ----------
+// The room's steps, in order. The whole group is always on the same one: room.stage.
+//   id        the stage's name, used everywhere: room.stage, <StageBar current="pick" />,
+//             and the end of the page's URL (/room/4821/pick, see router.js)
+//   hasPage   false if that page is not in the app yet (the stage bar cannot open it)
+// room.furthestStage is the furthest stage the room has reached, so the stage bar knows which
+// steps people can jump back (and forward again) to. RoomLayout.vue keeps it up to date.
+// PLACEHOLDER: set hasPage to true when the pages are on main (video: Saw Jun Han, music: Shannon)
+export const ROOM_STAGES = [
+  { id: 'shoot', label: 'Shoot', hasPage: true },       // /room/4821/shoot    (RoomView)
+  { id: 'pick', label: 'Pick', hasPage: true },         // /room/4821/pick     (StripView)
+  { id: 'video', label: 'Video', hasPage: false },
+  { id: 'decorate', label: 'Decorate', hasPage: true }, // /room/4821/decorate (DecorateView)
+  { id: 'music', label: 'Music', hasPage: false },
+  { id: 'export', label: 'Export', hasPage: false },
+]
+
+// Position of a stage in ROOM_STAGES (0 = shoot). A missing stage counts as shoot.
+export function stageIndex(stageId) {
+  return Math.max(ROOM_STAGES.findIndex((stage) => stage.id === stageId), 0)
+}
+
+// How far the room has got: the furthest stage reached (rooms made before furthestStage existed
+// use the stage they are on now)
+const furthestIndex = computed(() => {
+  if (!room.value) return 0
+  return Math.max(stageIndex(room.value.furthestStage), stageIndex(room.value.stage))
+})
+
+// Move everyone to another stage (RoomLayout.vue follows room.stage, on every device)
+async function goToStage(stageId) {
+  const changes = { stage: stageId }
+  if (stageIndex(stageId) > furthestIndex.value) {
+    changes.furthestStage = stageId
+  }
+  await updateDoc(roomRef(), changes)
+}
+
+// The room moved further than ever before (by anyone, from any page): remember it.
+// Every device may write the same value at about the same time, which is fine.
+async function saveProgress() {
+  if (!room.value) return
+  const reached = room.value.stage
+  if (stageIndex(reached) > stageIndex(room.value.furthestStage)) {
+    try {
+      await updateDoc(roomRef(), { furthestStage: reached })
+    } catch (error) {
+      console.error(error)
+    }
+  }
 }
 
 // Called once by RoomLayout.vue when we enter a room
@@ -108,5 +161,5 @@ async function exitRoom(removeMember) {
 }
 
 export function useRoom() {
-  return { code, room, activeMembers, photos, roomRef, enterRoom, exitRoom }
+  return { code, room, activeMembers, photos, roomRef, enterRoom, exitRoom, furthestIndex, goToStage, saveProgress }
 }

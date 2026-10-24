@@ -4,6 +4,7 @@ import { listRooms, getRoomWithPhotos, closeRoom, deleteRoom, deletePhoto, delet
 import { isActive } from '../../room.js'
 import { useAdminTab, useSort, formatTime } from '../../composables/useAdminTab.js'
 import SortHeader from './SortHeader.vue'
+import { ROOM_STAGES, stageIndex } from '../../composables/useRoom.js'
 
 // Rooms tab: the newest 200 rooms, open and closed, with who is in each one. Open one to see its
 // photos and videos, delete a photo or video clip, close the room or delete it. Older rooms can still be opened by their code.
@@ -41,8 +42,11 @@ const PEOPLE = [
   { id: 'empty', label: 'Nobody here now', test: (r) => here(r).length === 0 },
 ]
 
-// The stages the loaded rooms are at (camera, strip, decorate, ...)
-const stages = computed(() => [...new Set(rooms.value.map((r) => r.stage).filter(Boolean))].sort())
+// The stages the loaded rooms are at (shoot, pick, decorate, ...), in the rooms' step order
+const stages = computed(() => {
+  const found = new Set(rooms.value.map((r) => r.stage))
+  return ROOM_STAGES.map((s) => s.id).filter((id) => found.has(id))
+})
 
 function countFor(s) {
   return rooms.value.filter(s.test).length
@@ -52,7 +56,7 @@ const sort = useSort({
   code: { get: (r) => r.code, first: 'asc' },
   host: { get: (r) => r.hostName, first: 'asc' },
   createdAt: { get: (r) => r.createdAt, first: 'desc' },
-  stage: { get: (r) => r.stage, first: 'asc' },
+  stage: { get: (r) => stageIndex(r.stage), first: 'asc' },
   shots: { get: (r) => r.shotNumber, first: 'desc' },
   people: { get: (r) => here(r).length * 1000 + r.members.length, first: 'desc' },
   status: { get: (r) => (r.closed ? 1 : 0), first: 'asc' },

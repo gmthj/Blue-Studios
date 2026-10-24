@@ -148,7 +148,7 @@ service cloud.firestore {
         && request.resource.data.hostId == request.auth.uid
         && isName(request.resource.data.hostName)
         && request.resource.data.shotNumber == 0
-        && request.resource.data.stage == 'camera'
+        && (request.resource.data.stage == 'shoot' || request.resource.data.stage == 'camera') //TODO: remove camera option
         && request.resource.data.stripSlots == {}
         && request.resource.data.closed == false
         && request.resource.data.createdAt is int;

@@ -388,7 +388,7 @@ async function goToStage(stage) {
       <div class="panel">
         <div class="d-flex justify-content-between align-items-center mb-1">
           <h2 class="h5 fw-bold mb-0">Gallery</h2>
-          <button class="btn btn-link btn-sm p-0" @click="goToStage('camera')">&larr; Camera</button>
+          <button class="btn btn-link btn-sm p-0" @click="goToStage('shoot')">&larr; Camera</button>
         </div>
         <p class="small text-muted mb-2">Drag a photo into a slot. On a phone: tap a photo, then tap a slot.</p>
 

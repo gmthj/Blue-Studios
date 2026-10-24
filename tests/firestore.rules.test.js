@@ -53,7 +53,7 @@ function newRoom(hostId) {
     hostId: hostId,
     hostName: 'Gabriel',
     shotNumber: 0,
-    stage: 'camera',
+    stage: 'shoot',
     stripSlots: {},
     closed: false,
     createdAt: Date.now(),
@@ -100,6 +100,8 @@ test('a user cannot create a room pretending someone else is the host', async ()
 
 test('a room code must be 4 digits, and a new room must start empty', async () => {
   await assertFails(setDoc(doc(dbAs('host'), 'rooms/abcd'), newRoom('host')))
+  await assertFails(setDoc(doc(dbAs('host'), 'rooms/5555'), { ...newRoom('host'), stage: 'camera' })) // not a stage name (rooms start at 'shoot')
+  await assertFails(setDoc(doc(dbAs('host'), 'rooms/5555'), { ...newRoom('host'), stage: 'decorate' }))
   await assertFails(setDoc(doc(dbAs('host'), 'rooms/5555'), { ...newRoom('host'), shotNumber: 7 }))
   await assertFails(setDoc(doc(dbAs('host'), 'rooms/5555'), { ...newRoom('host'), closed: true }))
   await assertFails(setDoc(doc(dbAs('host'), 'rooms/5555'), { ...newRoom('host'), isAdmin: true }))
@@ -148,6 +150,7 @@ test('members can change other room fields (DEV), but not the host, creation tim
   await seedRoom()
   const db = dbAs('guest')
   await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { stage: 'decorate' }))
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { stage: 'pick', furthestStage: 'decorate' }))
   await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { 'stripSlots.9': 'photoA', stripLayoutId: 'film-3-cut' }))
   await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { stripStickers: [{ id: 1, src: 'data:image/svg+xml,x' }] }))
   await assertFails(updateDoc(doc(db, 'rooms/1234'), { hostId: 'guest' }))
@@ -169,7 +172,7 @@ test('members can close a room, but a closed room cannot be reopened or changed'
   await seedRoom()
   await assertSucceeds(updateDoc(doc(dbAs('guest'), 'rooms/1234'), { closed: true }))
   await assertFails(updateDoc(doc(dbAs('host'), 'rooms/1234'), { closed: false }))
-  await assertFails(updateDoc(doc(dbAs('host'), 'rooms/1234'), { stage: 'strip' }))
+  await assertFails(updateDoc(doc(dbAs('host'), 'rooms/1234'), { stage: 'pick' }))
 })
 
 test('an admin can close any room', async () => {
