@@ -11,6 +11,7 @@ import MarketplaceView from './views/MarketplaceView.vue'
 import MarketplaceItemView from './views/MarketplaceItemView.vue'
 import TestUploadView from './views/TestUploadView.vue'
 import AdminView from './views/AdminView.vue'
+import NotFoundView from './views/NotFoundView.vue'
 import { useAuth } from './composables/useAuth.js'
 
 const routes = [
@@ -41,6 +42,9 @@ const routes = [
       { path: 'decorate', component: DecorateView }, // /room/4821/decorate (filters and stickers)
     ],
   },
+  // Anything else (a wrong link, a typo, /room/4821/nope): the "page doesn't exist" page.
+  // It must stay LAST: the router uses the first route that matches.
+  { path: '/:pathMatch(.*)*', component: NotFoundView },
 ]
 
 const router = createRouter({

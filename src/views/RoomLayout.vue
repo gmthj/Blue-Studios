@@ -9,6 +9,7 @@ import { isRoomFull, MAX_PEOPLE } from '../room.js'
 import { useRoom, ROOM_STAGES } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
 import VideoCallCard from '../components/VideoCallCard.vue'
+import MessagePage from '../components/MessagePage.vue'
 
 // The parent page for everything inside a room (/room/:code/shoot, /room/:code/pick, /room/:code/decorate).
 // It joins the room and starts the video call ONCE. The child pages (RoomView, StripView)
@@ -58,6 +59,11 @@ onMounted(async () => {
   startCall(code, uid)
 })
 
+// "Try again" on the room-full message: load the page again, so it checks for a free place again
+function tryAgain() {
+  window.location.reload()
+}
+
 // Leaving the room (Leave button, closed room, or going to another website page): end the call
 onBeforeUnmount(() => {
   endCall()
@@ -91,19 +97,32 @@ watch(() => route.path, followStage)
 </script>
 
 <template>
-  <p v-if="status === 'loading'" class="text-muted">Joining room {{ code }}...</p>
+  <!-- Joining, or could not join: a message in the middle of the page (MessagePage.vue) -->
+  <MessagePage v-if="status === 'loading'" loading :title="'Joining room ' + code">
+    Getting the room and your camera ready...
+  </MessagePage>
 
-  <div v-else-if="status === 'notFound'" class="alert alert-warning">
-    Room {{ code }} does not exist. <router-link to="/">Go back</router-link>
-  </div>
+  <MessagePage v-else-if="status === 'notFound'" icon="search" :title="'Room ' + code + ' doesn\'t exist'">
+    Check the code with whoever invited you. Codes are 4 digits.
+    <template #actions>
+      <router-link to="/" class="btn btn-primary">Enter another code</router-link>
+    </template>
+  </MessagePage>
 
-  <div v-else-if="status === 'closed'" class="alert alert-warning">
-    Room {{ code }} has been closed. <router-link to="/">Go back</router-link>
-  </div>
+  <MessagePage v-else-if="status === 'closed'" icon="lock" :title="'Room ' + code + ' has ended'">
+    The host closed this room, so nobody can join it any more.
+    <template #actions>
+      <router-link to="/" class="btn btn-primary">Start or join another room</router-link>
+    </template>
+  </MessagePage>
 
-  <div v-else-if="status === 'full'" class="alert alert-warning">
-    Room {{ code }} is full ({{ MAX_PEOPLE }} people max). <router-link to="/">Go back</router-link>
-  </div>
+  <MessagePage v-else-if="status === 'full'" icon="users" :title="'Room ' + code + ' is full'">
+    A room fits up to {{ MAX_PEOPLE }} people. Try again when someone leaves, or start your own room.
+    <template #actions>
+      <button class="btn btn-primary" @click="tryAgain">Try again</button>
+      <router-link to="/" class="btn btn-outline-secondary">Start my own room</router-link>
+    </template>
+  </MessagePage>
 
   <template v-else>
     <!-- The child page: RoomView (camera), StripView (photostrip) or DecorateView -->
