@@ -9,7 +9,7 @@ import fs from 'node:fs'
 import assert from 'node:assert/strict'
 import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing'
 import {
-  doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, collection, query, where, orderBy, limit, writeBatch, increment,
+  doc, getDoc, getDocs, setDoc, updateDoc, deleteDoc, addDoc, collection, query, where, orderBy, limit, writeBatch, increment, getCountFromServer, collectionGroup,
 } from 'firebase/firestore'
 
 let testEnv
@@ -105,10 +105,30 @@ test('a room code must be 4 digits, and a new room must start empty', async () =
   await assertFails(setDoc(doc(dbAs('host'), 'rooms/5555'), { ...newRoom('host'), isAdmin: true }))
 })
 
-test('anyone signed in can look up one room, but not list all rooms', async () => {
+test('anyone signed in can look up one room, but only admins can list all rooms', async () => {
   await seedRoom()
   await assertSucceeds(getDoc(doc(dbAs('stranger'), 'rooms/1234')))
   await assertFails(getDocs(collection(dbAs('stranger'), 'rooms')))
+  await assertSucceeds(getDocs(query(collection(dbAsAdmin(), 'rooms'), where('closed', '==', false))))
+})
+
+test('admins can list and count everything the admin dashboard shows; others cannot', async () => {
+  await seedRoom()
+  const admin = dbAsAdmin()
+  await assertSucceeds(getDocs(query(collection(admin, 'rooms'), orderBy('createdAt', 'desc'), limit(200))))
+  for (const name of ['users', 'rooms', 'templates', 'stickers', 'strips', 'reports']) {
+    await assertSucceeds(getCountFromServer(collection(admin, name)))
+    await assertSucceeds(getDocs(collection(admin, name)))
+  }
+  await assertSucceeds(getCountFromServer(query(collection(admin, 'strips'), where('ownerId', '==', 'alice'))))
+  await assertFails(getCountFromServer(collection(dbAsAccount('alice'), 'strips')))
+  await assertFails(getCountFromServer(collection(dbAsAccount('alice'), 'rooms')))
+})
+
+test('only admins can list the members of every room at once', async () => {
+  await seedRoom()
+  await assertSucceeds(getDocs(collectionGroup(dbAsAdmin(), 'members')))
+  await assertFails(getDocs(collectionGroup(dbAs('stranger'), 'members')))
 })
 
 test('members can press the shutter (+1 only)', async () => {
@@ -229,6 +249,15 @@ test('only members can see photos, and nobody can edit them', async () => {
   await assertFails(updateDoc(doc(dbAs('guest'), 'rooms/1234/photos/p1'), { name: 'X' }))
   await assertFails(deleteDoc(doc(dbAs('guest'), 'rooms/1234/photos/p1')))
   await assertSucceeds(deleteDoc(doc(dbAsAdmin(), 'rooms/1234/photos/p1')))
+})
+
+test('an admin can see and delete the video clips of any room', async () => {
+  await seedRoom({ shotNumber: 1 })
+  await seed('rooms/1234/clips/c1', { ownerId: 'guest', name: 'Guest', shotNumber: 1, path: 'clips/1234/guest/c1.webm', createdAt: 1 })
+  await assertFails(getDocs(collection(dbAs('stranger'), 'rooms/1234/clips')))
+  await assertSucceeds(getDocs(collection(dbAsAdmin(), 'rooms/1234/clips')))
+  await assertFails(updateDoc(doc(dbAsAdmin(), 'rooms/1234/clips/c1'), { name: 'X' }))
+  await assertSucceeds(deleteDoc(doc(dbAsAdmin(), 'rooms/1234/clips/c1')))
 })
 
 // ---------- User profiles ----------

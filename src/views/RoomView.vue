@@ -7,8 +7,8 @@ import { getUid } from '../composables/useAuth.js'
 import { useRoom } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
 import StreamVideo from '../components/StreamVideo.vue'
-import VideoCallCard from '../components/VideoCallCard.vue'
 import RoomGallery from '../components/RoomGallery.vue'
+import StageBar from '../components/StageBar.vue'
 
 // The camera page (a child of RoomLayout.vue, which has already joined the room and the call)
 
@@ -166,6 +166,7 @@ async function copyJoinLink() {
 </script>
 
 <template>
+  <StageBar current="shoot" />
   <!-- Full-screen flash and countdown (position: fixed, so they cover the whole screen) -->
   <!-- The flash is always here but invisible (opacity 0) until it fades in, see flashStyle -->
   <div class="flash-overlay" :style="flashStyle"></div>
@@ -175,17 +176,17 @@ async function copyJoinLink() {
   </div>
 
   <!--
-    PAGE LAYOUT with Bootstrap's grid. The page is exactly one screen tall, so the join card,
-    camera and video call are always visible. Only the gallery (and the call tiles, if needed) scroll.
+    PAGE LAYOUT with Bootstrap's grid. The page is exactly one screen tall, so the join card
+    and camera are always visible. Only the gallery scrolls. (The video call floats over the page, see RoomLayout.vue)
 
-    xs  (phone upright):            one column: join (room code only), call, camera, gallery (sideways)
-    sm / md / lg (phone sideways,   two columns: [join, call, gallery] | camera
+    xs  (phone upright):            one column: join (room code only), camera, gallery (sideways)
+    sm / md / lg (phone sideways,   two columns: [join, gallery] | camera
                   tablet, laptop):
-    xl  (1200px+, big screens):     three columns: [join, call] | camera | gallery
+    xl  (1200px+, big screens):     three columns: join | camera | gallery
   -->
   <div class="room-page">
     <div class="row g-2 h-100 flex-column flex-sm-row flex-nowrap">
-      <!-- LEFT: join card + video call (+ gallery below xl) -->
+      <!-- LEFT: join card (+ gallery below xl) -->
       <div class="col-12 col-sm-5 col-md-4 col-xl-3 side-col d-flex flex-column gap-2">
         <div class="card">
           <!-- Phones upright: just the room code, to leave room for the camera -->
@@ -207,9 +208,6 @@ async function copyJoinLink() {
             </div>
           </div>
         </div>
-
-        <!-- Everyone in the room: live video, mute, leave, close room -->
-        <VideoCallCard class="side-call" layout="sidebar" />
 
         <!-- Gallery here on sm / md / lg. Hidden on xs (it goes below the camera) and on xl (its own column).
              d-sm-flex, not d-sm-block, because the gallery card is a flex column. -->
@@ -266,17 +264,11 @@ async function copyJoinLink() {
   min-height: 0;
 }
 
-/* Bootstrap "sm" and up (576px+): the left column is full height.
-   The call card takes the space it needs (scrolls if too tall), the gallery takes the rest. */
+/* Bootstrap "sm" and up (576px+): the left column is full height, the gallery takes the rest of it.
+   (The video call is not in this column: it floats over the page, see VideoCallCard.vue) */
 @media (min-width: 576px) {
   .side-col {
     height: 100%;
-  }
-
-  .side-call {
-    flex: 0 1 auto;
-    min-height: 0;
-    overflow-y: auto;
   }
 
   .side-gallery {
@@ -285,15 +277,13 @@ async function copyJoinLink() {
   }
 }
 
-/* Phones held sideways: the screen is too short to fit the join card, call and gallery,
-   so the call got squashed to almost nothing by the gallery. Instead, everything keeps its
+/* Phones held sideways: the screen is too short, so everything keeps its
    natural height and the whole left column scrolls. */
 @media (orientation: landscape) and (max-height: 500px) {
   .side-col {
     overflow-y: auto;
   }
 
-  .side-call,
   .side-gallery {
     flex: 0 0 auto;
     overflow-y: visible;

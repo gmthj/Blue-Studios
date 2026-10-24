@@ -188,18 +188,13 @@ function formatDate(time) {
       </div>
     </div>
 
-    <!-- Templates and stickers can be public (marketplace) or private -->
-    <div v-if="!user.emailVerified" class="alert alert-light border small">
-      Confirm your email to make your templates and stickers public in the marketplace.
-    </div>
-
     <h2 class="h4 mb-3">My templates</h2>
     <p v-if="templates.length === 0" class="text-muted small mb-5">No templates yet. Design one in the template editor.</p>
     <div v-else class="row g-3 mb-5">
       <div v-for="template in templates" :key="template.id" class="col-12 col-sm-6 col-lg-4">
         <div class="card h-100">
           <div class="row g-0 h-100">
-            <div class="col-4 preview"><StorageImage :path="template.thumbnailPath" :alt="template.name" /></div>
+            <div class="col-4 preview template-preview"><StorageImage :path="template.thumbnailPath" :alt="template.name" /></div>
             <div class="col-8">
               <div class="card-body">
                 <p class="fw-semibold text-truncate mb-0">{{ template.name }}</p>
@@ -211,7 +206,7 @@ function formatDate(time) {
 
                 <ItemDetailsForm v-if="editingId === template.id" :item="template" @saved="detailsSaved(template, $event)" @cancel="editingId = ''" />
                 <template v-else>
-                  <div class="form-check form-switch">
+                  <div class="form-check form-switch mb-2">
                     <input
                       :id="'vis-' + template.id"
                       class="form-check-input"
@@ -226,6 +221,7 @@ function formatDate(time) {
                   </div>
                   <div class="d-flex flex-wrap gap-3">
                     <button class="btn btn-sm btn-link px-0" @click="editingId = template.id">Edit</button>
+                    <router-link :to="'/template-editor?template=' + template.id" class="btn btn-sm btn-link px-0">Open in editor</router-link>
                     <router-link v-if="isListed(template)" :to="'/marketplace/templates/' + template.id" class="btn btn-sm btn-link px-0">View</router-link>
                     <button class="btn btn-sm btn-link text-danger px-0" :disabled="busyId === template.id" @click="remove(template)">Delete</button>
                   </div>
@@ -304,6 +300,22 @@ function formatDate(time) {
 
 .strip-preview {
   height: 220px;
+}
+
+.template-preview {
+  min-height: 180px;
+  max-height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+}
+
+.template-preview :deep(.storage-image),
+.template-preview :deep(img) {
+  max-height: 100%;
+  max-width: 100%;
+  object-fit: contain;
 }
 
 .sticker-preview {

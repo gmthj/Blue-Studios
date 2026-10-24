@@ -126,8 +126,14 @@ function formatDate(time) {
       <!-- My own item -->
       <div v-if="isMine" class="alert alert-light border small">
         <template v-if="!inMarketplace">Only you can see this: it is private or hidden by a moderator.</template>
-        <template v-else>This is yours.</template>
         <router-link to="/studio">Manage it in My Studio</router-link>
+      </div>
+
+      <!-- Open in Template Editor button for templates -->
+      <div v-if="item.type === 'templates'" class="mb-3">
+        <router-link :to="'/template-editor?template=' + item.id" class="btn btn-outline-primary btn-lg w-100 d-flex align-items-center justify-content-center gap-2">
+          <span>Open in Template Editor</span>
+        </router-link>
       </div>
 
       <!-- Someone else's item, and I have an account -->
