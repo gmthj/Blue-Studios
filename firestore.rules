@@ -54,6 +54,13 @@ service cloud.firestore {
       return value is string && value.size() >= 1 && value.size() <= 30;
     }
 
+    // Profile pictures (see src/profiles.js). '' means none.
+    // An uploaded picture must be MY file in Firebase Storage (avatars/{uid}/avatar.jpg), not any link.
+    function isMyUploadedPhoto(uid, value) {
+      return value == '' || (value is string && value.size() <= 1000
+        && value.matches('https://firebasestorage[.]googleapis[.]com/v0/b/[^/]+/o/avatars%2F' + uid + '%2Favatar[.]jpg[?].*'));
+    }
+
     function isName(value) {
       return value is string && value.size() >= 1 && value.size() <= 20;
     }
@@ -141,7 +148,7 @@ service cloud.firestore {
         && request.resource.data.hostId == request.auth.uid
         && isName(request.resource.data.hostName)
         && request.resource.data.shotNumber == 0
-        && request.resource.data.stage == 'camera'
+        && (request.resource.data.stage == 'shoot' || request.resource.data.stage == 'camera') //TODO: remove camera option
         && request.resource.data.stripSlots == {}
         && request.resource.data.closed == false
         && request.resource.data.createdAt is int;
@@ -259,7 +266,8 @@ service cloud.firestore {
     }
 
     // ---------- User profiles ----------
-    // users/{uid}  { displayName, createdAt }   public profile. The email is NOT stored here.
+    // users/{uid}  { displayName, createdAt, photoURL }   public profile. The email is NOT stored here.
+    //   photoURL: a picture they uploaded (optional)
 
     match /users/{userId} {
       // Anyone signed in can see one profile (e.g. the name on a marketplace item), but not list them all.
@@ -270,15 +278,17 @@ service cloud.firestore {
       // Only accounts (not guests) have a profile, and only their own
       allow create: if isAccount()
         && userId == request.auth.uid
-        && request.resource.data.keys().hasOnly(['displayName', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['displayName', 'createdAt', 'photoURL'])
         && isDisplayName(request.resource.data.displayName)
-        && request.resource.data.createdAt is int;
+        && request.resource.data.createdAt is int
+        && isMyUploadedPhoto(userId, request.resource.data.get('photoURL', ''));
 
-      // Change my name (nothing else)
+      // Change my name and picture (nothing else: not banned, not createdAt)
       allow update: if isAccount()
         && userId == request.auth.uid
-        && onlyChanged(['displayName'])
-        && isDisplayName(request.resource.data.displayName);
+        && onlyChanged(['displayName', 'photoURL'])
+        && isDisplayName(request.resource.data.displayName)
+        && isMyUploadedPhoto(userId, request.resource.data.get('photoURL', ''));
 
       allow delete: if false;
 

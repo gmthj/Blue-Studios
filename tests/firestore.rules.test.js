@@ -53,7 +53,7 @@ function newRoom(hostId) {
     hostId: hostId,
     hostName: 'Gabriel',
     shotNumber: 0,
-    stage: 'camera',
+    stage: 'shoot',
     stripSlots: {},
     closed: false,
     createdAt: Date.now(),
@@ -98,8 +98,15 @@ test('a user cannot create a room pretending someone else is the host', async ()
   await assertFails(setDoc(doc(dbAs('stranger'), 'rooms/5555'), newRoom('host')))
 })
 
+// TODO: when the 'camera' option is removed from the room create rule, change assertSucceeds to assertFails here
+test('new rooms start at shoot (old code still making rooms at "camera" is allowed for now)', async () => {
+  await assertSucceeds(setDoc(doc(dbAs('host'), 'rooms/5555'), { ...newRoom('host'), stage: 'shoot' }))
+  await assertSucceeds(setDoc(doc(dbAs('host'), 'rooms/5556'), { ...newRoom('host'), stage: 'camera' }))
+})
+
 test('a room code must be 4 digits, and a new room must start empty', async () => {
   await assertFails(setDoc(doc(dbAs('host'), 'rooms/abcd'), newRoom('host')))
+  await assertFails(setDoc(doc(dbAs('host'), 'rooms/5555'), { ...newRoom('host'), stage: 'decorate' }))
   await assertFails(setDoc(doc(dbAs('host'), 'rooms/5555'), { ...newRoom('host'), shotNumber: 7 }))
   await assertFails(setDoc(doc(dbAs('host'), 'rooms/5555'), { ...newRoom('host'), closed: true }))
   await assertFails(setDoc(doc(dbAs('host'), 'rooms/5555'), { ...newRoom('host'), isAdmin: true }))
@@ -148,6 +155,7 @@ test('members can change other room fields (DEV), but not the host, creation tim
   await seedRoom()
   const db = dbAs('guest')
   await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { stage: 'decorate' }))
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { stage: 'pick', furthestStage: 'decorate' }))
   await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { 'stripSlots.9': 'photoA', stripLayoutId: 'film-3-cut' }))
   await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { stripStickers: [{ id: 1, src: 'data:image/svg+xml,x' }] }))
   await assertFails(updateDoc(doc(db, 'rooms/1234'), { hostId: 'guest' }))
@@ -169,7 +177,7 @@ test('members can close a room, but a closed room cannot be reopened or changed'
   await seedRoom()
   await assertSucceeds(updateDoc(doc(dbAs('guest'), 'rooms/1234'), { closed: true }))
   await assertFails(updateDoc(doc(dbAs('host'), 'rooms/1234'), { closed: false }))
-  await assertFails(updateDoc(doc(dbAs('host'), 'rooms/1234'), { stage: 'strip' }))
+  await assertFails(updateDoc(doc(dbAs('host'), 'rooms/1234'), { stage: 'pick' }))
 })
 
 test('an admin can close any room', async () => {
@@ -287,6 +295,18 @@ test('profiles cannot have extra fields (e.g. making yourself admin or unbanning
 test('profile names must be 1-30 characters', async () => {
   await assertFails(setDoc(doc(dbAsAccount('alice'), 'users/alice'), { displayName: '', createdAt: 1 }))
   await assertFails(setDoc(doc(dbAsAccount('alice'), 'users/alice'), { displayName: 'x'.repeat(31), createdAt: 1 }))
+})
+
+test('profile pictures: only my own uploaded file, no other links', async () => {
+  const mine = 'https://firebasestorage.googleapis.com/v0/b/demo.appspot.com/o/avatars%2Falice%2Favatar.jpg?alt=media&token=abc'
+  const someoneElses = 'https://firebasestorage.googleapis.com/v0/b/demo.appspot.com/o/avatars%2Fbob%2Favatar.jpg?alt=media&token=abc'
+  await seed('users/alice', { displayName: 'Alice', createdAt: 1 })
+  const alice = doc(dbAsAccount('alice'), 'users/alice')
+  await assertSucceeds(updateDoc(alice, { photoURL: mine }))
+  await assertSucceeds(updateDoc(alice, { photoURL: '' }))
+  await assertFails(updateDoc(alice, { photoURL: someoneElses }))
+  await assertFails(updateDoc(alice, { photoURL: 'https://evil.example.com/picture.jpg' }))
+  await assertFails(updateDoc(alice, { googlePhotoURL: 'https://lh3.googleusercontent.com/a/xyz=s96-c' })) // no other picture fields
 })
 
 test('signed-in users can read one profile but not list all users', async () => {

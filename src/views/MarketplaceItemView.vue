@@ -5,6 +5,8 @@ import { useAuth } from '../composables/useAuth.js'
 import { getItem, isSaved, saveItem, unsaveItem, hasReported, reportItem, REPORT_REASONS } from '../marketplace.js'
 import { categoryLabel } from '../studio.js'
 import StorageImage from '../components/StorageImage.vue'
+import AppIcon from '../components/AppIcon.vue'
+import { profileOf } from '../profiles.js'
 
 // One marketplace item: /marketplace/templates/{id} or /marketplace/stickers/{id}
 // Anyone can look. Accounts can save it to their studio or report it to the admins.
@@ -24,6 +26,9 @@ const showReportForm = ref(false)
 const reportReason = ref('inappropriate')
 const reportDetails = ref('')
 const reporting = ref(false)
+
+// The maker's name and picture now (a new name or picture shows on older items too)
+const maker = computed(() => profileOf(item.value ? item.value.ownerId : ''))
 
 const isMine = computed(() => item.value && item.value.ownerId === user.value.uid)
 const inMarketplace = computed(() => item.value && item.value.visibility === 'public' && item.value.status === 'active')
@@ -88,66 +93,120 @@ function formatDate(time) {
 </script>
 
 <template>
-  <router-link :to="'/marketplace?type=' + route.params.type" class="small d-inline-block mb-3">&larr; Back to the marketplace</router-link>
+  <div class="app-page">
+    <router-link :to="'/marketplace?type=' + route.params.type" class="back-link">
+      <AppIcon name="arrow-right" :size="16" class="back-arrow" /> Back to the marketplace
+    </router-link>
 
-  <p v-if="loading" class="text-muted">Loading...</p>
-
-  <div v-else-if="!item" class="text-center py-5">
-    <h1 class="h4">This isn't available</h1>
-    <p class="text-muted">It may have been made private or removed.</p>
-    <router-link to="/marketplace" class="btn btn-primary">Browse the marketplace</router-link>
-  </div>
-
-  <div v-else class="row g-4">
-    <div class="col-12 col-md-6 col-lg-5">
-      <div class="preview" :class="item.type === 'templates' ? 'template-preview' : 'sticker-preview'">
-        <StorageImage :path="item.type === 'templates' ? item.thumbnailPath : item.imagePath" :alt="item.name" />
+    <!-- Grey placeholders while it loads -->
+    <div v-if="loading" class="row g-4" aria-label="Loading" role="status">
+      <div class="col-12 col-md-6 col-lg-5"><div class="skeleton skeleton-preview"></div></div>
+      <div class="col-12 col-md-6 col-lg-7">
+        <div class="skeleton skeleton-line w-25 mb-3"></div>
+        <div class="skeleton skeleton-title mb-3"></div>
+        <div class="skeleton skeleton-line w-50"></div>
       </div>
     </div>
 
-    <div class="col-12 col-md-6 col-lg-7">
-      <p class="small text-uppercase text-muted mb-1">{{ item.type === 'templates' ? 'Template' : 'Sticker' }}</p>
-      <h1 class="h3 mb-1 text-break">{{ item.name }}</h1>
-      <p class="text-muted mb-3">by {{ item.ownerName }}</p>
+    <div v-else-if="!item" class="empty-state py-5">
+      <span class="empty-icon"><AppIcon name="eye-off" :size="22" /></span>
+      <strong class="text-body fs-5">This isn't available</strong>
+      <span class="mb-2">It may have been made private or removed.</span>
+      <router-link to="/marketplace" class="btn btn-primary">Browse the marketplace</router-link>
+    </div>
 
-      <div class="d-flex flex-wrap gap-1 mb-3">
-        <span v-for="c in item.categories" :key="c" class="badge rounded-pill text-bg-light border">{{ categoryLabel(c) }}</span>
+    <div v-else class="row g-4 g-lg-5">
+      <!-- The picture, on a soft grey card -->
+      <div class="col-12 col-md-6 col-lg-5">
+        <div class="preview" :class="item.type === 'templates' ? 'template-preview' : 'sticker-preview'">
+          <StorageImage :path="item.type === 'templates' ? item.thumbnailPath : item.imagePath" :alt="item.name" />
+        </div>
       </div>
 
-      <ul class="list-unstyled small text-muted mb-4">
-        <li v-if="item.type === 'templates'">{{ item.slotCount }} photo slots</li>
-        <li v-else>{{ item.kind }} sticker</li>
-        <li>{{ item.saveCount }} {{ item.saveCount === 1 ? 'save' : 'saves' }}</li>
-        <li>Added {{ formatDate(item.createdAt) }}</li>
-      </ul>
+      <div class="col-12 col-md-6 col-lg-7">
+        <span class="type-pill">
+          <AppIcon :name="item.type === 'templates' ? 'layout' : 'sparkle'" :size="14" />
+          {{ item.type === 'templates' ? 'Template' : 'Sticker' }}
+        </span>
+        <h1 class="item-title">{{ item.name }}</h1>
 
-      <div v-if="errorMessage" class="alert alert-danger">{{ errorMessage }}</div>
+        <!-- The maker, with the first letter of their name in a circle -->
+        <p class="maker">
+          <img :src="maker.avatar" class="maker-avatar" alt="" width="28" height="28" />
+          by <strong>{{ maker.name || item.ownerName }}</strong>
+        </p>
 
-      <!-- My own item -->
-      <div v-if="isMine" class="alert alert-light border small">
-        <template v-if="!inMarketplace">Only you can see this: it is private or hidden by a moderator.</template>
-        <router-link to="/studio">Manage it in My Studio</router-link>
-      </div>
+        <div v-if="item.categories && item.categories.length" class="d-flex flex-wrap gap-1 mb-4">
+          <router-link
+            v-for="c in item.categories"
+            :key="c"
+            :to="'/marketplace?type=' + item.type + '&category=' + c"
+            class="chip chip-sm text-decoration-none"
+          >{{ categoryLabel(c) }}</router-link>
+        </div>
 
-      <!-- Open in Template Editor button for templates -->
-      <div v-if="item.type === 'templates'" class="mb-3">
-        <router-link :to="'/template-editor?template=' + item.id" class="btn btn-outline-primary btn-lg w-100 d-flex align-items-center justify-content-center gap-2">
-          <span>Open in Template Editor</span>
-        </router-link>
-      </div>
+        <!-- Facts in a row of small boxes -->
+        <div class="facts mb-4">
+          <div class="fact">
+            <span class="fact-value">{{ item.type === 'templates' ? item.slotCount : item.kind }}</span>
+            <span class="fact-label">{{ item.type === 'templates' ? 'photo slots' : 'sticker' }}</span>
+          </div>
+          <div class="fact">
+            <span class="fact-value">{{ item.saveCount }}</span>
+            <span class="fact-label">{{ item.saveCount === 1 ? 'save' : 'saves' }}</span>
+          </div>
+          <div class="fact">
+            <span class="fact-value">{{ formatDate(item.createdAt) }}</span>
+            <span class="fact-label">added</span>
+          </div>
+        </div>
 
-      <!-- Someone else's item, and I have an account -->
-      <template v-else-if="isAccount">
-        <button class="btn btn-lg mb-3" :class="saved ? 'btn-outline-primary' : 'btn-primary'" :disabled="saving" @click="toggleSave">
-          {{ saved ? 'Saved to My Studio ✓' : 'Save to My Studio' }}
-        </button>
+        <div v-if="errorMessage" class="alert alert-danger">{{ errorMessage }}</div>
 
-        <div>
+        <!-- My own item -->
+        <div v-if="isMine" class="alert alert-light border small">
+          <template v-if="!inMarketplace">Only you can see this: it is private or hidden by a moderator. </template>
+          <router-link to="/studio">Manage it in My Studio</router-link>
+        </div>
+
+        <div class="actions">
+          <!-- Someone else's item, and I have an account -->
+          <button
+            v-if="isAccount && !isMine"
+            class="btn btn-lg d-inline-flex align-items-center justify-content-center gap-2"
+            :class="saved ? 'btn-outline-primary' : 'btn-primary'"
+            :disabled="saving"
+            @click="toggleSave"
+          >
+            <AppIcon :name="saved ? 'check' : 'bookmark'" :size="18" />
+            {{ saved ? 'Saved to My Studio' : 'Save to My Studio' }}
+          </button>
+
+          <!-- Guests -->
+          <router-link v-else-if="!isAccount" :to="loginLink" class="btn btn-primary btn-lg d-inline-flex align-items-center justify-content-center gap-2">
+            <AppIcon name="bookmark" :size="18" /> Log in to save
+          </router-link>
+
+          <!-- Templates can also be opened in the template editor -->
+          <router-link
+            v-if="item.type === 'templates'"
+            :to="'/template-editor?template=' + item.id"
+            class="btn btn-outline-secondary btn-lg d-inline-flex align-items-center justify-content-center gap-2"
+          >
+            <AppIcon name="edit" :size="18" /> Open in Template Editor
+          </router-link>
+        </div>
+        <p v-if="!isAccount" class="small text-muted mt-2">Free account. Your saved templates and stickers show up in My Studio.</p>
+
+        <!-- Report (accounts, not my own item) -->
+        <div v-if="isAccount && !isMine" class="mt-4">
           <p v-if="reported" class="small text-muted">You reported this. Thanks, a moderator will take a look.</p>
-          <button v-else-if="!showReportForm" class="btn btn-link btn-sm text-muted px-0" @click="showReportForm = true">Report</button>
+          <button v-else-if="!showReportForm" class="btn btn-link btn-sm text-muted px-0 d-inline-flex align-items-center gap-1" @click="showReportForm = true">
+            <AppIcon name="shield" :size="14" /> Report
+          </button>
 
-          <form v-else class="card card-body" @submit.prevent="sendReport">
-            <h2 class="h6">Report to a moderator</h2>
+          <form v-else class="card card-body report-form" @submit.prevent="sendReport">
+            <h2 class="h6 fw-bold">Report to a moderator</h2>
             <div class="mb-2">
               <label class="form-label small" for="report-reason">What's wrong?</label>
               <select id="report-reason" v-model="reportReason" class="form-select form-select-sm">
@@ -164,31 +223,153 @@ function formatDate(time) {
             </div>
           </form>
         </div>
-      </template>
-
-      <!-- Guests -->
-      <template v-else>
-        <router-link :to="loginLink" class="btn btn-primary btn-lg">Log in to save</router-link>
-        <p class="small text-muted mt-2">Free account. Your saved templates and stickers show up in My Studio.</p>
-      </template>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+.back-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 20px;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.back-link:hover {
+  color: var(--ink);
+}
+
+/* The arrow-right icon, turned around */
+.back-arrow {
+  transform: scaleX(-1);
+}
+
 .preview {
-  background: #f1f3f5;
-  border-radius: 0.5rem;
   overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--soft);
 }
 
 .template-preview {
-  height: 480px;
+  height: 520px;
   max-height: 70vh;
+  padding: 20px;
 }
 
 .sticker-preview {
-  height: 300px;
-  padding: 24px;
+  aspect-ratio: 1;
+  max-height: 60vh;
+  padding: 40px;
+}
+
+.type-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 10px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: var(--brand);
+  background: var(--brand-tint);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.item-title {
+  margin-bottom: 8px;
+  font-size: clamp(1.6rem, 1.3rem + 1.2vw, 2.25rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+  text-wrap: balance;
+}
+
+.maker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  color: var(--muted);
+}
+
+.maker strong {
+  color: var(--ink);
+}
+
+.maker-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: var(--brand-tint);
+}
+
+/* Three small boxes side by side: slots / saves / date */
+.facts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  max-width: 440px;
+}
+
+.fact {
+  display: flex;
+  flex-direction: column;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.fact-value {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-transform: capitalize;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fact-label {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+/* The buttons: side by side, or stacked full width on phones */
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+@media (max-width: 575.98px) {
+  .actions .btn {
+    width: 100%;
+  }
+}
+
+.report-form {
+  max-width: 440px;
+}
+
+.skeleton-preview {
+  height: 480px;
+  max-height: 60vh;
+  border-radius: 20px;
+}
+
+.skeleton-line {
+  height: 16px;
+}
+
+.skeleton-title {
+  width: 70%;
+  height: 40px;
 }
 </style>

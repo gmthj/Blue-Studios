@@ -12,6 +12,7 @@ import MarketplaceView from './views/MarketplaceView.vue'
 import MarketplaceItemView from './views/MarketplaceItemView.vue'
 import TestUploadView from './views/TestUploadView.vue'
 import AdminView from './views/AdminView.vue'
+import NotFoundView from './views/NotFoundView.vue'
 import { useAuth } from './composables/useAuth.js'
 
 const routes = [
@@ -29,17 +30,23 @@ const routes = [
   // Moderators only (accounts with the admin mark, see scripts/set-admin.mjs). /admin?tab=overview|reports|items|accounts|rooms|log
   { path: '/admin', component: AdminView, meta: { requiresAdmin: true } },
   {
-    // :code is a route parameter, e.g. /room/4821 gives route.params.code = '4821'
+    // :code is a route parameter, e.g. /room/4821/shoot gives route.params.code = '4821'
     // RoomLayout joins the room + video call once, and shows one of its "children" inside it.
+    // Each child's path is its stage's name (ROOM_STAGES in useRoom.js).
     path: '/room/:code',
     component: RoomLayout,
     children: [
-      { path: '', component: RoomView },             // /room/4821          (camera)
-      { path: 'strip', component: StripView },       // /room/4821/strip    (choose photos for the strip)
+      // /room/4821 on its own: start at shoot (RoomLayout then moves to the room's current stage)
+      { path: '', redirect: (to) => '/room/' + to.params.code + '/shoot' },
+      { path: 'shoot', component: RoomView },        // /room/4821/shoot    (camera)
+      { path: 'pick', component: StripView },        // /room/4821/pick     (choose photos for the strip)
       { path: 'decorate', component: DecorateView }, // /room/4821/decorate (filters and stickers)
       { path: 'music', component: MusicView },       // /room/4821/music    (music mixer)
     ],
   },
+  // Anything else (a wrong link, a typo, /room/4821/nope): the "page doesn't exist" page.
+  // It must stay LAST: the router uses the first route that matches.
+  { path: '/:pathMatch(.*)*', component: NotFoundView },
 ]
 
 const router = createRouter({

@@ -7,6 +7,8 @@ import { embedProjectInPngBytes } from '../src/utils/savedFrameEngine.js'
 
 import AppIcon from '../src/components/AppIcon.vue'
 import StageBar from '../src/components/StageBar.vue'
+import { ROOM_STAGES, stageIndex } from '../src/composables/useRoom.js'
+import { dialog, askConfirm, askText, showNotice, answer, cancelDialog } from '../src/composables/useDialog.js'
 import MarketplaceCard from '../src/components/MarketplaceCard.vue'
 import ItemDetailsForm from '../src/components/ItemDetailsForm.vue'
 
@@ -237,7 +239,7 @@ describe('Critical UI components (AppIcon, StageBar, MarketplaceCard, ItemDetail
   })
 
   // 24. StageBar step pills rendering
-  it('renders all 7 photostrip workflow steps in order', () => {
+  it('renders all 6 photostrip workflow steps in order (no lobby)', () => {
     const wrapper = mount(StageBar, {
       props: { current: 'pick' },
       global: {
@@ -247,11 +249,11 @@ describe('Critical UI components (AppIcon, StageBar, MarketplaceCard, ItemDetail
       }
     })
     const steps = wrapper.findAll('.step-pill')
-    expect(steps).toHaveLength(7)
-    expect(steps[0].text()).toContain('1 Lobby')
-    expect(steps[1].text()).toContain('2 Shoot')
-    expect(steps[2].text()).toContain('3 Pick')
-    expect(steps[6].text()).toContain('7 Export')
+    expect(steps).toHaveLength(6)
+    expect(steps[0].text()).toContain('Shoot')
+    expect(steps[1].text()).toContain('Pick')
+    expect(steps[5].text()).toContain('Export')
+    expect(wrapper.text()).not.toContain('Lobby')
   })
 
   // 25. StageBar current and completed status
@@ -259,17 +261,16 @@ describe('Critical UI components (AppIcon, StageBar, MarketplaceCard, ItemDetail
     const wrapper = mount(StageBar, { props: { current: 'pick' } })
     const steps = wrapper.findAll('.step-pill')
 
-    // Steps before 'pick' (Lobby index 0, Shoot index 1) are done
+    // The step before 'pick' (Shoot, index 0) is done
     expect(steps[0].classes()).toContain('done')
-    expect(steps[1].classes()).toContain('done')
 
-    // Step 'pick' (index 2) is current
-    expect(steps[2].classes()).toContain('current')
-    expect(steps[2].classes()).not.toContain('done')
+    // Step 'pick' (index 1) is current
+    expect(steps[1].classes()).toContain('current')
+    expect(steps[1].classes()).not.toContain('done')
 
     // Steps after 'pick' are neither
-    expect(steps[3].classes()).not.toContain('current')
-    expect(steps[3].classes()).not.toContain('done')
+    expect(steps[2].classes()).not.toContain('current')
+    expect(steps[2].classes()).not.toContain('done')
   })
 
   // 26. StageBar room badge display
@@ -300,7 +301,7 @@ describe('Critical UI components (AppIcon, StageBar, MarketplaceCard, ItemDetail
       }
     })
     expect(wrapper.text()).toContain('Haru Soft Cloud')
-    expect(wrapper.text()).toContain('by Gabriel')
+    expect(wrapper.text()).toContain('Gabriel') // the maker's name, next to their picture
     expect(wrapper.text()).toContain('4 slots')
     expect(wrapper.text()).toContain('12 saves')
   })
@@ -344,7 +345,7 @@ describe('Critical UI components (AppIcon, StageBar, MarketplaceCard, ItemDetail
 
     // Toggle 'Friends' category on
     await friendsButton.trigger('click')
-    expect(friendsButton.classes()).toContain('btn-primary')
+    expect(friendsButton.classes()).toContain('active') // picked categories are chips with the 'active' class
   })
 
   // 30. ItemDetailsForm cancel event emission
@@ -357,5 +358,77 @@ describe('Critical UI components (AppIcon, StageBar, MarketplaceCard, ItemDetail
     await cancelButton.trigger('click')
 
     expect(wrapper.emitted('cancel')).toBeTruthy()
+  })
+})
+
+// ============================================================================
+// PART 4: Room stages (useRoom.js)
+// ============================================================================
+describe('Room stages (useRoom.js)', () => {
+  it('uses one name per stage, the same names as the stage bar', () => {
+    expect(ROOM_STAGES.map((stage) => stage.id)).toEqual(['shoot', 'pick', 'video', 'decorate', 'music', 'export'])
+    for (const stage of ROOM_STAGES) {
+      expect(stage).not.toHaveProperty('step')
+      expect(stage).not.toHaveProperty('path') // the URL is the name: /room/4821/pick
+    }
+  })
+
+  it('only lets the stage bar open stages whose page is in the app', () => {
+    const withPages = ROOM_STAGES.filter((stage) => stage.hasPage).map((stage) => stage.id)
+    expect(withPages).toEqual(['shoot', 'pick', 'decorate'])
+  })
+
+  it('gives each stage its place in the order', () => {
+    expect(stageIndex('shoot')).toBe(0)
+    expect(stageIndex('pick')).toBe(1)
+    expect(stageIndex('decorate')).toBe(3)
+    expect(stageIndex(undefined)).toBe(0)
+    expect(stageIndex('no-such-stage')).toBe(0)
+  })
+
+  it('marks the page passed as current="shoot" as the current step in the stage bar', () => {
+    const wrapper = mount(StageBar, { props: { current: 'shoot' } })
+    const steps = wrapper.findAll('.step-pill')
+    expect(steps[0].classes()).toContain('current')
+    expect(steps[0].text()).toContain('Shoot')
+  })
+})
+
+// ============================================================================
+// PART 5: In-app popups (useDialog.js), instead of alert / confirm / prompt
+// ============================================================================
+describe('In-app popups (useDialog.js)', () => {
+  it('askConfirm resolves true for the main button and false for cancel', async () => {
+    const yes = askConfirm({ title: 'Delete it?', danger: true })
+    expect(dialog.value.kind).toBe('confirm')
+    expect(dialog.value.danger).toBe(true)
+    answer(true)
+    expect(await yes).toBe(true)
+    expect(dialog.value).toBe(null)
+
+    const no = askConfirm({ title: 'Delete it?' })
+    cancelDialog()
+    expect(await no).toBe(false)
+  })
+
+  it('askText resolves the typed text, or null when cancelled', async () => {
+    const typed = askText({ title: 'Note?' })
+    answer('copied from someone')
+    expect(await typed).toBe('copied from someone')
+
+    const cancelled = askText({ title: 'Note?' })
+    cancelDialog()
+    expect(await cancelled).toBe(null)
+  })
+
+  it('opening a second popup cancels the first one', async () => {
+    const first = askConfirm({ title: 'First' })
+    const second = showNotice({ title: 'Second', copyText: 'https://example.com' })
+    expect(await first).toBe(false)
+    expect(dialog.value.title).toBe('Second')
+    expect(dialog.value.confirmLabel).toBe('Done')
+    answer(undefined)
+    await second
+    expect(dialog.value).toBe(null)
   })
 })

@@ -85,6 +85,18 @@ service firebase.storage {
       allow delete: if isOwner(uid) || isAdmin();
     }
 
+    // ---------- Profile pictures ----------
+    // avatars/{uid}/avatar.jpg   (made 256 x 256 in the browser before uploading, see useAuth.js)
+    // Anyone signed in can see them: they are shown next to names everywhere.
+
+    match /avatars/{uid}/avatar.jpg {
+      allow read: if signedIn();
+      allow create, update: if isOwner(uid)
+        && request.resource.size < 1024 * 1024
+        && request.resource.contentType == 'image/jpeg';
+      allow delete: if isOwner(uid) || isAdmin();
+    }
+
     // ---------- Video clips (room gallery) ----------
     // clips/{code}/{uid}/{clipId}.webm or .mp4   (see clips.js)
     // Admins can play and delete them on the admin page.

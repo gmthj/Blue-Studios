@@ -8,6 +8,7 @@ import AdminAccounts from '../components/admin/AdminAccounts.vue'
 import AdminRooms from '../components/admin/AdminRooms.vue'
 import AdminLog from '../components/admin/AdminLog.vue'
 import { prefetchAccounts } from '../admin.js'
+import AppIcon from '../components/AppIcon.vue'
 
 // The admin page (/admin): the moderator dashboard. Only accounts with the admin mark see it (router.js),
 // and the security rules + /api/admin check the mark again, so it is safe even if someone opens it.
@@ -23,12 +24,12 @@ const route = useRoute()
 const router = useRouter()
 
 const TABS = [
-  { id: 'overview', label: 'Overview', component: AdminOverview },
-  { id: 'reports', label: 'Reports', component: AdminReports },
-  { id: 'items', label: 'Items', component: AdminItems },
-  { id: 'accounts', label: 'Accounts', component: AdminAccounts },
-  { id: 'rooms', label: 'Rooms', component: AdminRooms },
-  { id: 'log', label: 'Log', component: AdminLog },
+  { id: 'overview', label: 'Overview', icon: 'layout', component: AdminOverview },
+  { id: 'reports', label: 'Reports', icon: 'shield', component: AdminReports },
+  { id: 'items', label: 'Items', icon: 'image', component: AdminItems },
+  { id: 'accounts', label: 'Accounts', icon: 'users', component: AdminAccounts },
+  { id: 'rooms', label: 'Rooms', icon: 'camera', component: AdminRooms },
+  { id: 'log', label: 'Log', icon: 'film', component: AdminLog },
 ]
 const tab = computed(() => TABS.find((t) => t.id === route.query.tab) || TABS[0])
 
@@ -63,24 +64,56 @@ watch(() => route.fullPath, () => {
 </script>
 
 <template>
-  <div class="d-flex align-items-center justify-content-between gap-2 mb-3">
-    <h1 class="h3 mb-0">Admin</h1>
-    <div class="d-flex align-items-center gap-2">
-      <span v-if="refreshedAt" class="small text-muted">Updated {{ refreshedAt.toLocaleTimeString() }}</span>
-      <button class="btn btn-sm btn-outline-secondary" :disabled="refreshing" @click="refresh">
-        {{ refreshing ? 'Refreshing...' : 'Refresh' }}
+  <div class="app-page">
+    <header class="page-header d-flex flex-wrap align-items-end justify-content-between gap-3">
+      <div>
+        <h1 class="page-title">Admin</h1>
+        <p class="page-sub">Reports, items, accounts and rooms.</p>
+      </div>
+      <div class="d-flex align-items-center gap-2">
+        <span v-if="refreshedAt" class="small text-muted">Updated {{ refreshedAt.toLocaleTimeString() }}</span>
+        <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" :disabled="refreshing" @click="refresh">
+          <AppIcon name="refresh" :size="14" :class="{ spinning: refreshing }" />
+          {{ refreshing ? 'Refreshing...' : 'Refresh' }}
+        </button>
+      </div>
+    </header>
+
+    <!-- Scrolls sideways on narrow screens -->
+    <div class="seg-tabs mb-4" role="tablist" aria-label="Admin sections">
+      <button
+        v-for="t in TABS"
+        :key="t.id"
+        class="seg-tab"
+        :class="{ active: tab.id === t.id }"
+        role="tab"
+        :aria-selected="tab.id === t.id"
+        @click="openTab(t.id)"
+      >
+        <AppIcon :name="t.icon" :size="16" /> {{ t.label }}
       </button>
     </div>
+
+    <!-- :key reloads the tab when it is opened again (or opened with different filters) -->
+    <component :is="tab.component" ref="current" :key="route.fullPath" @open-tab="openTab" />
   </div>
-
-  <!-- Scrolls sideways on narrow screens. overflow-y-hidden: the tabs stick out 1px below the bar,
-       which would otherwise add a vertical scroll bar -->
-  <ul class="nav nav-tabs mb-3 flex-nowrap overflow-x-auto overflow-y-hidden">
-    <li v-for="t in TABS" :key="t.id" class="nav-item">
-      <button class="nav-link text-nowrap" :class="{ active: tab.id === t.id }" @click="openTab(t.id)">{{ t.label }}</button>
-    </li>
-  </ul>
-
-  <!-- :key reloads the tab when it is opened again (or opened with different filters) -->
-  <component :is="tab.component" ref="current" :key="route.fullPath" @open-tab="openTab" />
 </template>
+
+<style scoped>
+/* The refresh arrow turns while loading */
+.spinning {
+  animation: spin 800ms linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinning {
+    animation: none;
+  }
+}
+</style>

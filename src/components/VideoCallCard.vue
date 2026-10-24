@@ -7,6 +7,7 @@ import { useVideoCall } from '../composables/useVideoCall.js'
 import { getUid } from '../composables/useAuth.js'
 import { MAX_PEOPLE } from '../room.js'
 import VideoTile from './VideoTile.vue'
+import { askConfirm } from '../composables/useDialog.js'
 
 // The video call window: everyone in the room (live video, name, device, mute icon),
 // plus the mute/unmute, leave and close room buttons, all in a small title bar to save space.
@@ -250,7 +251,14 @@ async function leaveRoom() {
 // Closing the room ends the video call for everyone (saves Agora minutes) and stops new people joining.
 // Every device sees closed: true in the room document and goes back to the home page (see RoomLayout.vue).
 async function closeRoom() {
-  if (!confirm('Close this room for everyone? The video call will end.')) return
+  const sure = await askConfirm({
+    title: 'Close this room for everyone?',
+    message: 'The video call ends and everyone goes back to the home page.',
+    confirmLabel: 'Close room',
+    danger: true,
+    icon: 'lock',
+  })
+  if (!sure) return
   await updateDoc(roomRef(), { closed: true })
 }
 </script>

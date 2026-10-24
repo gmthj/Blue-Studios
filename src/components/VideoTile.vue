@@ -2,8 +2,9 @@
 import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useVideoCall } from '../composables/useVideoCall.js'
 import StreamVideo from './StreamVideo.vue'
+import { profileOf } from '../profiles.js'
 
-// One person in the video call: their live video (or their initial on a colour), name, host badge and mute icon.
+// One person in the video call: their live video (or their profile picture on a colour), name, host badge and mute icon.
 
 const props = defineProps({
   member: { type: Object, required: true }, // { id, name, deviceType } from the members list
@@ -44,13 +45,12 @@ async function showRemoteVideo() {
 onMounted(showRemoteVideo)
 watch(hasVideo, showRemoteVideo)
 
-// No video yet: show the first letter of their name on a colour, like the tiles in the Figma designs.
+// No video yet: show their profile picture on a colour, like the tiles in the Figma designs.
+// (Their uploaded photo, or their DiceBear face: see profiles.js. Guests get the DiceBear face.)
 // The colour comes from their id, so each person keeps the same colour on every device.
 const AVATAR_COLOURS = ['#4A6CF0', '#2FB38A', '#E8A928', '#8B5CF6', '#F2711C', '#20B2AA']
 
-const initial = computed(() => {
-  return (props.member.name || '?').trim().charAt(0).toUpperCase()
-})
+const picture = computed(() => profileOf(props.member.id).avatar)
 
 const avatarColour = computed(() => {
   let total = 0
@@ -72,7 +72,7 @@ const avatarColour = computed(() => {
     <div v-else v-show="hasVideo" ref="remoteEl" class="remote-el"></div>
 
     <div v-if="!hasVideo" class="no-video" :style="{ '--avatar': avatarColour }">
-      <span class="avatar" :title="member.name + ': no video'">{{ initial }}</span>
+      <img :src="picture" class="avatar" :alt="member.name + ': no video'" :title="member.name + ': no video'" />
     </div>
 
     <!-- Top left: host badge. Top right: a red mic icon, only while they are muted (like Zoom / Meet). -->
@@ -134,17 +134,14 @@ const avatarColour = computed(() => {
   background: linear-gradient(160deg, color-mix(in srgb, var(--avatar) 85%, #ffffff), var(--avatar));
 }
 
+/* object-fit: cover: an uploaded photo fills the circle without being squashed */
 .avatar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36%;
+  width: 40%;
   aspect-ratio: 1;
   border-radius: 50%;
-  color: #ffffff;
-  font-size: clamp(0.8rem, 13cqi, 2.5rem); /* cqi = 1% of the tile's width, so the letter grows with the tile */
-  font-weight: 700;
-  background: rgba(255, 255, 255, 0.25);
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.35);
 }
 
 .host-badge {

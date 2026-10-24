@@ -5,6 +5,7 @@ import { listItems, hideItem, unhideItem } from '../../admin.js'
 import { CATEGORIES, categoryLabel } from '../../studio.js'
 import { useAdminTab, useSort, formatTime } from '../../composables/useAdminTab.js'
 import StorageImage from '../StorageImage.vue'
+import { askText } from '../../composables/useDialog.js'
 
 // Items tab: every template and sticker (public, private and hidden by moderators).
 // /admin?tab=items&type=stickers&state=hidden&owner=<uid> opens it already filtered.
@@ -63,8 +64,15 @@ const shown = computed(() => {
       || item.ownerId === search.value.trim())))
 })
 
-function hide(item) {
-  const note = prompt('Hide "' + item.name + '" from the marketplace? Note for the log (optional):', '')
+async function hide(item) {
+  const note = await askText({
+    title: 'Hide "' + item.name + '" from the marketplace?',
+    label: 'Note for the log (optional)',
+    placeholder: 'e.g. copied from someone else',
+    confirmLabel: 'Hide item',
+    danger: true,
+    icon: 'eye-off',
+  })
   if (note === null) return
   run(() => hideItem(item.type, item.id, note), '"' + item.name + '" is hidden.')
 }
@@ -145,7 +153,8 @@ function unhide(item) {
 <style scoped>
 .preview {
   height: 140px;
-  background: #f1f3f5;
+  background: var(--soft);
+  border-radius: 10px;
   overflow: hidden;
 }
 </style>

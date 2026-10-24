@@ -206,8 +206,8 @@ src/views/MarketplaceItemView.vue  one item (/marketplace/templates/{id}): save 
 src/views/AdminView.vue          admin page (/admin, admins only); each tab is in src/components/admin/
 src/views/TestUploadView.vue     TEMPORARY (/test-upload): makes test templates/stickers. Remove before submission
 src/views/RoomLayout.vue         parent page of a room: joins the room + call once, shows the floating call window, moves everyone with the room's stage
-src/views/RoomView.vue           (child, /room/1234) camera, shutter, countdown, join card, gallery
-src/views/StripView.vue          (child, /room/1234/strip) "Pick": choose the cut and frame, drag photos into slots
+src/views/RoomView.vue           (child, /room/1234/shoot) camera, shutter, countdown, join card, gallery
+src/views/StripView.vue          (child, /room/1234/pick) "Pick": choose the cut and frame, drag photos into slots
 src/views/DecorateView.vue       (child, /room/1234/decorate) filters, stickers, Download JPG, Save to My Studio
 
 src/components/VideoCallCard.vue    the floating call window (drag anywhere, minimise): tiles + Mute/Unmute, Leave, Close room
@@ -236,7 +236,7 @@ scripts/set-admin.mjs      give / remove the admin mark (npm run set-admin -- em
 scripts/set-cors.mjs       apply storage.cors.json to the Storage bucket (npm run set-cors)
 docs/team/                 a guide for each teammate on using accounts, My Studio, marketplace and rooms
 docs/phase-7-lockdown-prompt.md  instructions for the security lockdown before submission
-vercel.json                sends page URLs (/login, /room/...) to index.html: add new page routes here too
+vercel.json                sends every page URL to index.html so the app's router shows it (only URLs with no dot, not /api/ or /@vite...: those are real files)
 .env.example               the environment variables needed (copy to .env)
 ```
 
@@ -268,7 +268,7 @@ rooms/{code}/photos/{auto}   { ownerId, name, shotNumber, image, createdAt }
 6. **Capture:** the current video frame is drawn on a canvas, turned into a small JPEG (data URL), and saved to `photos` with the shot number. A white flash fades in shortly before the photo and fades out shortly after it. Devices hear about the shutter at slightly different times, so this makes sure every screen is still lit up when every device takes its photo. The timing, fade length and brightness are the `FLASH_*` settings at the top of `RoomView.vue`.
 7. **Shared gallery:** every device listens to `photos`, so new photos appear on everyone's screen. Photos are grouped by shot number.
 8. **Switch camera:** after permission is given, we list all cameras with `enumerateDevices()`. If there is more than one, a button cycles through them. Switching swaps the new camera into the track already being sent (`replaceTrack`), so others never see us leave and rejoin. When a phone rotates, the browser rotates the camera picture by itself; tiles use `fit: 'contain'` so portrait and landscape both show fully.
-9. **Pages move together (`stage`):** buttons such as "Make photostrip", "Next" and "Back to camera" set the room's `stage` (`'camera'`, `'strip'`, `'decorate'`, ...). `RoomLayout.vue` watches it and sends everyone to the matching page (`STAGE_PATHS`). To add a room page, add a child route in `router.js`, a line in `STAGE_PATHS`, and the URL in `vercel.json`.
+9. **Pages move together (`stage`):** buttons such as "Make photostrip", "Next" and "Back to camera" (and the steps in the stage bar) set the room's `stage`: `'shoot'`, `'pick'`, `'video'`, `'decorate'`, `'music'` or `'export'` (`ROOM_STAGES` in `useRoom.js`). `RoomLayout.vue` watches it and sends everyone to that stage's page, which is always `/room/{code}/{stage}`, e.g. `/room/4821/pick`. To add a room page, add a child route in `router.js` whose path is the stage's name, and set `hasPage: true` for it in `ROOM_STAGES` (`vercel.json` already sends every page URL to the app).
 10. **Collaborative photostrip:** everything about the strip is saved in the room document, so everyone sees the same strip:
     - **Pick** (`StripView.vue`): the cut (`stripLayoutId`), the frame style (`stripStyleId`), and which photo is in which slot (`stripSlots`). Drag a photo into a slot, or on a phone tap a photo and then a slot. Each slot is saved on its own (`updateDoc(room, { 'stripSlots.2': photoId })`), so two people changing different slots at once don't overwrite each other.
     - **Decorate** (`DecorateView.vue`): a filter and adjustments for each photo (`stripEdits`), and stickers that can be dragged, resized, rotated and layered (`stripStickers`).
