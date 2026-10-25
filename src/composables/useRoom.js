@@ -47,7 +47,7 @@ export const ROOM_STAGES = [
   { id: 'pick', label: 'Pick', hasPage: true },         // /room/4821/pick     (StripView)
   { id: 'video', label: 'Video', hasPage: false },
   { id: 'decorate', label: 'Decorate', hasPage: true }, // /room/4821/decorate (DecorateView)
-  { id: 'music', label: 'Music', hasPage: false },
+  { id: 'music', label: 'Music', hasPage: true },       // /room/4821/music    (MusicView)
   { id: 'export', label: 'Export', hasPage: false },
 ]
 
