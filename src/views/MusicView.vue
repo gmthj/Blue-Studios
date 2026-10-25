@@ -331,18 +331,16 @@ onMounted(loadTracks)
 </script>
 
 <template>
+  <div class="app-page music-page">
     <StageBar current="music" />
-
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2 class="h4 mb-0">Music mixer</h2>
         <button class="btn btn-outline-secondary btn-sm" @click="goBack">&larr; Decorate</button>
     </div>
-
     <div class="row g-4">
     <!-- LEFT: decks, mixer and your mix -->
     <div class="col-12 col-lg-9">
       <div class="row g-3">
-
         <!-- DECK A: each @event calls a function above with the value DeckCard emitted -->
         <div class="col-12 col-md-5">
           <DeckCard
@@ -359,7 +357,6 @@ onMounted(loadTracks)
             @cue="cueA"
           />
         </div>
-
         <!-- MIXER (crossfader) -->
         <div class="col-12 col-md-2">
           <div class="card h-100">
@@ -381,7 +378,6 @@ onMounted(loadTracks)
             </div>
           </div>
         </div>
-
         <!-- DECK B -->
         <div class="col-12 col-md-5">
           <DeckCard
@@ -398,7 +394,6 @@ onMounted(loadTracks)
             @cue="cueB"
           />
         </div>
-
         <!-- YOUR MIX -->
         <div class="col-12">
           <div class="card">
@@ -406,10 +401,8 @@ onMounted(loadTracks)
               <h2 class="h5 mb-0">Your mix</h2>
               <p class="small text-muted">5 s loop · matches your video frame</p>
               <WaveformBars :bars="mixBars" class="mb-3" />
-
               <!-- Shows up after Preview has made the mix -->
               <audio v-if="previewUrl" :src="previewUrl" controls class="w-100 mb-3"></audio>
-
               <div class="d-flex flex-wrap gap-2 justify-content-end">
                 <button class="btn btn-outline-secondary" :disabled="rendering" @click="makeMix">
                   {{ rendering ? 'Rendering...' : '▷ Preview' }}
@@ -421,16 +414,13 @@ onMounted(loadTracks)
             </div>
           </div>
         </div>
-
       </div>
     </div>
-
     <!-- RIGHT: browse Jamendo -->
     <div class="col-12 col-lg-3">
       <div class="card h-100">
         <div class="card-body">
           <h2 class="h5">Browse Jamendo</h2>
-
           <!-- @change runs loadTracks every time a new genre is picked -->
           <select v-model="genre" class="form-select mb-3" @change="loadTracks">
             <option value="chillout">Chill</option>
@@ -444,10 +434,8 @@ onMounted(loadTracks)
             <option value="acoustic">Acoustic</option>
             <option value="funk">Funk</option>
           </select>
-
           <p v-if="loading" class="text-muted small">Loading songs...</p>
           <div v-else-if="errorMessage" class="alert alert-warning small">{{ errorMessage }}</div>
-
           <div
             v-for="track in tracks"
             :key="track.id"
@@ -465,14 +453,15 @@ onMounted(loadTracks)
         </div>
       </div>
     </div>
+      </div>
   </div>
 </template>
 
 <style scoped>
 /* Deck colours from the Figma */
-.text-deck-a { color: #14a39a; }
+.text-deck-a { color: #0D7C75; }   
 .text-deck-b { color: #7c3aed; }
-.btn-deck-a { background: #14a39a; color: white; }
+.btn-deck-a { background: #0D7C75; color: white; }
 .btn-deck-b { background: #7c3aed; color: white; }
 
 .track-icon {
