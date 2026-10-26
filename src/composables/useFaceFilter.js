@@ -272,11 +272,13 @@ function drawPart(face, part) {
   const width = eyeWidth * part.width
   const height = width * (img.height / img.width) // keep the picture's shape
 
-  // Move to the spot, turn with the head, then draw the picture centred there
+  // Move to the spot, turn with the head, move by the offset, then draw the picture centred there
   ctx.save()
   ctx.translate(x, y)
   ctx.rotate(tilt)
-  ctx.drawImage(img, part.offsetX * eyeWidth - width / 2, part.offsetY * eyeWidth - height / 2, width, height)
+  ctx.translate(part.offsetX * eyeWidth, part.offsetY * eyeWidth)
+  if (part.flip) ctx.scale(-1, 1) // mirror the picture left-right
+  ctx.drawImage(img, -width / 2, -height / 2, width, height)
   ctx.restore()
 }
 
