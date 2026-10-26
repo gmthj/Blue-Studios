@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import AgoraRTC from 'agora-rtc-sdk-ng'
 import axios from 'axios'
 import { auth } from '../firebase.js'
+import { startFaceFilter, changeFaceFilterCamera, stopFaceFilter } from './useFaceFilter.js'
 
 // SHARED video call (through Agora) for every page inside a room.
 // Like useRoom.js, the refs are created once outside the function, so all pages share ONE call.
@@ -16,7 +17,7 @@ AgoraRTC.setLogLevel(2)
 
 // ---------- Shared state (refs, so pages update automatically) ----------
 const callError = ref('')
-const localStream = ref(null)   // my camera (a MediaStream), shown in <video> elements
+const localStream = ref(null)   // my camera with the face filter (a MediaStream), shown in <video> elements
 const cameras = ref([])         // all cameras on this device
 const cameraIndex = ref(0)      // which camera in the list is being used
 const mirrored = ref(true)      // flip my picture like a mirror (front camera only)
@@ -33,6 +34,7 @@ let localVideoTrack = null  // my camera, as sent to the others
 let micTrack = null         // my microphone, only exists while unmuted
 let agoraUsers = {}         // uid -> Agora user object, needed to play their video
 let wantCall = false        // false once endCall() runs, so a call that is still connecting stops
+let cameraStream = null     // the real camera, before the face filter (see useFaceFilter.js)
 
 // ---------- Camera ----------
 
@@ -50,7 +52,7 @@ async function openCamera() {
   }
 
   try {
-    localStream.value = await navigator.mediaDevices.getUserMedia({ video: videoOptions, audio: false })
+    cameraStream = await navigator.mediaDevices.getUserMedia({ video: videoOptions, audio: false })
     cameraError.value = ''
   } catch (error) {
     console.error(error)
@@ -58,8 +60,16 @@ async function openCamera() {
     return
   }
 
+  // Everyone sees the camera through the face filter. The first time, start the filter.
+  // After switching camera, the filter keeps its stream and just draws the new camera.
+  if (localStream.value) {
+    await changeFaceFilterCamera(cameraStream)
+  } else {
+    localStream.value = await startFaceFilter(cameraStream)
+  }
+
   // Information about the camera we got, e.g. its deviceId and facingMode
-  const settings = localStream.value.getVideoTracks()[0].getSettings()
+  const settings = cameraStream.getVideoTracks()[0].getSettings()
 
   // Back cameras report facingMode 'environment'. Everything else (front cameras, laptop webcams) is mirrored.
   mirrored.value = settings.facingMode !== 'environment'
@@ -77,11 +87,19 @@ async function openCamera() {
   }
 }
 
+// Turn off the real camera only (the face filter keeps showing the last picture)
 function stopCamera() {
-  if (localStream.value) {
-    localStream.value.getTracks().forEach((track) => track.stop())
-    localStream.value = null
+  if (cameraStream) {
+    cameraStream.getTracks().forEach((track) => track.stop())
+    cameraStream = null
   }
+}
+
+// Turn off the camera and the face filter, so there is no video at all
+function closeCamera() {
+  stopCamera()
+  stopFaceFilter()
+  localStream.value = null
 }
 
 // Go to the next camera in the list, back to the first one after the last
@@ -95,14 +113,11 @@ async function switchCamera() {
   cameraIndex.value = (cameraIndex.value + 1) % cameras.value.length
   await openCamera()
 
-  // Swap the new camera into the video we are already sending.
-  // The others keep seeing us, just with the new camera (we do not leave and come back).
-  if (localVideoTrack && localStream.value) {
-    try {
-      await localVideoTrack.replaceTrack(localStream.value.getVideoTracks()[0], false)
-    } catch (error) {
-      console.error(error)
-    }
+  // The video we send to the others is the face filter's stream, which did not change,
+  // so the others keep seeing us with the new camera (nothing to swap in Agora).
+  // If the new camera did not open, turn the video off instead of showing a frozen picture.
+  if (!cameraStream) {
+    closeCamera()
   }
 
   switchingCamera.value = false
@@ -232,7 +247,7 @@ async function endCall() {
     agoraClient = null
     await client.leave()
   }
-  stopCamera()
+  closeCamera()
   agoraUsers = {}
   remoteUsers.value = []
   micOn.value = false

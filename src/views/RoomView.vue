@@ -6,6 +6,7 @@ import { getGuestName } from '../guest.js'
 import { getUid } from '../composables/useAuth.js'
 import { useRoom } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
+import { useFaceFilter } from '../composables/useFaceFilter.js'
 import StreamVideo from '../components/StreamVideo.vue'
 import RoomGallery from '../components/RoomGallery.vue'
 import StageBar from '../components/StageBar.vue'
@@ -19,6 +20,16 @@ const guestName = getGuestName()
 
 const { code, room, roomRef } = useRoom()
 const { localStream, mirrored, cameras, cameraIndex, cameraError, switchingCamera, switchCamera } = useVideoCall()
+const { faceFilterId, faceFilterLoading, faceFilterError, setFaceFilter } = useFaceFilter()
+
+// TEMPORARY test button: turns the sunglasses filter on and off (a proper filter picker comes later)
+function toggleTestFilter() {
+  setFaceFilter(faceFilterId.value === 'glasses' ? 'none' : 'glasses')
+}
+
+watch(faceFilterError, (message) => {
+  if (message) showNotice({ title: 'Filter unavailable', message: message, icon: 'sparkle' })
+})
 
 const mainVideo = ref(null) // the big camera preview (a StreamVideo component)
 const copied = ref(false)   // shows "Link copied!" for a moment after copying
@@ -247,6 +258,17 @@ async function copyJoinLink() {
               <span class="d-none d-md-inline">Switch camera</span>
             </button>
 
+            <!-- TEMPORARY test button for the face filter -->
+            <button
+              v-if="localStream"
+              class="glass-btn face-filter-btn"
+              :disabled="faceFilterLoading"
+              @click="toggleTestFilter"
+            >
+              <AppIcon name="sparkle" :size="16" />
+              <span>{{ faceFilterLoading ? 'Loading...' : faceFilterId === 'glasses' ? 'Filter on' : 'Filter off' }}</span>
+            </button>
+
             <div v-if="cameraError" class="camera-error">
               <AppIcon name="camera" :size="28" />
               <p class="mb-0">{{ cameraError }}</p>
@@ -460,6 +482,12 @@ async function copyJoinLink() {
   position: absolute;
   top: 12px;
   right: 12px;
+}
+
+.face-filter-btn {
+  position: absolute;
+  top: 12px;
+  left: 12px;
 }
 
 /* ---------- SHUTTER BUTTON ----------
