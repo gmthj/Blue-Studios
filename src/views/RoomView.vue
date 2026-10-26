@@ -7,7 +7,9 @@ import { getUid } from '../composables/useAuth.js'
 import { useRoom } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
 import { useFaceFilter } from '../composables/useFaceFilter.js'
+import { getFaceFilter } from '../filters/faceFilters.js'
 import StreamVideo from '../components/StreamVideo.vue'
+import FaceFilterPicker from '../components/FaceFilterPicker.vue'
 import RoomGallery from '../components/RoomGallery.vue'
 import StageBar from '../components/StageBar.vue'
 import AppIcon from '../components/AppIcon.vue'
@@ -20,12 +22,11 @@ const guestName = getGuestName()
 
 const { code, room, roomRef } = useRoom()
 const { localStream, mirrored, cameras, cameraIndex, cameraError, switchingCamera, switchCamera } = useVideoCall()
-const { faceFilterId, faceFilterLoading, faceFilterError, setFaceFilter } = useFaceFilter()
+const { faceFilterId, faceFilterLoading, faceFilterError } = useFaceFilter()
 
-// TEMPORARY test button: turns the sunglasses filter on and off (a proper filter picker comes later)
-function toggleTestFilter() {
-  setFaceFilter(faceFilterId.value === 'glasses' ? 'none' : 'glasses')
-}
+// The chosen filter's picture, shown inside the shutter button (null = no filter)
+const filterThumbnail = computed(() => getFaceFilter(faceFilterId.value).thumbnail)
+const showFilters = ref(false) // the face filter picker is open
 
 watch(faceFilterError, (message) => {
   if (message) showNotice({ title: 'Filter unavailable', message: message, icon: 'sparkle' })
@@ -258,25 +259,38 @@ async function copyJoinLink() {
               <span class="d-none d-md-inline">Switch camera</span>
             </button>
 
-            <!-- TEMPORARY test button for the face filter -->
+            <!-- Opens / closes the face filter picker. Highlighted while a filter is on. -->
             <button
               v-if="localStream"
               class="glass-btn face-filter-btn"
-              :disabled="faceFilterLoading"
-              @click="toggleTestFilter"
+              :class="{ 'filter-on': faceFilterId !== 'none' }"
+              :aria-expanded="showFilters"
+              @click="showFilters = !showFilters"
             >
               <AppIcon name="sparkle" :size="16" />
-              <span>{{ faceFilterLoading ? 'Loading...' : faceFilterId === 'glasses' ? 'Filter on' : 'Filter off' }}</span>
+              <span>Filters</span>
             </button>
+
+            <!-- The face filters: a row that scrolls behind the shutter button (the middle one is chosen) -->
+            <FaceFilterPicker v-if="localStream && showFilters" class="filter-carousel-pos" :disabled="countdown > 0" />
 
             <div v-if="cameraError" class="camera-error">
               <AppIcon name="camera" :size="28" />
               <p class="mb-0">{{ cameraError }}</p>
             </div>
 
-            <!-- Shutter button: anyone can press it. It sits on the camera view, bottom middle. -->
-            <button class="shutter-btn" :disabled="countdown > 0" aria-label="Take a photo" @click="pressShutter">
-              <span class="shutter-inner"></span>
+            <!-- Shutter button: anyone can press it. It sits on the camera view, bottom middle.
+                 With a filter on, the filter's picture shows inside it (like Instagram). -->
+            <button
+              class="shutter-btn"
+              :class="{ 'filter-loading': faceFilterLoading }"
+              :disabled="countdown > 0"
+              aria-label="Take a photo"
+              @click="pressShutter"
+            >
+              <span class="shutter-inner" :class="{ 'has-filter': filterThumbnail }">
+                <img v-if="filterThumbnail" :src="filterThumbnail" alt="" draggable="false" />
+              </span>
             </button>
           </div>
         </div>
@@ -486,8 +500,37 @@ async function copyJoinLink() {
 
 .face-filter-btn {
   position: absolute;
-  top: 12px;
+  z-index: 11; /* above the filter row, which passes behind it */
+  bottom: 12px;
   left: 12px;
+}
+
+/* A filter is on: a white ring around the button */
+.face-filter-btn.filter-on {
+  box-shadow: inset 0 0 0 2px #ffffff;
+}
+
+/* The filter row: the full width of the camera, lined up with the shutter button
+   (76px tall, 20px from the bottom), and just below it (z-index 9 vs 10), so it passes behind it */
+.filter-carousel-pos {
+  position: absolute;
+  z-index: 9;
+  left: 0;
+  right: 0;
+  bottom: 20px;
+  height: 76px;
+}
+
+/* Phones held sideways: the shutter is on the right edge, so the row runs top to bottom there */
+@media (orientation: landscape) and (max-height: 500px) {
+  .filter-carousel-pos {
+    top: 0;
+    bottom: 0;
+    left: auto;
+    right: 12px;
+    width: 62px;
+    height: auto;
+  }
 }
 
 /* ---------- SHUTTER BUTTON ----------
@@ -515,11 +558,43 @@ async function copyJoinLink() {
 }
 
 .shutter-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 56px;
   height: 56px;
   border-radius: 50%;
   background: var(--brand);
   transition: transform 160ms var(--ease-out), background-color 150ms ease;
+}
+
+/* A filter is on: its picture on a dark background instead of the blue button */
+.shutter-inner.has-filter {
+  background: rgba(14, 16, 32, 0.6);
+}
+
+.shutter-inner img {
+  width: 70%;
+  height: 70%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+/* While the chosen filter downloads: a spinning ring around the shutter */
+.shutter-btn.filter-loading::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border: 3px solid transparent;
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: shutter-spin 0.8s linear infinite;
+}
+
+@keyframes shutter-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Pressed: the inner button shrinks, like pushing a real shutter */
@@ -537,7 +612,7 @@ async function copyJoinLink() {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .shutter-btn:not(:disabled):hover .shutter-inner {
+  .shutter-btn:not(:disabled):hover .shutter-inner:not(.has-filter) {
     background: var(--brand-dark);
   }
 }

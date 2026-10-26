@@ -106,21 +106,30 @@ function stopFaceFilter() {
 
 // ---------- Choosing a filter ----------
 
+let latestChoice = 0 // counts filter choices, so only the newest one finishes loading
+
 async function setFaceFilter(id) {
   const filter = getFaceFilter(id)
+  latestChoice = latestChoice + 1
+  const thisChoice = latestChoice
+
   faceFilterId.value = filter.id
   faceFilterError.value = ''
+  faceFilterLoading.value = filter.parts.length > 0
   if (filter.parts.length === 0) return // "No filter": nothing to download
 
-  faceFilterLoading.value = true
   try {
     await Promise.all([loadFaceLandmarker(), ...filter.parts.map((part) => loadImage(part.image))])
   } catch (error) {
     console.error(error)
+    // Swiping through filters quickly: an older choice failing must not undo a newer one
+    if (thisChoice !== latestChoice) return
     faceFilterError.value = 'Could not load the filter. Please check your internet and try again.'
     faceFilterId.value = 'none'
   }
-  faceFilterLoading.value = false
+  if (thisChoice === latestChoice) {
+    faceFilterLoading.value = false
+  }
 }
 
 // Download MediaPipe the first time a filter is used (later calls reuse the same download)
