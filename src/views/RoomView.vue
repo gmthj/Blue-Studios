@@ -26,7 +26,6 @@ const { faceFilterId, faceFilterLoading, faceFilterError } = useFaceFilter()
 
 // The chosen filter's picture, shown inside the shutter button (null = no filter)
 const filterThumbnail = computed(() => getFaceFilter(faceFilterId.value).thumbnail)
-const showFilters = ref(false) // the face filter picker is open
 
 watch(faceFilterError, (message) => {
   if (message) showNotice({ title: 'Filter unavailable', message: message, icon: 'sparkle' })
@@ -222,7 +221,7 @@ async function copyJoinLink() {
               <div class="min-w-0">
                 <span class="join-label">Invite friends</span>
                 <strong class="room-code d-block">{{ code }}</strong>
-                <p class="join-text">Scan, or go to <strong>{{ siteAddress }}</strong> and enter the code.</p>
+                <p class="join-text">Scan or go to <strong>{{ siteAddress }}</strong> and enter the code</p>
                 <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" @click="copyJoinLink">
                   <AppIcon :name="copied ? 'check' : 'duplicate'" :size="14" /> {{ copied ? 'Link copied!' : 'Copy link' }}
                 </button>
@@ -259,20 +258,8 @@ async function copyJoinLink() {
               <span class="d-none d-md-inline">Switch camera</span>
             </button>
 
-            <!-- Opens / closes the face filter picker. Highlighted while a filter is on. -->
-            <button
-              v-if="localStream"
-              class="glass-btn face-filter-btn"
-              :class="{ 'filter-on': faceFilterId !== 'none' }"
-              :aria-expanded="showFilters"
-              @click="showFilters = !showFilters"
-            >
-              <AppIcon name="sparkle" :size="16" />
-              <span>Filters</span>
-            </button>
-
             <!-- The face filters: a row that scrolls behind the shutter button (the middle one is chosen) -->
-            <FaceFilterPicker v-if="localStream && showFilters" class="filter-carousel-pos" :disabled="countdown > 0" />
+            <FaceFilterPicker v-if="localStream" class="filter-carousel-pos" :disabled="countdown > 0" />
 
             <div v-if="cameraError" class="camera-error">
               <AppIcon name="camera" :size="28" />
@@ -387,7 +374,7 @@ async function copyJoinLink() {
   flex-shrink: 0;
   padding: 4px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 6px;
   background: #ffffff;
 }
 
@@ -496,18 +483,6 @@ async function copyJoinLink() {
   position: absolute;
   top: 12px;
   right: 12px;
-}
-
-.face-filter-btn {
-  position: absolute;
-  z-index: 11; /* above the filter row, which passes behind it */
-  bottom: 12px;
-  left: 12px;
-}
-
-/* A filter is on: a white ring around the button */
-.face-filter-btn.filter-on {
-  box-shadow: inset 0 0 0 2px #ffffff;
 }
 
 /* The filter row: the full width of the camera, lined up with the shutter button

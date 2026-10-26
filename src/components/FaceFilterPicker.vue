@@ -123,8 +123,8 @@ onBeforeUnmount(() => clearTimeout(scrollTimer))
   overscroll-behavior: contain; /* swiping to the end does not scroll the page */
   scrollbar-width: none;        /* hide the scrollbar (Firefox) */
   /* The filters fade out towards the edges */
-  -webkit-mask-image: linear-gradient(to right, transparent, #000 18%, #000 82%, transparent);
-  mask-image: linear-gradient(to right, transparent, #000 18%, #000 82%, transparent);
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 25%, #000 75%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 25%, #000 75%, transparent);
 }
 
 .filter-carousel::-webkit-scrollbar {
@@ -191,8 +191,8 @@ onBeforeUnmount(() => clearTimeout(scrollTimer))
     overflow-x: hidden;
     overflow-y: auto;
     scroll-snap-type: y mandatory;
-    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 82%, transparent);
-    mask-image: linear-gradient(to bottom, transparent, #000 18%, #000 82%, transparent);
+    -webkit-mask-image: linear-gradient(to bottom, transparent, #000 30%, #000 70%, transparent);
+    mask-image: linear-gradient(to bottom, transparent, #000 30%, #000 70%, transparent);
   }
 
   .filter-btn {
