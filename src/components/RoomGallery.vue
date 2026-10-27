@@ -1,9 +1,10 @@
 <script setup>
 import { computed } from 'vue'
 import { useRoom } from '../composables/useRoom.js'
+import ClipThumb from './ClipThumb.vue'
 import AppIcon from './AppIcon.vue'
 
-// The shared gallery on the camera page: every photo taken in the room, grouped by shot,
+// The shared gallery on the camera page: every photo and video clip taken in the room, grouped by shot,
 // plus the "Make photostrip" button.
 // Phones held upright: one sideways-scrolling row. Bigger screens: a column that scrolls up and down.
 
@@ -12,20 +13,27 @@ defineProps({
   countdownRunning: { type: Boolean, default: false },
 })
 
-const { photos, goToStage } = useRoom()
+const { photos, clips, goToStage } = useRoom()
 
-// Group photos by shot number, so photos taken in the same countdown appear together.
-// Result looks like: [ { shotNumber: 2, photos: [...] }, { shotNumber: 1, photos: [...] } ]
+// Group photos and clips by shot number, so everything taken in the same countdown appears together.
+// Result looks like: [ { shotNumber: 2, photos: [...], clips: [...] }, { shotNumber: 1, photos: [...], clips: [...] } ]
 const shots = computed(() => {
   const groups = []
-  for (const photo of photos.value) {
-    let group = groups.find((g) => g.shotNumber === photo.shotNumber)
+  function groupFor(shotNumber) {
+    let group = groups.find((g) => g.shotNumber === shotNumber)
     if (!group) {
-      group = { shotNumber: photo.shotNumber, photos: [] }
+      group = { shotNumber: shotNumber, photos: [], clips: [] }
       groups.push(group)
     }
-    group.photos.push(photo)
+    return group
   }
+  for (const photo of photos.value) {
+    groupFor(photo.shotNumber).photos.push(photo)
+  }
+  for (const clip of clips.value) {
+    groupFor(clip.shotNumber).clips.push(clip)
+  }
+  groups.sort((a, b) => a.shotNumber - b.shotNumber)
   return groups.reverse() // newest shot first
 })
 
@@ -40,12 +48,12 @@ async function goToStrip() {
     <div class="card-body d-flex flex-column">
       <div class="gallery-head">
         <h2 class="gallery-title">
-          Photos
-          <span v-if="photos.length" class="gallery-count">{{ photos.length }}</span>
+          Gallery
+          <span v-if="photos.length + clips.length" class="gallery-count">{{ photos.length + clips.length }}</span>
         </h2>
         <button
           class="btn btn-primary btn-sm d-inline-flex align-items-center gap-1"
-          :disabled="photos.length === 0 || countdownRunning"
+          :disabled="(photos.length === 0 && clips.length === 0) || countdownRunning"
           @click="goToStrip"
         >
           Make photostrip <AppIcon name="arrow-right" :size="14" />
@@ -54,7 +62,7 @@ async function goToStrip() {
 
       <div v-if="shots.length === 0" class="gallery-empty">
         <AppIcon name="image" :size="20" />
-        <span>No photos yet. Press the shutter and everyone's camera snaps at the same time.</span>
+        <span>Nothing yet. Press the shutter and everyone's camera snaps (or records) at the same time.</span>
       </div>
 
       <div class="gallery-scroll">
@@ -62,6 +70,7 @@ async function goToStrip() {
           <p class="shot-title">Shot {{ shot.shotNumber }}</p>
           <div class="shot-photos">
             <img v-for="photo in shot.photos" :key="photo.id" :src="photo.image" :alt="'Photo by ' + photo.name" :title="photo.name" />
+            <ClipThumb v-for="clip in shot.clips" :key="clip.id" :clip="clip" />
           </div>
         </div>
       </div>
@@ -139,8 +148,9 @@ async function goToStrip() {
   gap: 4px;
 }
 
-/* New photos fade and grow in as they arrive */
-.shot-photos img {
+/* New photos and clips fade and grow in as they arrive */
+.shot-photos img,
+.shot-photos .clip {
   height: 56px;
   border-radius: 8px;
   background: #F1F3F8;
@@ -152,6 +162,10 @@ async function goToStrip() {
     opacity: 0;
     transform: scale(0.9);
   }
+}
+
+.shot-photos .clip {
+  aspect-ratio: 4 / 3; /* a clip has no size of its own until it loads, so it gets the shape of a photo */
 }
 
 /* Bootstrap "sm" and up (576px+): the gallery fills its space and scrolls up and down, 2 photos per row */
@@ -189,6 +203,11 @@ async function goToStrip() {
 @media (prefers-reduced-motion: reduce) {
   .shot-photos img {
     transition: none;
+  }
+
+  .shot-photos .clip {
+    width: 100%;
+    height: auto;
   }
 }
 </style>

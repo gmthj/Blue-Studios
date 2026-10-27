@@ -11,7 +11,7 @@ import { useVideoCall } from '../composables/useVideoCall.js'
 import VideoCallCard from '../components/VideoCallCard.vue'
 import MessagePage from '../components/MessagePage.vue'
 
-// The parent page for everything inside a room (/room/:code/shoot, /room/:code/pick, /room/:code/decorate).
+// The parent page for everything inside a room (/room/:code/shoot, /room/:code/pick, /room/:code/video, /decorate, /music, /export).
 // It joins the room and starts the video call ONCE. The child pages (RoomView, StripView)
 // are shown in <router-view>, so moving between them does not drop the call.
 // New room features can be added as more child pages in router.js.
