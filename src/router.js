@@ -7,6 +7,8 @@ import StripView from './views/StripView.vue'
 import MusicView from './views/MusicView.vue'
 import TemplateEditorView from './views/TemplateEditorView.vue'
 import DecorateView from './views/DecorateView.vue'
+import VideoView from './views/VideoView.vue'
+import ExportView from './views/ExportView.vue'
 import StudioView from './views/StudioView.vue'
 import MarketplaceView from './views/MarketplaceView.vue'
 import MarketplaceItemView from './views/MarketplaceItemView.vue'
@@ -40,8 +42,10 @@ const routes = [
       { path: '', redirect: (to) => '/room/' + to.params.code + '/shoot' },
       { path: 'shoot', component: RoomView },        // /room/4821/shoot    (camera)
       { path: 'pick', component: StripView },        // /room/4821/pick     (choose photos for the strip)
+      { path: 'video', component: VideoView },       // /room/4821/video    (edit the clips into one video)
       { path: 'decorate', component: DecorateView }, // /room/4821/decorate (filters and stickers)
       { path: 'music', component: MusicView },       // /room/4821/music    (music mixer)
+      { path: 'export', component: ExportView },     // /room/4821/export   (make an MP4 of a strip with video)
     ],
   },
   // Anything else (a wrong link, a typo, /room/4821/nope): the "page doesn't exist" page.

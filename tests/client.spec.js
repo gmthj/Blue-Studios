@@ -375,7 +375,7 @@ describe('Room stages (useRoom.js)', () => {
 
   it('only lets the stage bar open stages whose page is in the app', () => {
     const withPages = ROOM_STAGES.filter((stage) => stage.hasPage).map((stage) => stage.id)
-    expect(withPages).toEqual(['shoot', 'pick', 'decorate'])
+    expect(withPages).toEqual(['shoot', 'pick', 'video', 'decorate', 'music', 'export'])
   })
 
   it('gives each stage its place in the order', () => {

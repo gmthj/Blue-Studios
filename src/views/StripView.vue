@@ -1,11 +1,14 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import { useAuth } from '../composables/useAuth.js'
-import { LAYOUTS, FRAME_STYLES, filterCss, saveFields } from '../stripData.js'
+import { LAYOUTS, FRAME_STYLES, filterCss, saveFields, saveField, cropOf, cropSource, MAX_ZOOM } from '../stripData.js'
 import { listMyItems, getFileUrl, loadTemplateProject } from '../studio.js'
 import { loadSavedFramesFromDB } from '../utils/savedFrameEngine.js'
+import { resolveEditedVideos, editedVideoList } from '../clips.js'
+import EditedVideoThumb from '../components/EditedVideoThumb.vue'
+import ClipThumb from '../components/ClipThumb.vue'
 import StageBar from '../components/StageBar.vue'
 import { askConfirm } from '../composables/useDialog.js'
 import PhotoStrip from '../components/PhotoStrip.vue'
@@ -16,10 +19,12 @@ import PhotoStrip from '../components/PhotoStrip.vue'
 //   Right:  saved frames (Default / Mine styles, Cut layouts), Skip video, Next
 // Everything is saved in the room document, so everyone in the room sees the same strip.
 
-const { room, photos, roomRef } = useRoom()
+const { room, photos, clips, roomRef } = useRoom()
 const { isAccount } = useAuth()
 
 const selectedPhotoId = ref(null) // phones: the photo tapped (each person has their own)
+const cropSlot = ref(null)        // the slot being repositioned (moved / zoomed), or null
+const draftZoom = ref(null)       // the zoom slider's value while it is being dragged (only on this screen), or null
 // const showCall = ref(true)        // the video call can be hidden so it does not cover the strip
 const userTemplates = ref([])
 const loadingTemplates = ref(false)
@@ -55,6 +60,9 @@ const frameStyle = computed(() => {
 })
 
 const slotPhotos = computed(() => room.value.stripSlots || {})
+// The edited videos made on the Video page: as { id: edit } (to find a slot's video) and as a list (for the gallery)
+const editedVideos = computed(() => resolveEditedVideos(room.value.editedVideos, clips.value))
+const editedList = computed(() => editedVideoList(room.value.editedVideos, clips.value))
 const defaultStyles = FRAME_STYLES.filter((s) => s.group === 'default')
 const myStyles = FRAME_STYLES.filter((s) => s.group === 'mine')
 
@@ -130,17 +138,32 @@ const photosById = computed(() => {
   return map
 })
 
-// Group photos by session (shot number), Session 1 first. Each session has one photo per person.
-// Result looks like: [ { shotNumber: 1, photos: [...] }, { shotNumber: 2, photos: [...] } ]
+// The clips (unedited videos) as { id: clip }, like the photos above
+const clipsById = computed(() => {
+  const map = {}
+  for (const c of clips.value) {
+    map[c.id] = c
+  }
+  return map
+})
+
+// Group photos and clips by session (shot number), Session 1 first. Each session has one photo and one clip per person.
+// Result looks like: [ { shotNumber: 1, photos: [...], clips: [...] }, { shotNumber: 2, photos: [...], clips: [...] } ]
 const sessions = computed(() => {
   const groups = []
-  for (const photo of photos.value) {
-    let group = groups.find((g) => g.shotNumber === photo.shotNumber)
+  function groupFor(shotNumber) {
+    let group = groups.find((g) => g.shotNumber === shotNumber)
     if (!group) {
-      group = { shotNumber: photo.shotNumber, photos: [] }
+      group = { shotNumber: shotNumber, photos: [], clips: [] }
       groups.push(group)
     }
-    group.photos.push(photo)
+    return group
+  }
+  for (const photo of photos.value) {
+    groupFor(photo.shotNumber).photos.push(photo)
+  }
+  for (const clip of clips.value) {
+    groupFor(clip.shotNumber).clips.push(clip)
   }
   return groups.sort((a, b) => a.shotNumber - b.shotNumber)
 })
@@ -149,7 +172,9 @@ const sessions = computed(() => {
 const filledCount = computed(() => {
   let count = 0
   for (let i = 0; i < layout.value.slots.length; i++) {
-    if (slotPhotos.value[i] && photosById.value[slotPhotos.value[i]]) {
+    const id = slotPhotos.value[i]
+    // a slot is filled by a photo, a clip, or an edited video (that still has clips)
+    if (id && (photosById.value[id] || clipsById.value[id] || (editedVideos.value[id] && editedVideos.value[id].entries.length > 0))) {
       count = count + 1
     }
   }
@@ -181,12 +206,15 @@ function onPhotoDragStart(event, photo) {
 async function placePhoto(index, photoId) {
   const changes = {}
   changes['stripSlots.' + index] = photoId
+  changes['stripCrops.' + index] = null // a new photo starts centred again
   for (const key of Object.keys(slotPhotos.value)) {
     if (slotPhotos.value[key] === photoId && Number(key) !== index) {
       changes['stripSlots.' + key] = slotPhotos.value[index] || null
+      changes['stripCrops.' + key] = null // the swapped photo starts centred too
     }
   }
   selectedPhotoId.value = null
+  cropSlot.value = index // show the reposition bar for what was just placed
   await updateDoc(roomRef(), changes)
 }
 
@@ -195,6 +223,8 @@ async function clearSlot(index) {
   const changes = {}
   changes['stripSlots.' + index] = null
   changes['stripEdits.' + index] = null
+  changes['stripCrops.' + index] = null
+  if (cropSlot.value === index) cropSlot.value = null
   await updateDoc(roomRef(), changes)
 }
 
@@ -206,7 +236,81 @@ function selectPhoto(photoId) {
 function onSlotClick(index) {
   if (selectedPhotoId.value) {
     placePhoto(index, selectedPhotoId.value)
+  } else if (slotHasMedia(index)) {
+    cropSlot.value = cropSlot.value === index ? null : index // tap a photo or video on the strip to reposition it (tap again to close)
   }
+}
+
+// ---------- REPOSITIONING A PHOTO OR VIDEO IN ITS SLOT ("crop") ----------
+// Moving is done by holding and dragging inside the slot (PhotoStrip.vue). This page saves the result,
+// and the reposition bar under the strip has the zoom controls, Reset and Done.
+
+// Whether a slot has a photo, a clip or an edited video in it
+function slotHasMedia(index) {
+  const id = slotPhotos.value[index]
+  return !!(id && (photosById.value[id] || clipsById.value[id] || (editedVideos.value[id] && editedVideos.value[id].entries.length > 0)))
+}
+
+// "Photo 2" or "Video 2", for the reposition bar's title
+const cropLabel = computed(() => {
+  const id = slotPhotos.value[cropSlot.value]
+  return (photosById.value[id] ? 'Photo ' : 'Video ') + (cropSlot.value + 1)
+})
+
+// The saved crop of the slot being repositioned
+const currentCrop = computed(() => cropOf(room.value.stripCrops, cropSlot.value))
+
+// The zoom to show: the slider's value while it moves, otherwise the saved one
+const shownZoom = computed(() => (draftZoom.value !== null ? draftZoom.value : currentCrop.value.zoom))
+
+// The crops given to the strip. While the zoom slider moves, the strip shows it straight away on this screen.
+const shownCrops = computed(() => {
+  const crops = { ...(room.value.stripCrops || {}) }
+  if (cropSlot.value !== null && draftZoom.value !== null) {
+    crops[cropSlot.value] = { ...currentCrop.value, zoom: draftZoom.value }
+  }
+  return crops
+})
+
+// Save one slot's crop. 'stripCrops.2' only changes slot 2, so people repositioning different slots do not clash.
+async function saveCrop(index, crop) {
+  cropSlot.value = index
+  await saveField(roomRef(), 'stripCrops.' + index, crop)
+}
+
+// The zoom slider: shown live while it moves (@input), saved for everyone when it is let go (@change)
+function previewZoom(event) {
+  draftZoom.value = Number(event.target.value)
+}
+
+async function commitZoom(event) {
+  const zoom = Number(event.target.value)
+  await saveCrop(cropSlot.value, { ...currentCrop.value, zoom: zoom })
+  draftZoom.value = null
+}
+
+// The − and + buttons: a quarter step at a time, between 1x and MAX_ZOOM
+function stepZoom(step) {
+  const zoom = Math.min(MAX_ZOOM, Math.max(1, Math.round((currentCrop.value.zoom + step) * 100) / 100))
+  saveCrop(cropSlot.value, { ...currentCrop.value, zoom: zoom })
+}
+
+// Phone or laptop, for the tip in the reposition bar ("pinch to zoom" or "scroll to zoom").
+// To start with: a device with no precise pointer (no mouse or trackpad) is a phone or tablet.
+// After that, whatever the person actually uses wins: a finger tap switches to the phone tip,
+// a mouse or trackpad click switches to the laptop tip (useful for laptops with a touchscreen).
+const usesTouch = ref(!window.matchMedia('(any-pointer: fine)').matches)
+
+function onAnyPointerDown(event) {
+  usesTouch.value = event.pointerType === 'touch'
+}
+
+onMounted(() => window.addEventListener('pointerdown', onAnyPointerDown))
+onBeforeUnmount(() => window.removeEventListener('pointerdown', onAnyPointerDown)) // stop listening when leaving the page
+
+// Back to the centred picture
+function resetCrop() {
+  saveCrop(cropSlot.value, null)
 }
 
 // ---------- FRAMES ----------
@@ -224,7 +328,7 @@ async function chooseLayout(id) {
     })
     if (!sure) return
   }
-  await saveFields(roomRef(), { stripLayoutId: id, stripCustomTemplate: null, stripSlots: {}, stripEdits: {} })
+  await saveFields(roomRef(), { stripLayoutId: id, stripCustomTemplate: null, stripSlots: {}, stripEdits: {}, stripCrops: {} })
 }
 
 // A style only changes the colours and slot shape, so the photos stay
@@ -333,9 +437,7 @@ async function producePng() {
       if (!photo) continue
 
       const img = await loadImage(photo.image)
-      const scale = Math.max(w / img.width, h / img.height)
-      const cropWidth = w / scale
-      const cropHeight = h / scale
+      const r = cropSource(img.width, img.height, w, h, cropOf(room.value.stripCrops, i)) // the part of the photo that shows
 
       ctx.save()
       ctx.beginPath()
@@ -349,7 +451,7 @@ async function producePng() {
       }
       ctx.clip()
       ctx.filter = filterCss(room.value.stripEdits?.[i]) || 'none'
-      ctx.drawImage(img, (img.width - cropWidth) / 2, (img.height - cropHeight) / 2, cropWidth, cropHeight, x, y, w, h)
+      ctx.drawImage(img, r.sx, r.sy, r.sw, r.sh, x, y, w, h)
       ctx.restore()
     }
 
@@ -387,6 +489,11 @@ async function producePng() {
   }
 }
 
+// Change a saved edited video: it is loaded into the Video page's timeline, and everyone moves there
+async function editSaved(edit) {
+  await updateDoc(roomRef(), { videoTimeline: edit.timeline, videoEditing: edit.id, stage: 'video' })
+}
+
 // Everyone moves to another page together (RoomLayout.vue follows the room's "stage")
 async function goToStage(stage) {
   await updateDoc(roomRef(), { stage: stage })
@@ -405,9 +512,34 @@ async function goToStage(stage) {
           <h2 class="h5 fw-bold mb-0">Gallery</h2>
           <button class="btn btn-link btn-sm p-0" @click="goToStage('shoot')">&larr; Camera</button>
         </div>
-        <p class="small text-muted mb-2">Drag a photo into a slot. On a phone: tap a photo, then tap a slot.</p>
+        <p class="small text-muted mb-2">Drag a photo or video into a slot. On a phone: tap it, then tap a slot.</p>
 
-        <p v-if="sessions.length === 0" class="small text-muted">No photos yet.</p>
+        <p v-if="sessions.length === 0" class="small text-muted">No photos or videos yet.</p>
+
+        <!-- The videos made on the Video page, to drag into a slot like a photo. Each one is purple. -->
+        <section v-if="editedList.length > 0" class="mb-3">
+          <h3 class="h6 mb-2"><span class="badge edited-badge">✂ Edited videos</span></h3>
+          <div class="row g-2 session-box edited-box">
+            <div v-for="edit in editedList" :key="edit.id" class="col-4">
+              <div
+                class="thumb video-thumb edited"
+                :class="{ selected: edit.id === selectedPhotoId }"
+                draggable="true"
+                @dragstart="onPhotoDragStart($event, edit)"
+                @click="selectPhoto(edit.id)"
+              >
+                <EditedVideoThumb :edited="edit" />
+                <span class="name-tag edited-tag">✂ {{ edit.name }}</span>
+                <span v-if="isUsed(edit.id)" class="used-tick used-left">✓</span>
+              </div>
+              <!-- How long it is, and a shortcut to change it on the Video page -->
+              <div class="small text-muted d-flex justify-content-between">
+                <span>{{ edit.entries.length }} clip(s) · {{ edit.seconds.toFixed(1) }}s</span>
+                <button class="btn btn-link btn-sm p-0 align-baseline" @click="editSaved(edit)">Edit</button>
+              </div>
+            </div>
+          </div>
+        </section>
 
         <!-- Scrolls up and down through the sessions; 3 photos per row in each session (col-4) -->
         <div class="gallery-scroll">
@@ -427,6 +559,21 @@ async function goToStage(stage) {
                   <span v-if="isUsed(photo.id)" class="used-tick">✓</span>
                 </div>
               </div>
+
+              <!-- The session's unedited clips: drag or tap like a photo. The "▶ play" label plays it right here. -->
+              <div v-for="clip in session.clips" :key="clip.id" class="col-4">
+                <div
+                  class="thumb clip-thumb"
+                  :class="{ selected: clip.id === selectedPhotoId }"
+                  draggable="true"
+                  @dragstart="onPhotoDragStart($event, clip)"
+                  @click="selectPhoto(clip.id)"
+                >
+                  <ClipThumb :clip="clip" badge-plays />
+                  <span class="name-tag">{{ initials(clip.name) }} · #{{ session.shotNumber }}</span>
+                  <span v-if="isUsed(clip.id)" class="used-tick">✓</span>
+                </div>
+              </div>
             </div>
           </section>
         </div>
@@ -442,12 +589,51 @@ async function goToStage(stage) {
           :frame-style="frameStyle"
           :photos-by-id="photosById"
           :slot-photos="slotPhotos"
+          :clips="clips"
+          :edited-videos="editedVideos"
           :edits="room.stripEdits || {}"
+          :crops="shownCrops"
           :stickers="room.stripStickers || []"
+          :selected-slot="cropSlot"
           @drop-photo="placePhoto"
           @slot-click="onSlotClick"
           @clear-slot="clearSlot"
+          @crop-slot="saveCrop"
         />
+
+        <!-- The reposition bar: shown after something is dropped in a slot, or a filled slot is tapped -->
+        <div v-if="cropSlot !== null && slotHasMedia(cropSlot)" class="reposition-bar mt-3" role="group" :aria-label="'Reposition ' + cropLabel">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <span class="reposition-icon" aria-hidden="true">✥</span>
+            <div class="flex-grow-1 lh-sm">
+              <div class="fw-semibold small">Reposition {{ cropLabel }}</div>
+              <div class="reposition-tip">Drag inside the frame to move · {{ usesTouch ? 'pinch' : 'scroll' }} to zoom</div>
+            </div>
+          </div>
+
+          <!-- Zoom: − / slider / + . Zooming in gives the picture room to move. -->
+          <div class="d-flex align-items-center gap-2">
+            <button class="zoom-btn" :disabled="shownZoom <= 1" aria-label="Zoom out" @click="stepZoom(-0.25)">−</button>
+            <input
+              type="range"
+              class="form-range flex-grow-1"
+              min="1"
+              :max="MAX_ZOOM"
+              step="0.05"
+              :value="shownZoom"
+              aria-label="Zoom"
+              @input="previewZoom"
+              @change="commitZoom"
+            />
+            <button class="zoom-btn" :disabled="shownZoom >= MAX_ZOOM" aria-label="Zoom in" @click="stepZoom(0.25)">+</button>
+            <span class="zoom-value">{{ shownZoom.toFixed(1) }}×</span>
+          </div>
+
+          <div class="d-flex gap-2 mt-2">
+            <button class="btn btn-light btn-sm flex-fill" @click="resetCrop">Reset</button>
+            <button class="btn btn-primary btn-sm flex-fill" @click="cropSlot = null">Done</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -560,10 +746,11 @@ async function goToStage(stage) {
           {{ exportingPng ? 'Producing PNG...' : '📸 Produce Strip PNG' }}
         </button>
 
-        <button class="btn btn-outline-secondary w-100 mb-2" :disabled="filledCount === 0" @click="goToStage('decorate')">
-          Skip video (photos only)
+        <!-- Opens the Video page, even before any photo is on the strip, as long as the room has photos or clips.
+             The edited video then appears in the gallery on the left, to drag into a slot. -->
+        <button class="btn btn-outline-secondary w-100 mb-2" :disabled="filledCount === 0 && clips.length === 0" @click="goToStage('video')">
+          Edit video
         </button>
-        <!-- PLACEHOLDER (Saw Jun Han): when the Video page exists, change 'decorate' to 'video' -->
         <button class="btn btn-primary w-100" :disabled="filledCount === 0" @click="goToStage('decorate')">
           Next
         </button>
@@ -573,6 +760,81 @@ async function goToStage(stage) {
 </template>
 
 <style scoped>
+/* The reposition bar under the strip: a white card like the other panels, in the brand blue.
+   position: sticky + bottom keeps it on screen at the bottom of the window while the strip is in view,
+   so on a long strip (or a phone) the zoom slider can be used without scrolling down to it. */
+.reposition-bar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 30;
+  width: 100%;
+  max-width: 300px;
+  margin: 0 auto;
+  background: #fff;
+  border: 1px solid #E3E6EE;
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: 0 4px 14px rgba(20, 23, 43, 0.08);
+}
+
+.reposition-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: #E8EEFF;
+  color: #2F5BEA;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.reposition-tip {
+  font-size: 0.7rem;
+  color: #6B7080;
+}
+
+/* Round − and + buttons */
+.zoom-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid #E3E6EE;
+  background: #F4F6FA;
+  color: #14172B;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.zoom-btn:hover:not(:disabled) {
+  background: #E8EEFF;
+  color: #2F5BEA;
+  border-color: #2F5BEA;
+}
+
+.zoom-btn:disabled {
+  opacity: 0.4;
+}
+
+.zoom-value {
+  min-width: 34px;
+  text-align: right;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #2F5BEA;
+}
+
+/* The slider's thumb and filled part in the brand blue */
+.reposition-bar .form-range::-webkit-slider-thumb {
+  background: #2F5BEA;
+}
+
+.reposition-bar .form-range::-moz-range-thumb {
+  background: #2F5BEA;
+}
+
 .panel {
   background: #fff;
   border-radius: 14px;
@@ -613,6 +875,57 @@ async function goToStage(stage) {
 
 .thumb.selected {
   border-color: #2F5BEA;
+}
+
+.video-thumb {
+  aspect-ratio: 4 / 5;
+  background: #000;
+  cursor: grab;
+}
+
+/* The edited video is purple, so it is easy to tell from a normal photo or clip */
+.edited-badge,
+.edited-tag {
+  background: #7B61FF;
+  color: #fff;
+}
+
+.edited-box {
+  border-color: #7B61FF;
+}
+
+.thumb.edited {
+  border-color: #7B61FF;
+}
+
+.used-left {
+  left: 4px;
+  right: auto;
+}
+
+.thumb.edited.selected {
+  border-color: #2F5BEA;
+}
+
+/* An unedited clip is the same shape as a photo. The video inside ignores the mouse, so the whole tile is dragged. */
+.clip-thumb :deep(.clip) {
+  aspect-ratio: 4 / 5;
+  border-radius: 0;
+  cursor: grab;
+}
+
+.clip-thumb :deep(video) {
+  pointer-events: none;
+}
+
+/* The play button is in the top-right corner of a clip, so its "used" tick moves to the top-left */
+.clip-thumb .used-tick {
+  left: 4px;
+  right: auto;
+}
+
+.video-thumb video {
+  pointer-events: none; /* so the whole tile is dragged, not the video inside it */
 }
 
 .thumb img {

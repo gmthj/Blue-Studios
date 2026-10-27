@@ -9,19 +9,21 @@ import { isActive, HEARTBEAT_MS } from '../room.js'
 // useRoom() gets the SAME refs: when the room changes in Firestore, every page sees it.
 //
 // Usage in a page:
-//   const { room, activeMembers, photos, roomRef } = useRoom()
+//   const { room, activeMembers, photos, clips, roomRef } = useRoom()
 //   goToStage('pick')    move the whole room to another step (see STAGES below)
 
 const code = ref('')      // the room code, e.g. '0427'
 const room = ref(null)    // the room document: { hostId, hostName, shotNumber, stage, stripSlots, closed, ... }
 const members = ref([])   // every member document in the room
 const photos = ref([])    // every photo taken in the room (oldest first)
+const clips = ref([])     // every video clip recorded in the room (oldest first), see clips.js
 const now = ref(Date.now()) // updated every heartbeat, so activeMembers is re-checked
 
 let memberRef = null
 let stopRoomListener = null
 let stopMembersListener = null
 let stopPhotosListener = null
+let stopClipsListener = null
 let heartbeatTimer = null
 
 // Only the members who are still here (their device updated lastSeen recently)
@@ -41,14 +43,13 @@ function roomRef() {
 //   hasPage   false if that page is not in the app yet (the stage bar cannot open it)
 // room.furthestStage is the furthest stage the room has reached, so the stage bar knows which
 // steps people can jump back (and forward again) to. RoomLayout.vue keeps it up to date.
-// PLACEHOLDER: set hasPage to true when the pages are on main (video: Saw Jun Han, music: Shannon)
 export const ROOM_STAGES = [
   { id: 'shoot', label: 'Shoot', hasPage: true },       // /room/4821/shoot    (RoomView)
   { id: 'pick', label: 'Pick', hasPage: true },         // /room/4821/pick     (StripView)
-  { id: 'video', label: 'Video', hasPage: false },
+  { id: 'video', label: 'Video', hasPage: true },       // /room/4821/video    (VideoView)
   { id: 'decorate', label: 'Decorate', hasPage: true }, // /room/4821/decorate (DecorateView)
-  { id: 'music', label: 'Music', hasPage: false },
-  { id: 'export', label: 'Export', hasPage: false },
+  { id: 'music', label: 'Music', hasPage: true },       // /room/4821/music    (MusicView)
+  { id: 'export', label: 'Export', hasPage: true },     // /room/4821/export   (ExportView)
 ]
 
 // Position of a stage in ROOM_STAGES (0 = shoot). A missing stage counts as shoot.
@@ -95,6 +96,7 @@ async function enterRoom(roomCode, uid, name, deviceType) {
   room.value = null
   members.value = []
   photos.value = []
+  clips.value = []
 
   // Save (or update) my member document. Keep my original joinedAt if I was already in the room.
   const existing = await getDoc(memberRef)
@@ -132,6 +134,16 @@ async function enterRoom(roomCode, uid, name, deviceType) {
     photos.value = list
   })
 
+  // Listen to the video clips, the same way
+  const clipsQuery = query(collection(db, 'rooms', roomCode, 'clips'), orderBy('createdAt'))
+  stopClipsListener = onSnapshot(clipsQuery, (snapshot) => {
+    const list = []
+    snapshot.forEach((clipDoc) => {
+      list.push({ id: clipDoc.id, ...clipDoc.data() })
+    })
+    clips.value = list
+  })
+
   // Heartbeat: every 15 seconds, tell the others I am still here
   heartbeatTimer = setInterval(async () => {
     now.value = Date.now()
@@ -148,9 +160,11 @@ async function exitRoom(removeMember) {
   if (stopRoomListener) stopRoomListener()
   if (stopMembersListener) stopMembersListener()
   if (stopPhotosListener) stopPhotosListener()
+  if (stopClipsListener) stopClipsListener()
   stopRoomListener = null
   stopMembersListener = null
   stopPhotosListener = null
+  stopClipsListener = null
   clearInterval(heartbeatTimer)
 
   if (removeMember && memberRef) {
@@ -161,5 +175,5 @@ async function exitRoom(removeMember) {
 }
 
 export function useRoom() {
-  return { code, room, activeMembers, photos, roomRef, enterRoom, exitRoom, furthestIndex, goToStage, saveProgress }
+  return { code, room, activeMembers, photos, clips, roomRef, enterRoom, exitRoom, furthestIndex, goToStage, saveProgress }
 }
