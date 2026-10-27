@@ -6,7 +6,7 @@ import { getGuestName } from '../guest.js'
 import { useAuth } from '../composables/useAuth.js'
 import { saveStrip } from '../studio.js'
 import { resolveEditedVideos } from '../clips.js'
-import { LAYOUTS, FRAME_STYLES, STICKERS, FILTERS, filterCss, saveField, saveFields } from '../stripData.js'
+import { LAYOUTS, FRAME_STYLES, STICKERS, FILTERS, filterCss, saveField, saveFields, cropOf, cropSource } from '../stripData.js'
 import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
 
@@ -61,6 +61,7 @@ const frameStyle = computed(() => {
 
 const slotPhotos = computed(() => room.value.stripSlots || {})
 const edits = computed(() => room.value.stripEdits || {})
+const crops = computed(() => room.value.stripCrops || {}) // where each photo sits in its slot (set on the Pick page)
 const stickers = computed(() => room.value.stripStickers || [])
 const editedVideos = computed(() => resolveEditedVideos(room.value.editedVideos, clips.value)) // the videos made on the Video page
 
@@ -244,9 +245,7 @@ async function drawStripCanvas() {
     if (!photo) continue // empty slot
 
     const img = await loadImage(photo.image)
-    const scale = Math.max(w / img.width, h / img.height)
-    const cropWidth = w / scale
-    const cropHeight = h / scale
+    const r = cropSource(img.width, img.height, w, h, cropOf(crops.value, i)) // the part of the photo that shows (Pick page crop)
 
     ctx.save()
     // Only draw inside the slot's shape (an ellipse for circle slots)
@@ -261,7 +260,7 @@ async function drawStripCanvas() {
     }
     ctx.clip()
     ctx.filter = filterCss(edits.value[i]) || 'none' // the same filter as on screen
-    ctx.drawImage(img, (img.width - cropWidth) / 2, (img.height - cropHeight) / 2, cropWidth, cropHeight, x, y, w, h)
+    ctx.drawImage(img, r.sx, r.sy, r.sw, r.sh, x, y, w, h)
     ctx.restore()
   }
 
@@ -368,6 +367,7 @@ async function saveToStudio() {
           :photos-by-id="photosById"
           :slot-photos="slotPhotos"
           :edits="edits"
+          :crops="crops"
           :stickers="stickers"
           :clips="clips"
           :edited-videos="editedVideos"
