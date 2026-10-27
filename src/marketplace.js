@@ -62,6 +62,27 @@ export async function listPublicItems({ type, category = '', sort = 'newest', af
   }
 }
 
+// Search by item name or maker's name, e.g. searchPublicItems({ type: 'stickers', text: 'cat' })
+// Firestore cannot search inside text, so this loads the public items (same filters and order as
+// listPublicItems, up to SEARCH_LIMIT) and keeps the ones whose name or ownerName contains the text.
+// Fine for a class project; a big app would use a search service (e.g. Algolia) instead.
+export const SEARCH_LIMIT = 500
+
+export async function searchPublicItems({ type, category = '', sort = 'newest', text }) {
+  const constraints = [where('visibility', '==', 'public'), where('status', '==', 'active')]
+  if (category) {
+    constraints.push(where('categories', 'array-contains', category))
+  }
+  constraints.push(orderBy(sort === 'popular' ? 'saveCount' : 'createdAt', 'desc'))
+  constraints.push(limit(SEARCH_LIMIT))
+
+  const snapshot = await getDocs(query(collection(db, type), ...constraints))
+  const words = text.trim().toLowerCase()
+  return snapshot.docs
+    .map((itemDoc) => toItem(type, itemDoc))
+    .filter((item) => (item.name || '').toLowerCase().includes(words) || (item.ownerName || '').toLowerCase().includes(words))
+}
+
 // One item, or null if it does not exist or I am not allowed to see it (private, hidden)
 export async function getItem(type, itemId) {
   try {

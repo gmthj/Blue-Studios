@@ -8,7 +8,6 @@ import { createScene, recordScene } from '../stripRender.js'
 import { LAYOUTS, FRAME_STYLES } from '../stripData.js'
 import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
-import VideoCallCard from '../components/VideoCallCard.vue'
 
 // The "Export" page (a child of RoomLayout.vue): make an MP4 of a strip that has video in it.
 // A strip with only photos is downloaded from the Decorate page (JPG), so it is not exported here.
@@ -19,8 +18,6 @@ import VideoCallCard from '../components/VideoCallCard.vue'
 
 // room: the room document (live). photos / clips: everything taken in the room. roomRef(): the room's Firestore reference.
 const { code, room, photos, clips, roomRef } = useRoom()
-
-const showCall = ref(false) // the video call is hidden here until the button is pressed
 
 const VIDEO_WIDTH = 480 // the MP4 is this many pixels wide (the height follows the strip's shape)
 const FPS = 15          // frames per second
@@ -219,12 +216,7 @@ async function goToStage(stage) {
         </template>
 
         <hr />
-        <div class="d-flex gap-2 align-items-center">
-          <button class="btn btn-outline-secondary btn-sm" :disabled="busy" @click="goToStage('decorate')">&larr; Decorate</button>
-          <button class="btn btn-sm btn-dark ms-auto" @click="showCall = !showCall">{{ showCall ? 'Hide call' : 'Show call' }}</button>
-        </div>
-        <!-- v-show hides it without removing it, so the call keeps running -->
-        <VideoCallCard v-show="showCall" class="mt-2" layout="row" />
+        <button class="btn btn-outline-secondary btn-sm" :disabled="busy" @click="goToStage('decorate')">&larr; Decorate</button>
       </div>
     </div>
   </div>

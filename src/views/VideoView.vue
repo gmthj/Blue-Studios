@@ -11,7 +11,7 @@ import { CLIP_SECONDS, MAX_EDIT_SECONDS, resolveTimeline, editedVideoList, newEd
 import StageBar from '../components/StageBar.vue'
 import ClipThumb from '../components/ClipThumb.vue'
 import ClipSequencePlayer from '../components/ClipSequencePlayer.vue'
-import VideoCallCard from '../components/VideoCallCard.vue'
+import { askConfirm } from '../composables/useDialog.js'
 
 // The "Video" page (a child of RoomLayout.vue): edit the room's clips into videos for the strip.
 //   Left:  a preview that plays the timeline, and the timeline (order the clips and trim each one)
@@ -25,7 +25,6 @@ import VideoCallCard from '../components/VideoCallCard.vue'
 // room: the room document (live). clips: every clip recorded in the room (live). roomRef(): the room's Firestore reference.
 const { room, clips, roomRef } = useRoom()
 
-const showCall = ref(true) // the video call can be hidden with a button
 const message = ref('')    // a short message under the Save button, e.g. "Saved as Edit 2"
 
 // ---------- THE TIMELINE ----------
@@ -181,14 +180,14 @@ async function cancelEdit() {
 // Edit button: open a saved edit in the timeline
 async function openEdit(edit) {
   // The timeline is replaced, so ask first if there is something in it that would be lost
-  if (entries.value.length > 0 && !confirm('This replaces the timeline you are working on. Continue?')) return
+  if (entries.value.length > 0 && !(await askConfirm({ title: 'Replace the timeline?', message: 'This replaces the timeline you are working on.', confirmLabel: 'Replace' }))) return
   message.value = ''
   await updateDoc(roomRef(), { videoTimeline: edit.timeline, videoEditing: edit.id })
 }
 
 // Delete button: remove a saved edit, and take it out of any strip slot that has it
 async function deleteEdit(edit) {
-  if (!confirm('Delete ' + edit.name + '? It is also taken off the strip.')) return
+  if (!(await askConfirm({ title: 'Delete ' + edit.name + '?', message: 'It is also taken off the strip.', confirmLabel: 'Delete', danger: true }))) return
   message.value = ''
   const changes = { ['editedVideos.' + edit.id]: deleteField() } // deleteField() removes the whole field
   const slots = room.value.stripSlots || {}
@@ -334,11 +333,7 @@ async function goToStage(stage) {
         </section>
 
         <!-- Back to the Pick page. The saved edits are there, to drag into a slot like a photo. -->
-        <button class="btn btn-primary w-100" @click="goToStage('strip')">Done: back to Pick &rarr;</button>
-
-        <button class="btn btn-sm btn-dark mt-3 mb-1" @click="showCall = !showCall">{{ showCall ? 'Hide call' : 'Show call' }}</button>
-        <!-- v-show hides it without removing it, so the call keeps running -->
-        <VideoCallCard v-show="showCall" layout="row" />
+        <button class="btn btn-primary w-100" @click="goToStage('pick')">Done: back to Pick &rarr;</button>
       </div>
     </div>
   </div>

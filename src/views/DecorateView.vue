@@ -9,7 +9,6 @@ import { resolveEditedVideos } from '../clips.js'
 import { LAYOUTS, FRAME_STYLES, STICKERS, FILTERS, filterCss, saveField, saveFields } from '../stripData.js'
 import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
-import VideoCallCard from '../components/VideoCallCard.vue'
 
 // The "Decorate" page (a child of RoomLayout.vue): filters and stickers.
 //   Left:   filters and adjustments for the photo tapped on the strip
@@ -24,7 +23,6 @@ const selectedSlot = ref(0)          // the photo the filters change ("Applied t
 const selectedStickerId = ref(null)  // the sticker being resized / rotated
 const trayTab = ref('mine')          // 'mine' | 'giphy' | 'dynamic'
 const selectedTrayId = ref(null)     // phones: the tray sticker tapped
-const showCall = ref(true)
 const exporting = ref(false)
 
 // Accounts can also save the strip to My Studio
@@ -33,8 +31,34 @@ const saving = ref(false)
 const saveMessage = ref('')
 
 // The strip, from the room document (the same fields as the Pick page)
-const layout = computed(() => LAYOUTS.find((l) => l.id === room.value.stripLayoutId) || LAYOUTS[0])
-const frameStyle = computed(() => FRAME_STYLES.find((s) => s.id === room.value.stripStyleId) || FRAME_STYLES[0])
+const layout = computed(() => {
+  if (room.value.stripCustomTemplate?.slots?.length) {
+    return {
+      id: room.value.stripCustomTemplate.id,
+      name: room.value.stripCustomTemplate.name,
+      aspect: room.value.stripCustomTemplate.aspect || (3 / 10),
+      slots: room.value.stripCustomTemplate.slots
+    }
+  }
+  return LAYOUTS.find((l) => l.id === room.value.stripLayoutId) || LAYOUTS[0]
+})
+
+const frameStyle = computed(() => {
+  if (room.value.stripCustomTemplate) {
+    return {
+      id: room.value.stripCustomTemplate.id,
+      group: 'mine',
+      background: room.value.stripCustomTemplate.background || '#FFFFFF',
+      border: room.value.stripCustomTemplate.border || '#1A1A2E',
+      shape: room.value.stripCustomTemplate.shape || 'square',
+      caption: room.value.stripCustomTemplate.caption || '',
+      captionColor: room.value.stripCustomTemplate.captionColor || room.value.stripCustomTemplate.border,
+      thumbnailUrl: room.value.stripCustomTemplate.thumbnailUrl || null
+    }
+  }
+  return FRAME_STYLES.find((s) => s.id === room.value.stripStyleId) || FRAME_STYLES[0]
+})
+
 const slotPhotos = computed(() => room.value.stripSlots || {})
 const edits = computed(() => room.value.stripEdits || {})
 const stickers = computed(() => room.value.stripStickers || [])
@@ -186,18 +210,28 @@ function loadImage(src) {
   })
 }
 
-// Draw the strip on a canvas (used by Download JPG and Save to My Studio)
+// Draw the strip on a canvas (used by Download and Save to My Studio)
 async function drawStripCanvas() {
-  const W = 900                                 // width of the JPG, in pixels
+  const W = 900                                 // width of the PNG, in pixels
   const H = Math.round(W / layout.value.aspect) // height, from the strip's shape
   const canvas = document.createElement('canvas')
   canvas.width = W
   canvas.height = H
   const ctx = canvas.getContext('2d')
 
-  // Frame background
-  ctx.fillStyle = frameStyle.value.background
-  ctx.fillRect(0, 0, W, H)
+  // Frame background / Template PNG
+  if (frameStyle.value.thumbnailUrl) {
+    try {
+      const bgImg = await loadImage(frameStyle.value.thumbnailUrl)
+      ctx.drawImage(bgImg, 0, 0, W, H)
+    } catch {
+      ctx.fillStyle = frameStyle.value.background || '#FFFFFF'
+      ctx.fillRect(0, 0, W, H)
+    }
+  } else {
+    ctx.fillStyle = frameStyle.value.background || '#FFFFFF'
+    ctx.fillRect(0, 0, W, H)
+  }
 
   // Photos: % of the strip -> pixels, then crop to fill the slot
   for (let i = 0; i < layout.value.slots.length; i++) {
@@ -219,6 +253,9 @@ async function drawStripCanvas() {
     ctx.beginPath()
     if (frameStyle.value.shape === 'circle') {
       ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2)
+    } else if (frameStyle.value.shape === 'rounded') {
+      const radius = Math.min(w, h) * 0.08
+      ctx.roundRect ? ctx.roundRect(x, y, w, h, radius) : ctx.rect(x, y, w, h)
     } else {
       ctx.rect(x, y, w, h)
     }
@@ -241,11 +278,13 @@ async function drawStripCanvas() {
     ctx.restore()
   }
 
-  // Caption
-  ctx.fillStyle = frameStyle.value.border
-  ctx.font = 'bold 34px sans-serif'
-  ctx.textAlign = 'center'
-  ctx.fillText(frameStyle.value.caption, W / 2, H - H * 0.03)
+  // Caption (only if not already baked into custom template PNG)
+  if (frameStyle.value.caption && !frameStyle.value.thumbnailUrl) {
+    ctx.fillStyle = frameStyle.value.captionColor || frameStyle.value.border || '#1A1A2E'
+    ctx.font = 'bold 34px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText(frameStyle.value.caption, W / 2, H - H * 0.03)
+  }
   return canvas
 }
 
@@ -253,10 +292,10 @@ async function downloadJpg() {
   exporting.value = true
   try {
     const canvas = await drawStripCanvas()
-    // Download: make a temporary link to the JPG and click it
+    // Download: make a temporary link to the PNG and click it
     const link = document.createElement('a')
-    link.href = canvas.toDataURL('image/jpeg', 0.92)
-    link.download = 'photostrip-' + code.value + '.jpg'
+    link.href = canvas.toDataURL('image/png')
+    link.download = 'photostrip-' + code.value + '.png'
     link.click()
   } catch (error) {
     console.error(error)
@@ -342,14 +381,7 @@ async function saveToStudio() {
         />
         <p class="small text-muted text-center mt-2 mb-0">
           Drag stickers onto the strip, then drag to move. Phone: tap a sticker in the tray, then tap the strip.
-        </p>
-
-        <!-- Video call: below the strip on smaller screens, floating bottom-left from "xl" (1200px) up -->
-        <div class="call-float">
-          <button class="btn btn-sm btn-dark mb-1" @click="showCall = !showCall">{{ showCall ? 'Hide call' : 'Show call' }}</button>
-          <VideoCallCard v-show="showCall" layout="row" />
-        </div>
-      </div>
+        </p>      </div>
     </div>
 
     <!-- RIGHT: sticker tray, selected sticker, layers -->
@@ -416,9 +448,9 @@ async function saveToStudio() {
         <div class="mt-auto">
           <!-- PLACEHOLDER (Shannon): the Music Mixer is at /room/:code/music on the music-mixer branch.
                When it is on main and 'music' is added to STAGE_PATHS in RoomLayout.vue, remove "disabled". -->
-          <button class="btn btn-primary w-100 mb-2" disabled title="Music Mixer coming soon" @click="goToStage('music')">Mix soundtrack</button>
+          <button class="btn btn-primary w-100 mb-2" @click="goToStage('music')">Mix soundtrack</button>
           <div class="d-flex gap-2">
-            <button class="btn btn-outline-secondary btn-sm flex-fill" @click="goToStage('strip')">&larr; Pick</button>
+            <button class="btn btn-outline-secondary btn-sm flex-fill" @click="goToStage('pick')">&larr; Pick</button>
             <button class="btn btn-outline-secondary btn-sm flex-fill" :disabled="exporting || hasVideoSlot" :title="hasVideoSlot ? 'A strip with video is exported as an MP4' : ''" @click="downloadJpg">
               {{ exporting ? 'Saving...' : 'Download JPG' }}
             </button>
@@ -567,23 +599,4 @@ async function saveToStudio() {
 
 .icon-btn:disabled {
   opacity: 0.3;
-}
-
-/* Video call: below the strip by default */
-.call-float {
-  margin-top: 12px;
-  width: 100%;
-}
-
-/* Bootstrap "xl" (1200px+): the video call floats over the bottom-left of the canvas */
-@media (min-width: 1200px) {
-  .call-float {
-    position: absolute;
-    bottom: 12px;
-    left: 12px;
-    width: 300px;
-    margin-top: 0;
-    z-index: 50;
-  }
-}
-</style>
+}</style>

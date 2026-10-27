@@ -1,8 +1,8 @@
 <script setup>
 import { computed } from 'vue'
-import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import ClipThumb from './ClipThumb.vue'
+import AppIcon from './AppIcon.vue'
 
 // The shared gallery on the camera page: every photo and video clip taken in the room, grouped by shot,
 // plus the "Make photostrip" button.
@@ -13,7 +13,7 @@ defineProps({
   countdownRunning: { type: Boolean, default: false },
 })
 
-const { photos, clips, roomRef } = useRoom()
+const { photos, clips, goToStage } = useRoom()
 
 // Group photos and clips by shot number, so everything taken in the same countdown appears together.
 // Result looks like: [ { shotNumber: 2, photos: [...], clips: [...] }, { shotNumber: 1, photos: [...], clips: [...] } ]
@@ -39,23 +39,31 @@ const shots = computed(() => {
 
 // Everyone moves to the strip page together (RoomLayout.vue follows the room's "stage")
 async function goToStrip() {
-  await updateDoc(roomRef(), { stage: 'strip' })
+  await goToStage('pick')
 }
 </script>
 
 <template>
   <div class="card gallery-card">
-    <div class="card-body d-flex flex-column p-2">
-      <div class="d-flex justify-content-between align-items-center mb-2">
-        <h2 class="h6 mb-0">Gallery</h2>
-        <button class="btn btn-success btn-sm" :disabled="(photos.length === 0 && clips.length === 0) || countdownRunning" @click="goToStrip">
-          Make photostrip &rarr;
+    <div class="card-body d-flex flex-column">
+      <div class="gallery-head">
+        <h2 class="gallery-title">
+          Gallery
+          <span v-if="photos.length + clips.length" class="gallery-count">{{ photos.length + clips.length }}</span>
+        </h2>
+        <button
+          class="btn btn-primary btn-sm d-inline-flex align-items-center gap-1"
+          :disabled="(photos.length === 0 && clips.length === 0) || countdownRunning"
+          @click="goToStrip"
+        >
+          Make photostrip <AppIcon name="arrow-right" :size="14" />
         </button>
       </div>
 
-      <p v-if="shots.length === 0" class="small text-muted mb-0">
-        Nothing yet. Press the shutter and everyone's camera snaps (or records) at the same time.
-      </p>
+      <div v-if="shots.length === 0" class="gallery-empty">
+        <AppIcon name="image" :size="20" />
+        <span>Nothing yet. Press the shutter and everyone's camera snaps (or records) at the same time.</span>
+      </div>
 
       <div class="gallery-scroll">
         <div v-for="shot in shots" :key="shot.shotNumber" class="shot">
@@ -71,11 +79,55 @@ async function goToStrip() {
 </template>
 
 <style scoped>
+.gallery-card .card-body {
+  padding: 12px;
+}
+
+.gallery-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.gallery-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+/* The number of photos, in a small grey pill */
+.gallery-count {
+  padding: 0 7px;
+  border-radius: 999px;
+  color: var(--muted, #6B7080);
+  background: #F1F3F8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 18px;
+}
+
+.gallery-empty {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+  border: 1.5px dashed #D6DAE4;
+  border-radius: 12px;
+  color: var(--muted, #6B7080);
+  font-size: 0.8rem;
+}
+
 /* Default (phones held upright, below Bootstrap's "sm" breakpoint): one sideways-scrolling row */
 .gallery-scroll {
   display: flex;
-  gap: 12px;
+  gap: 14px;
   overflow-x: auto;
+  scrollbar-width: thin;
 }
 
 .shot {
@@ -83,9 +135,12 @@ async function goToStrip() {
 }
 
 .shot-title {
-  font-size: 0.75rem;
-  color: #6c757d;
-  margin-bottom: 2px;
+  margin-bottom: 4px;
+  color: var(--muted, #6B7080);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .shot-photos {
@@ -93,10 +148,20 @@ async function goToStrip() {
   gap: 4px;
 }
 
+/* New photos and clips fade and grow in as they arrive */
 .shot-photos img,
 .shot-photos .clip {
   height: 56px;
-  border-radius: 4px;
+  border-radius: 8px;
+  background: #F1F3F8;
+  transition: opacity 300ms ease, transform 300ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@starting-style {
+  .shot-photos img {
+    opacity: 0;
+    transform: scale(0.9);
+  }
 }
 
 .shot-photos .clip {
@@ -118,17 +183,26 @@ async function goToStrip() {
   }
 
   .shot {
-    margin-bottom: 10px;
+    margin-bottom: 12px;
   }
 
   .shot-photos {
     display: grid;
     grid-template-columns: 1fr 1fr;
+    gap: 6px;
   }
 
   .shot-photos img {
     width: 100%;
     height: auto;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shot-photos img {
+    transition: none;
   }
 
   .shot-photos .clip {

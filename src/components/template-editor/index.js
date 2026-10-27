@@ -1,0 +1,8 @@
+export { default as EditorNavbar } from './EditorNavbar.vue'
+export { default as EditorSubheader } from './EditorSubheader.vue'
+export { default as EditorLeftRail } from './EditorLeftRail.vue'
+export { default as EditorDrawer } from './EditorDrawer.vue'
+export { default as EditorCanvas } from './EditorCanvas.vue'
+export { default as EditorPropertiesPanel } from './EditorPropertiesPanel.vue'
+export { default as EditorContextMenu } from './EditorContextMenu.vue'
+export { default as EditorSaveModal } from './EditorSaveModal.vue'

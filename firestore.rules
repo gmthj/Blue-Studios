@@ -54,6 +54,13 @@ service cloud.firestore {
       return value is string && value.size() >= 1 && value.size() <= 30;
     }
 
+    // Profile pictures (see src/profiles.js). '' means none.
+    // An uploaded picture must be MY file in Firebase Storage (avatars/{uid}/avatar.jpg), not any link.
+    function isMyUploadedPhoto(uid, value) {
+      return value == '' || (value is string && value.size() <= 1000
+        && value.matches('https://firebasestorage[.]googleapis[.]com/v0/b/[^/]+/o/avatars%2F' + uid + '%2Favatar[.]jpg[?].*'));
+    }
+
     function isName(value) {
       return value is string && value.size() >= 1 && value.size() <= 20;
     }
@@ -130,9 +137,9 @@ service cloud.firestore {
 
     match /rooms/{code} {
       // Anyone with the app can look up ONE room by its code (to join it).
-      // Listing every room is not allowed.
+      // Listing every room is only for admins (the Rooms tab of the admin page).
       allow get: if signedIn();
-      allow list: if false;
+      allow list: if isAdmin();
 
       // Create: I must be the host, and the room must start empty
       allow create: if signedIn()
@@ -141,7 +148,7 @@ service cloud.firestore {
         && request.resource.data.hostId == request.auth.uid
         && isName(request.resource.data.hostName)
         && request.resource.data.shotNumber == 0
-        && request.resource.data.stage == 'camera'
+        && (request.resource.data.stage == 'shoot' || request.resource.data.stage == 'camera') //TODO: remove camera option
         && request.resource.data.stripSlots == {}
         && request.resource.data.closed == false
         && request.resource.data.createdAt is int;
@@ -237,6 +244,12 @@ service cloud.firestore {
         allow delete: if isAdmin();
       }
 
+      // rooms/{code}/clips/{clipId}  video clips (clips.js). Admins can see and delete them on the admin page.
+      // TODO lockdown: members' rules for clips (for now they come from the DEV block below).
+      match /clips/{clipId} {
+        allow read, delete: if isAdmin();
+      }
+
       // DEV: any other list inside a room (e.g. rooms/{code}/clips, rooms/{code}/music) for teammates' features.
       // Only people in the room can read and write it.
       // TODO lockdown: replace with real rules for each one before submission.
@@ -247,8 +260,14 @@ service cloud.firestore {
       }
     }
 
+    // Admins can list the members of every room in one query (the Rooms tab of the admin page)
+    match /{path=**}/members/{memberId} {
+      allow list: if isAdmin();
+    }
+
     // ---------- User profiles ----------
-    // users/{uid}  { displayName, createdAt }   public profile. The email is NOT stored here.
+    // users/{uid}  { displayName, createdAt, photoURL }   public profile. The email is NOT stored here.
+    //   photoURL: a picture they uploaded (optional)
 
     match /users/{userId} {
       // Anyone signed in can see one profile (e.g. the name on a marketplace item), but not list them all.
@@ -259,15 +278,17 @@ service cloud.firestore {
       // Only accounts (not guests) have a profile, and only their own
       allow create: if isAccount()
         && userId == request.auth.uid
-        && request.resource.data.keys().hasOnly(['displayName', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['displayName', 'createdAt', 'photoURL'])
         && isDisplayName(request.resource.data.displayName)
-        && request.resource.data.createdAt is int;
+        && request.resource.data.createdAt is int
+        && isMyUploadedPhoto(userId, request.resource.data.get('photoURL', ''));
 
-      // Change my name (nothing else)
+      // Change my name and picture (nothing else: not banned, not createdAt)
       allow update: if isAccount()
         && userId == request.auth.uid
-        && onlyChanged(['displayName'])
-        && isDisplayName(request.resource.data.displayName);
+        && onlyChanged(['displayName', 'photoURL'])
+        && isDisplayName(request.resource.data.displayName)
+        && isMyUploadedPhoto(userId, request.resource.data.get('photoURL', ''));
 
       allow delete: if false;
 
@@ -453,8 +474,8 @@ service cloud.firestore {
       allow create: if isAdmin()
         && request.resource.data.keys().hasOnly(['adminId', 'action', 'targetType', 'targetId', 'reason', 'createdAt'])
         && request.resource.data.adminId == request.auth.uid
-        && request.resource.data.action in ['hide', 'unhide', 'resolveReport', 'dismissReport', 'closeRoom', 'deletePhoto']
-        && request.resource.data.targetType in ['templates', 'stickers', 'reports', 'rooms', 'photos']
+        && request.resource.data.action in ['hide', 'unhide', 'resolveReport', 'dismissReport', 'closeRoom', 'deletePhoto', 'deleteClip']
+        && request.resource.data.targetType in ['templates', 'stickers', 'reports', 'rooms', 'photos', 'clips']
         && request.resource.data.targetId is string
         && request.resource.data.targetId.size() >= 1
         && request.resource.data.targetId.size() <= 200

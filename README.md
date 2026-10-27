@@ -205,12 +205,12 @@ src/views/MarketplaceView.vue    marketplace (/marketplace, anyone): browse by t
 src/views/MarketplaceItemView.vue  one item (/marketplace/templates/{id}): save to My Studio, report
 src/views/AdminView.vue          admin page (/admin, admins only); each tab is in src/components/admin/
 src/views/TestUploadView.vue     TEMPORARY (/test-upload): makes test templates/stickers. Remove before submission
-src/views/RoomLayout.vue         parent page of a room: joins the room + call once, moves everyone with the room's stage
-src/views/RoomView.vue           (child, /room/1234) camera, shutter, countdown, join card, call card, gallery
-src/views/StripView.vue          (child, /room/1234/strip) "Pick": choose the cut and frame, drag photos into slots
+src/views/RoomLayout.vue         parent page of a room: joins the room + call once, shows the floating call window, moves everyone with the room's stage
+src/views/RoomView.vue           (child, /room/1234/shoot) camera, shutter, countdown, join card, gallery
+src/views/StripView.vue          (child, /room/1234/pick) "Pick": choose the cut and frame, drag photos into slots
 src/views/DecorateView.vue       (child, /room/1234/decorate) filters, stickers, Download JPG, Save to My Studio
 
-src/components/VideoCallCard.vue    the call card: everyone's tiles + Mute/Unmute, Leave, Close room
+src/components/VideoCallCard.vue    the floating call window (drag anywhere, minimise): tiles + Mute/Unmute, Leave, Close room
 src/components/VideoTile.vue        one person: live video, name, device type, mute icon
 src/components/StreamVideo.vue      a <video> showing my camera
 src/components/RoomGallery.vue      the shared gallery (grouped by shot) + Make photostrip button
@@ -222,7 +222,7 @@ src/components/ItemDetailsForm.vue  rename a template/sticker and pick its categ
 src/components/admin/*.vue          admin tabs: Overview, Reports, Items, Accounts, Rooms, Log
 
 api/token.js               GET /api/token?code=1234 -> Agora token (room members only)
-api/admin.js               POST /api/admin (admins only): list, look up, ban, unban accounts
+api/admin.js               POST /api/admin (admins only): list, look up, ban, unban accounts; delete rooms
 api/_lib/firebaseAdmin.js  server-only Firebase Admin setup + getCaller(req). "_" = not a web address
 
 firestore.rules            Firestore security rules (who can read/write what)
@@ -236,7 +236,7 @@ scripts/set-admin.mjs      give / remove the admin mark (npm run set-admin -- em
 scripts/set-cors.mjs       apply storage.cors.json to the Storage bucket (npm run set-cors)
 docs/team/                 a guide for each teammate on using accounts, My Studio, marketplace and rooms
 docs/phase-7-lockdown-prompt.md  instructions for the security lockdown before submission
-vercel.json                sends page URLs (/login, /room/...) to index.html: add new page routes here too
+vercel.json                sends every page URL to index.html so the app's router shows it (only URLs with no dot, not /api/ or /@vite...: those are real files)
 .env.example               the environment variables needed (copy to .env)
 ```
 
@@ -263,12 +263,12 @@ rooms/{code}/photos/{auto}   { ownerId, name, shotNumber, image, createdAt }
 4. **Video call:** each device asks our server for a token (`GET /api/token?code={code}`, see "Who gets a token" below), joins that Agora channel and sends ("publishes") its camera. When Agora says someone published video or audio (`user-published` event), we subscribe; `VideoTile.vue` plays their video, and audio just plays.
    - **Everyone starts muted:** the microphone is not opened when joining. "Unmute" opens the mic and publishes it; "Mute" unpublishes and closes it (so the mic is fully off).
    - **Stays connected between pages:** the call is started by `RoomLayout.vue`, the parent of all the room pages, so switching pages does not drop the call.
-   - **Adding it to another page:** make the page a child route of `/room/:code` in `router.js`, and put `<VideoCallCard />` on it.
+   - **Adding it to another page:** make the page a child route of `/room/:code` in `router.js`. `RoomLayout.vue` shows `<VideoCallCard />` as a floating window over every child page, so do not add it to your page. Drag its title bar to move it anywhere (it stays docked to the nearest corner when the screen or window changes size); the "–" button or a double-click on the title bar minimises it.
 5. **Synchronised countdown (anyone can press the shutter):** pressing the round shutter button adds 1 to `shotNumber` using a Firestore **transaction**: it only adds 1 if `shotNumber` is still the number this device saw. If two people press at the same moment, the second transaction sees the number has already changed and does nothing, so only one countdown starts. Every device watches `shotNumber` and starts its own 3-2-1 when it goes up.
 6. **Capture:** the current video frame is drawn on a canvas, turned into a small JPEG (data URL), and saved to `photos` with the shot number. A white flash fades in shortly before the photo and fades out shortly after it. Devices hear about the shutter at slightly different times, so this makes sure every screen is still lit up when every device takes its photo. The timing, fade length and brightness are the `FLASH_*` settings at the top of `RoomView.vue`.
 7. **Shared gallery:** every device listens to `photos`, so new photos appear on everyone's screen. Photos are grouped by shot number.
 8. **Switch camera:** after permission is given, we list all cameras with `enumerateDevices()`. If there is more than one, a button cycles through them. Switching swaps the new camera into the track already being sent (`replaceTrack`), so others never see us leave and rejoin. When a phone rotates, the browser rotates the camera picture by itself; tiles use `fit: 'contain'` so portrait and landscape both show fully.
-9. **Pages move together (`stage`):** buttons such as "Make photostrip", "Next" and "Back to camera" set the room's `stage` (`'camera'`, `'strip'`, `'decorate'`, ...). `RoomLayout.vue` watches it and sends everyone to the matching page (`STAGE_PATHS`). To add a room page, add a child route in `router.js`, a line in `STAGE_PATHS`, and the URL in `vercel.json`.
+9. **Pages move together (`stage`):** buttons such as "Make photostrip", "Next" and "Back to camera" (and the steps in the stage bar) set the room's `stage`: `'shoot'`, `'pick'`, `'video'`, `'decorate'`, `'music'` or `'export'` (`ROOM_STAGES` in `useRoom.js`). `RoomLayout.vue` watches it and sends everyone to that stage's page, which is always `/room/{code}/{stage}`, e.g. `/room/4821/pick`. To add a room page, add a child route in `router.js` whose path is the stage's name, and set `hasPage: true` for it in `ROOM_STAGES` (`vercel.json` already sends every page URL to the app).
 10. **Collaborative photostrip:** everything about the strip is saved in the room document, so everyone sees the same strip:
     - **Pick** (`StripView.vue`): the cut (`stripLayoutId`), the frame style (`stripStyleId`), and which photo is in which slot (`stripSlots`). Drag a photo into a slot, or on a phone tap a photo and then a slot. Each slot is saved on its own (`updateDoc(room, { 'stripSlots.2': photoId })`), so two people changing different slots at once don't overwrite each other.
     - **Decorate** (`DecorateView.vue`): a filter and adjustments for each photo (`stripEdits`), and stickers that can be dragged, resized, rotated and layered (`stripStickers`).
@@ -375,7 +375,7 @@ They then log out and in again (or refresh), and an **Admin** button appears in 
 - **Reports:** reported items, grouped by item, with each reason; filter open / resolved / dismissed / all. "Hide item" takes it out of the marketplace and closes its reports as resolved. "Dismiss" closes the reports. "Owner's account..." opens the account tab.
 - **Items:** every template and sticker (public, private and hidden), with search and filters; hide or unhide.
 - **Accounts:** every login, accounts and guests (from Firebase Auth through `/api/admin`), with search and filters (accounts, guests, banned, admins). Pick one to see what they made and reported, then ban or unban it (a reason is required).
-- **Rooms:** the newest 200 rooms, open and closed. Open one to see who is in it, its photos, delete a photo, or close the room. Older rooms can be opened by code.
+- **Rooms:** the newest 200 rooms, open and closed, with who is in each one (green = here now, grey = left). Filter by open/closed, people and stage; sort by any column. Open one to see its photos, delete a photo, close the room, or delete it with everything inside (through `/api/admin`; an open room is closed first so everyone is sent home). Older rooms can be opened by code.
 - **Log:** everything moderators did, filterable by action.
 
 **What a ban does** (`api/admin.js`, which uses the Admin SDK because only the server can switch off a login):

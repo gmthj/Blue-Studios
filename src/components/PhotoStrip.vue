@@ -122,7 +122,11 @@ function onStripClick(event) {
   <div
     ref="stripEl"
     class="strip"
-    :style="{ aspectRatio: layout.aspect, background: frameStyle.background, borderColor: frameStyle.border }"
+    :style="{
+      aspectRatio: layout.aspect,
+      background: frameStyle.thumbnailUrl ? `url(${frameStyle.thumbnailUrl}) center/cover no-repeat, ${frameStyle.background}` : frameStyle.background,
+      borderColor: frameStyle.border
+    }"
     @dragover.prevent="onDragOver"
     @dragleave="hoverSlot = null"
     @drop.prevent="onDrop"
@@ -201,7 +205,7 @@ function onStripClick(event) {
       <span v-if="sticker.id === selectedStickerId && sticker.by" class="moved-by">{{ sticker.by }}</span>
     </div>
 
-    <p class="caption" :style="{ color: frameStyle.border }">{{ frameStyle.caption }}</p>
+    <p v-if="frameStyle.caption && !frameStyle.thumbnailUrl" class="caption" :style="{ color: frameStyle.captionColor || frameStyle.border }">{{ frameStyle.caption }}</p>
   </div>
 </template>
 

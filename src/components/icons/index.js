@@ -1,0 +1,5 @@
+export { default as AppIcon } from '../AppIcon.vue'
+export { default as IconFolder } from './IconFolder.vue'
+export { default as IconSave } from './IconSave.vue'
+export { default as IconUsers } from './IconUsers.vue'
+export { default as IconTrash } from './IconTrash.vue'

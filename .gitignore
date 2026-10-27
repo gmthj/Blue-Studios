@@ -144,9 +144,20 @@ vite.config.ts.timestamp-*
 .vercel
 .env*
 
+.DS_Store
+
 # Firebase emulator logs
 firebase-debug.log*
 firestore-debug.log*
 
-
 /figma
+
+# Agents
+.agents/
+.claude/
+skills-lock.json
+
+# pnpm
+pnpm-lock.yaml
+.pnpm-store/
+
