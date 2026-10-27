@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="70" viewBox="0 0 200 70">
+  <!-- A curly mustache. Its centre goes between the nose and the upper lip. -->
+  <g id="half">
+    <path d="M100 22 C88 6 62 6 46 22 C34 34 20 42 6 30 C4 44 18 60 40 58 C62 56 82 46 100 38 Z" fill="#3B2416" stroke="#21130A" stroke-width="3" stroke-linejoin="round" />
+  </g>
+  <use href="#half" transform="translate(200 0) scale(-1 1)" />
+</svg>

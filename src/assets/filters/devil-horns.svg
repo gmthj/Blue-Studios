@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="240" height="110" viewBox="0 0 240 110">
+  <!-- Two red devil horns curving up. Their bottoms sit on top of the head. -->
+  <defs>
+    <linearGradient id="red" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#B3121F" />
+      <stop offset="1" stop-color="#F23A3A" />
+    </linearGradient>
+  </defs>
+  <g id="horn">
+    <path d="M30 104 C22 70 26 30 6 6 C46 20 70 60 74 104 Z" fill="url(#red)" stroke="#7A0A14" stroke-width="5" stroke-linejoin="round" />
+    <path d="M22 30 C30 44 36 62 38 80" fill="none" stroke="#FFFFFF" stroke-opacity="0.4" stroke-width="5" stroke-linecap="round" />
+  </g>
+  <use href="#horn" transform="translate(240 0) scale(-1 1)" />
+</svg>

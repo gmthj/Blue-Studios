@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { collection, addDoc, runTransaction, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { getGuestName } from '../guest.js'
@@ -7,7 +7,12 @@ import { getUid } from '../composables/useAuth.js'
 import { CLIP_SECONDS, recordStream, uploadClip } from '../clips.js'
 import { useRoom } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
+import { useFaceFilter, setCameraEffects } from '../composables/useFaceFilter.js'
+import { useBehindLayer } from '../composables/useBehindLayer.js'
+import { getFaceFilter } from '../filters/faceFilters.js'
 import StreamVideo from '../components/StreamVideo.vue'
+import FaceFilterPicker from '../components/FaceFilterPicker.vue'
+import VirtualPeoplePanel from '../components/VirtualPeoplePanel.vue'
 import RoomGallery from '../components/RoomGallery.vue'
 import StageBar from '../components/StageBar.vue'
 import AppIcon from '../components/AppIcon.vue'
@@ -21,8 +26,35 @@ import { showNotice } from '../composables/useDialog.js'
 const uid = getUid()
 const guestName = getGuestName()
 
-const { code, room, roomRef } = useRoom()
+const { code, room, roomRef, activeMembers } = useRoom()
 const { localStream, mirrored, cameras, cameraIndex, cameraError, switchingCamera, switchCamera } = useVideoCall()
+const { faceFilterId, faceFilterLoading, faceFilterError } = useFaceFilter()
+
+// The chosen filter's picture, shown inside the shutter button (null = no filter)
+const filterThumbnail = computed(() => getFaceFilter(faceFilterId.value).thumbnail)
+
+watch(faceFilterError, (message) => {
+  if (message) showNotice({ title: 'Filter unavailable', message: message, icon: 'sparkle' })
+})
+
+// The layer behind me: only the host can add people behind them
+const { peopleCount, behindLayerError, keepOnlyMembers } = useBehindLayer()
+const isHost = computed(() => room.value.hostId === uid)
+
+const showPeoplePanel = ref(false) // the host's list of people to put behind them is open
+
+// Someone left the room: take them out of the line-up
+watch(activeMembers, (members) => {
+  keepOnlyMembers(members.map((member) => member.id))
+})
+
+// Face stickers and the people layer only run on this (shoot) page, not during the other stages
+onMounted(() => setCameraEffects(true))
+onBeforeUnmount(() => setCameraEffects(false))
+
+watch(behindLayerError, (message) => {
+  if (message) showNotice({ title: 'Virtual people unavailable', message: message, icon: 'users' })
+})
 
 const mainVideo = ref(null) // the big camera preview (a StreamVideo component)
 const recording = ref(false)    // true while my camera is recording a clip
@@ -257,7 +289,7 @@ async function copyJoinLink() {
               <div class="min-w-0">
                 <span class="join-label">Invite friends</span>
                 <strong class="room-code d-block">{{ code }}</strong>
-                <p class="join-text">Scan, or go to <strong>{{ siteAddress }}</strong> and enter the code.</p>
+                <p class="join-text">Scan or go to <strong>{{ siteAddress }}</strong> and enter the code</p>
                 <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" @click="copyJoinLink">
                   <AppIcon :name="copied ? 'check' : 'duplicate'" :size="14" /> {{ copied ? 'Link copied!' : 'Copy link' }}
                 </button>
@@ -303,20 +335,49 @@ async function copyJoinLink() {
               <span class="d-none d-md-inline">Switch camera</span>
             </button>
 
+            <!-- Host only: opens the Virtual people list (people from the call put into my camera).
+                 Shows how many are chosen. On phones, just the icon (and the number).
+                 Hidden while a clip records / saves: the REC badge shows in the same spot. -->
+            <button
+              v-if="localStream && isHost && !recording && !savingClip"
+              class="glass-btn people-behind-btn"
+              :class="{ 'people-on': peopleCount > 0 }"
+              aria-label="Virtual people"
+              :aria-expanded="showPeoplePanel"
+              @click="showPeoplePanel = !showPeoplePanel"
+            >
+              <AppIcon name="users" :size="16" />
+              <span class="d-none d-sm-inline">Virtual people</span>
+              <span v-if="peopleCount > 0">({{ peopleCount }})</span>
+            </button>
+
+            <VirtualPeoplePanel
+              v-if="localStream && isHost && showPeoplePanel"
+              class="people-panel-pos"
+              :disabled="capturing"
+              @close="showPeoplePanel = false"
+            />
+
+            <!-- The face filters: a row that scrolls behind the shutter button (the middle one is chosen) -->
+            <FaceFilterPicker v-if="localStream" class="filter-carousel-pos" :disabled="capturing" />
+
             <div v-if="cameraError" class="camera-error">
               <AppIcon name="camera" :size="28" />
               <p class="mb-0">{{ cameraError }}</p>
             </div>
 
-            <!-- Shutter button: anyone can press it. It sits on the camera view, bottom middle. -->
+            <!-- Shutter button: anyone can press it. It sits on the camera view, bottom middle.
+                 With a face filter on, the filter's picture shows inside it (like Instagram). -->
             <button
               class="shutter-btn"
-              :class="{ video: captureMode === 'video' }"
+              :class="{ video: captureMode === 'video', 'filter-loading': faceFilterLoading }"
               :disabled="capturing"
               :aria-label="captureMode === 'video' ? 'Record a video' : 'Take a photo'"
               @click="pressShutter"
             >
-              <span class="shutter-inner"></span>
+              <span class="shutter-inner" :class="{ 'has-filter': filterThumbnail }">
+                <img v-if="filterThumbnail" :src="filterThumbnail" alt="" draggable="false" />
+              </span>
             </button>
           </div>
         </div>
@@ -413,7 +474,7 @@ async function copyJoinLink() {
   flex-shrink: 0;
   padding: 4px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 6px;
   background: #ffffff;
 }
 
@@ -524,6 +585,58 @@ async function copyJoinLink() {
   right: 12px;
 }
 
+.people-behind-btn {
+  position: absolute;
+  /* top: 12px; */
+  top: 50px;
+  left: 12px;
+}
+
+/* Some people are behind me: a white ring around the button */
+.people-behind-btn.people-on {
+  box-shadow: inset 0 0 0 2px #ffffff;
+}
+
+/* The host's Virtual people list: under its button (which is under the Photo / Video switch),
+   above the filter row and shutter */
+.people-panel-pos {
+  position: absolute;
+  z-index: 12;
+  top: 94px;
+  left: 12px;
+  max-height: calc(100% - 94px - 112px);
+}
+
+/* Phones held sideways: the filter row is on the right, so the list can use the full height */
+@media (orientation: landscape) and (max-height: 500px) {
+  .people-panel-pos {
+    max-height: calc(100% - 94px - 12px);
+  }
+}
+
+/* The filter row: the full width of the camera, lined up with the shutter button
+   (76px tall, 20px from the bottom), and just below it (z-index 9 vs 10), so it passes behind it */
+.filter-carousel-pos {
+  position: absolute;
+  z-index: 9;
+  left: 0;
+  right: 0;
+  bottom: 20px;
+  height: 76px;
+}
+
+/* Phones held sideways: the shutter is on the right edge, so the row runs top to bottom there */
+@media (orientation: landscape) and (max-height: 500px) {
+  .filter-carousel-pos {
+    top: 0;
+    bottom: 0;
+    left: auto;
+    right: 12px;
+    width: 62px;
+    height: auto;
+  }
+}
+
 /* Photo / Video switch: top left of the camera (the switch camera button is top right) */
 .mode-toggle {
   position: absolute;
@@ -598,11 +711,43 @@ async function copyJoinLink() {
 }
 
 .shutter-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 56px;
   height: 56px;
   border-radius: 50%;
   background: var(--brand);
   transition: transform 160ms var(--ease-out), background-color 150ms ease;
+}
+
+/* A filter is on: its picture on a dark background instead of the blue button */
+.shutter-inner.has-filter {
+  background: rgba(14, 16, 32, 0.6);
+}
+
+.shutter-inner img {
+  width: 70%;
+  height: 70%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+/* While the chosen filter downloads: a spinning ring around the shutter */
+.shutter-btn.filter-loading::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border: 3px solid transparent;
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: shutter-spin 0.8s linear infinite;
+}
+
+@keyframes shutter-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Pressed: the inner button shrinks, like pushing a real shutter */
@@ -624,7 +769,7 @@ async function copyJoinLink() {
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .shutter-btn:not(:disabled):hover .shutter-inner {
+  .shutter-btn:not(:disabled):hover .shutter-inner:not(.has-filter) {
     background: var(--brand-dark);
   }
 }
