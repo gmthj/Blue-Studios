@@ -3,6 +3,7 @@ import AgoraRTC from 'agora-rtc-sdk-ng'
 import axios from 'axios'
 import { auth } from '../firebase.js'
 import { startFaceFilter, changeFaceFilterCamera, stopFaceFilter } from './useFaceFilter.js'
+import { setBehindLayerMirrored, setRemoteTrackSource, resetBehindLayer } from './useBehindLayer.js'
 
 // SHARED video call (through Agora) for every page inside a room.
 // Like useRoom.js, the refs are created once outside the function, so all pages share ONE call.
@@ -73,6 +74,7 @@ async function openCamera() {
 
   // Back cameras report facingMode 'environment'. Everything else (front cameras, laptop webcams) is mirrored.
   mirrored.value = settings.facingMode !== 'environment'
+  setBehindLayerMirrored(mirrored.value) // so "left of me" means left on my screen
 
   // Get the list of cameras once. (Camera names are only available after permission is given.)
   if (cameras.value.length === 0) {
@@ -148,6 +150,15 @@ function attachRemoteVideo(uid, element) {
     user.videoTrack.play(element, { fit: 'contain' })
   }
 }
+
+// The host can put other people behind them (useBehindLayer.js). This is how it gets their video:
+// the browser's own video track inside Agora's, or null while their video is off.
+setRemoteTrackSource((uid) => {
+  const user = agoraUsers[uid]
+  const remote = getRemoteUser(uid)
+  if (!user || !user.videoTrack || !remote || !remote.hasVideo) return null
+  return user.videoTrack.getMediaStreamTrack()
+})
 
 // ---------- Joining and leaving ----------
 
@@ -248,6 +259,7 @@ async function endCall() {
     await client.leave()
   }
   closeCamera()
+  resetBehindLayer()
   agoraUsers = {}
   remoteUsers.value = []
   micOn.value = false

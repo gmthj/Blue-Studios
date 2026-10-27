@@ -1,6 +1,6 @@
 // LIVE FACE FILTER for my camera (like Snapchat / TikTok filters).
 // The real camera is not shown directly. Instead, every frame is:
-//   real camera -> hidden <video> -> drawn onto a canvas (+ face stickers later) -> canvas stream
+//   real camera -> hidden <video> -> drawn onto a canvas (+ people behind me + face stickers) -> canvas stream
 // The canvas stream is what useVideoCall.js puts in localStream, so my preview, the video
 // sent to the others (Agora) and the photos taken all show the filter automatically.
 //
@@ -13,18 +13,22 @@
 //   const { faceFilterId, faceFilterLoading, setFaceFilter } = useFaceFilter()
 //   setFaceFilter('glasses')   // the filters are listed in src/filters/faceFilters.js
 //
+// Effects (face stickers, the people layer) only run on the shoot page, which turns them on and off:
+//   setCameraEffects(true)  /  setCameraEffects(false)
+// On other pages the camera is just copied onto the canvas (the call still needs the stream).
+//
 // Faces are found with Google's MediaPipe Face Landmarker, which gives 478 points per face.
 // It is only downloaded (about 10 MB) the first time someone picks a filter.
 
 import { ref } from 'vue'
 import { getFaceFilter } from '../filters/faceFilters.js'
+import { loadMediaPipe, createTask } from '../utils/mediapipe.js'
+import { drawBehindLayer, releaseBehindLayer } from './useBehindLayer.js'
 
 const FRAME_RATE = 30 // frames per second sent out from the canvas
 const MAX_FACES = 4   // several friends can share one camera in a photobooth
 
-// MediaPipe's program files (must be the same version as @mediapipe/tasks-vision in package.json)
-// and the face model, both downloaded from the internet when first needed
-const MEDIAPIPE_WASM_URL = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm'
+// The face model, downloaded from the internet when first needed
 const FACE_MODEL_URL = 'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'
 
 // How much each new face position counts (0 to 1). Lower = smoother but the sticker lags behind more.
@@ -40,6 +44,7 @@ let canvas = null       // every frame is drawn here
 let ctx = null
 let outputStream = null // the canvas as a camera stream (MediaStream)
 let running = false     // false stops the drawing loop
+let effectsOn = false   // face stickers and the people layer (only on the shoot page)
 
 let faceLandmarker = null    // MediaPipe face finder, once downloaded
 let landmarkerLoading = null // the download in progress (a Promise), so it only happens once
@@ -144,24 +149,12 @@ function loadFaceLandmarker() {
 }
 
 async function createFaceLandmarker() {
-  // import() here (not at the top of the file) so MediaPipe is only downloaded when needed
-  const { FilesetResolver, FaceLandmarker } = await import('@mediapipe/tasks-vision')
-  const files = await FilesetResolver.forVisionTasks(MEDIAPIPE_WASM_URL)
-
-  const options = {
-    baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate: 'GPU' },
+  const { vision, files } = await loadMediaPipe()
+  faceLandmarker = await createTask(vision.FaceLandmarker, files, {
+    baseOptions: { modelAssetPath: FACE_MODEL_URL },
     runningMode: 'VIDEO', // we give it one camera frame after another
     numFaces: MAX_FACES,
-  }
-
-  // The GPU (graphics card) is much faster, but some devices do not support it, so fall back to the CPU
-  try {
-    faceLandmarker = await FaceLandmarker.createFromOptions(files, options)
-  } catch (error) {
-    console.error(error)
-    options.baseOptions.delegate = 'CPU'
-    faceLandmarker = await FaceLandmarker.createFromOptions(files, options)
-  }
+  })
 }
 
 function loadImage(url) {
@@ -197,8 +190,19 @@ function drawFrame() {
     canvas.height = height
   }
 
-  ctx.drawImage(sourceVideo, 0, 0, width, height)
+  // Not on the shoot page: just the camera, no face finding or cutting out
+  if (!effectsOn) {
+    ctx.drawImage(sourceVideo, 0, 0, width, height)
+    return
+  }
 
+  // The layer behind me (people added by the host, see useBehindLayer.js) draws the whole picture
+  // with me cut out on top. If it is not in use (or still loading), just draw the camera.
+  if (!drawBehindLayer(ctx, sourceVideo, width, height)) {
+    ctx.drawImage(sourceVideo, 0, 0, width, height)
+  }
+
+  // Face stickers go on top of everything
   const filter = getFaceFilter(faceFilterId.value)
   if (filter.parts.length === 0 || !faceLandmarker || faceFilterLoading.value) return
 
@@ -282,6 +286,17 @@ function drawPart(face, part) {
   ctx.restore()
 }
 
+// The shoot page turns the effects on when it opens and off when it closes.
+// Off also stops the people layer's work (its hidden videos, cut-outs and face finders).
+function setCameraEffects(on) {
+  effectsOn = on
+  if (!on) {
+    releaseBehindLayer()
+    faces = []
+    lastVideoTime = -1
+  }
+}
+
 export function useFaceFilter() {
   return {
     faceFilterId,
@@ -291,4 +306,4 @@ export function useFaceFilter() {
   }
 }
 
-export { startFaceFilter, changeFaceFilterCamera, stopFaceFilter }
+export { startFaceFilter, changeFaceFilterCamera, stopFaceFilter, setCameraEffects }

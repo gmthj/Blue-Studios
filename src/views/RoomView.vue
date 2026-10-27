@@ -1,15 +1,17 @@
 <script setup>
-import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { collection, addDoc, runTransaction } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { getGuestName } from '../guest.js'
 import { getUid } from '../composables/useAuth.js'
 import { useRoom } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
-import { useFaceFilter } from '../composables/useFaceFilter.js'
+import { useFaceFilter, setCameraEffects } from '../composables/useFaceFilter.js'
+import { useBehindLayer } from '../composables/useBehindLayer.js'
 import { getFaceFilter } from '../filters/faceFilters.js'
 import StreamVideo from '../components/StreamVideo.vue'
 import FaceFilterPicker from '../components/FaceFilterPicker.vue'
+import VirtualPeoplePanel from '../components/VirtualPeoplePanel.vue'
 import RoomGallery from '../components/RoomGallery.vue'
 import StageBar from '../components/StageBar.vue'
 import AppIcon from '../components/AppIcon.vue'
@@ -20,7 +22,7 @@ import { showNotice } from '../composables/useDialog.js'
 const uid = getUid()
 const guestName = getGuestName()
 
-const { code, room, roomRef } = useRoom()
+const { code, room, roomRef, activeMembers } = useRoom()
 const { localStream, mirrored, cameras, cameraIndex, cameraError, switchingCamera, switchCamera } = useVideoCall()
 const { faceFilterId, faceFilterLoading, faceFilterError } = useFaceFilter()
 
@@ -29,6 +31,25 @@ const filterThumbnail = computed(() => getFaceFilter(faceFilterId.value).thumbna
 
 watch(faceFilterError, (message) => {
   if (message) showNotice({ title: 'Filter unavailable', message: message, icon: 'sparkle' })
+})
+
+// The layer behind me: only the host can add people behind them
+const { peopleCount, behindLayerError, keepOnlyMembers } = useBehindLayer()
+const isHost = computed(() => room.value.hostId === uid)
+
+const showPeoplePanel = ref(false) // the host's list of people to put behind them is open
+
+// Someone left the room: take them out of the line-up
+watch(activeMembers, (members) => {
+  keepOnlyMembers(members.map((member) => member.id))
+})
+
+// Face stickers and the people layer only run on this (shoot) page, not during the other stages
+onMounted(() => setCameraEffects(true))
+onBeforeUnmount(() => setCameraEffects(false))
+
+watch(behindLayerError, (message) => {
+  if (message) showNotice({ title: 'Virtual people unavailable', message: message, icon: 'users' })
 })
 
 const mainVideo = ref(null) // the big camera preview (a StreamVideo component)
@@ -258,6 +279,28 @@ async function copyJoinLink() {
               <span class="d-none d-md-inline">Switch camera</span>
             </button>
 
+            <!-- Host only: opens the Virtual people list (people from the call put into my camera).
+                 Shows how many are chosen. On phones, just the icon (and the number). -->
+            <button
+              v-if="localStream && isHost"
+              class="glass-btn people-behind-btn"
+              :class="{ 'people-on': peopleCount > 0 }"
+              aria-label="Virtual people"
+              :aria-expanded="showPeoplePanel"
+              @click="showPeoplePanel = !showPeoplePanel"
+            >
+              <AppIcon name="users" :size="16" />
+              <span class="d-none d-sm-inline">Virtual people</span>
+              <span v-if="peopleCount > 0">({{ peopleCount }})</span>
+            </button>
+
+            <VirtualPeoplePanel
+              v-if="localStream && isHost && showPeoplePanel"
+              class="people-panel-pos"
+              :disabled="countdown > 0"
+              @close="showPeoplePanel = false"
+            />
+
             <!-- The face filters: a row that scrolls behind the shutter button (the middle one is chosen) -->
             <FaceFilterPicker v-if="localStream" class="filter-carousel-pos" :disabled="countdown > 0" />
 
@@ -483,6 +526,34 @@ async function copyJoinLink() {
   position: absolute;
   top: 12px;
   right: 12px;
+}
+
+.people-behind-btn {
+  position: absolute;
+  /* top: 12px; */
+  top: 50px;
+  left: 12px;
+}
+
+/* Some people are behind me: a white ring around the button */
+.people-behind-btn.people-on {
+  box-shadow: inset 0 0 0 2px #ffffff;
+}
+
+/* The host's people list: under the People button, above the filter row and shutter */
+.people-panel-pos {
+  position: absolute;
+  z-index: 12;
+  top: 56px;
+  left: 12px;
+  max-height: calc(100% - 56px - 112px);
+}
+
+/* Phones held sideways: the filter row is on the right, so the list can use the full height */
+@media (orientation: landscape) and (max-height: 500px) {
+  .people-panel-pos {
+    max-height: calc(100% - 56px - 12px);
+  }
 }
 
 /* The filter row: the full width of the camera, lined up with the shutter button
