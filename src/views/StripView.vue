@@ -1,9 +1,9 @@
 <script setup>
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import { useAuth } from '../composables/useAuth.js'
-import { LAYOUTS, FRAME_STYLES, filterCss, saveFields } from '../stripData.js'
+import { LAYOUTS, FRAME_STYLES, filterCss, saveFields, saveField, cropOf, cropSource, MAX_ZOOM } from '../stripData.js'
 import { listMyItems, getFileUrl, loadTemplateProject } from '../studio.js'
 import { loadSavedFramesFromDB } from '../utils/savedFrameEngine.js'
 import { resolveEditedVideos, editedVideoList } from '../clips.js'
@@ -23,6 +23,8 @@ const { room, photos, clips, roomRef } = useRoom()
 const { isAccount } = useAuth()
 
 const selectedPhotoId = ref(null) // phones: the photo tapped (each person has their own)
+const cropSlot = ref(null)        // the slot being repositioned (moved / zoomed), or null
+const draftZoom = ref(null)       // the zoom slider's value while it is being dragged (only on this screen), or null
 // const showCall = ref(true)        // the video call can be hidden so it does not cover the strip
 const userTemplates = ref([])
 const loadingTemplates = ref(false)
@@ -204,12 +206,15 @@ function onPhotoDragStart(event, photo) {
 async function placePhoto(index, photoId) {
   const changes = {}
   changes['stripSlots.' + index] = photoId
+  changes['stripCrops.' + index] = null // a new photo starts centred again
   for (const key of Object.keys(slotPhotos.value)) {
     if (slotPhotos.value[key] === photoId && Number(key) !== index) {
       changes['stripSlots.' + key] = slotPhotos.value[index] || null
+      changes['stripCrops.' + key] = null // the swapped photo starts centred too
     }
   }
   selectedPhotoId.value = null
+  cropSlot.value = index // show the reposition bar for what was just placed
   await updateDoc(roomRef(), changes)
 }
 
@@ -218,6 +223,8 @@ async function clearSlot(index) {
   const changes = {}
   changes['stripSlots.' + index] = null
   changes['stripEdits.' + index] = null
+  changes['stripCrops.' + index] = null
+  if (cropSlot.value === index) cropSlot.value = null
   await updateDoc(roomRef(), changes)
 }
 
@@ -229,7 +236,81 @@ function selectPhoto(photoId) {
 function onSlotClick(index) {
   if (selectedPhotoId.value) {
     placePhoto(index, selectedPhotoId.value)
+  } else if (slotHasMedia(index)) {
+    cropSlot.value = cropSlot.value === index ? null : index // tap a photo or video on the strip to reposition it (tap again to close)
   }
+}
+
+// ---------- REPOSITIONING A PHOTO OR VIDEO IN ITS SLOT ("crop") ----------
+// Moving is done by holding and dragging inside the slot (PhotoStrip.vue). This page saves the result,
+// and the reposition bar under the strip has the zoom controls, Reset and Done.
+
+// Whether a slot has a photo, a clip or an edited video in it
+function slotHasMedia(index) {
+  const id = slotPhotos.value[index]
+  return !!(id && (photosById.value[id] || clipsById.value[id] || (editedVideos.value[id] && editedVideos.value[id].entries.length > 0)))
+}
+
+// "Photo 2" or "Video 2", for the reposition bar's title
+const cropLabel = computed(() => {
+  const id = slotPhotos.value[cropSlot.value]
+  return (photosById.value[id] ? 'Photo ' : 'Video ') + (cropSlot.value + 1)
+})
+
+// The saved crop of the slot being repositioned
+const currentCrop = computed(() => cropOf(room.value.stripCrops, cropSlot.value))
+
+// The zoom to show: the slider's value while it moves, otherwise the saved one
+const shownZoom = computed(() => (draftZoom.value !== null ? draftZoom.value : currentCrop.value.zoom))
+
+// The crops given to the strip. While the zoom slider moves, the strip shows it straight away on this screen.
+const shownCrops = computed(() => {
+  const crops = { ...(room.value.stripCrops || {}) }
+  if (cropSlot.value !== null && draftZoom.value !== null) {
+    crops[cropSlot.value] = { ...currentCrop.value, zoom: draftZoom.value }
+  }
+  return crops
+})
+
+// Save one slot's crop. 'stripCrops.2' only changes slot 2, so people repositioning different slots do not clash.
+async function saveCrop(index, crop) {
+  cropSlot.value = index
+  await saveField(roomRef(), 'stripCrops.' + index, crop)
+}
+
+// The zoom slider: shown live while it moves (@input), saved for everyone when it is let go (@change)
+function previewZoom(event) {
+  draftZoom.value = Number(event.target.value)
+}
+
+async function commitZoom(event) {
+  const zoom = Number(event.target.value)
+  await saveCrop(cropSlot.value, { ...currentCrop.value, zoom: zoom })
+  draftZoom.value = null
+}
+
+// The − and + buttons: a quarter step at a time, between 1x and MAX_ZOOM
+function stepZoom(step) {
+  const zoom = Math.min(MAX_ZOOM, Math.max(1, Math.round((currentCrop.value.zoom + step) * 100) / 100))
+  saveCrop(cropSlot.value, { ...currentCrop.value, zoom: zoom })
+}
+
+// Phone or laptop, for the tip in the reposition bar ("pinch to zoom" or "scroll to zoom").
+// To start with: a device with no precise pointer (no mouse or trackpad) is a phone or tablet.
+// After that, whatever the person actually uses wins: a finger tap switches to the phone tip,
+// a mouse or trackpad click switches to the laptop tip (useful for laptops with a touchscreen).
+const usesTouch = ref(!window.matchMedia('(any-pointer: fine)').matches)
+
+function onAnyPointerDown(event) {
+  usesTouch.value = event.pointerType === 'touch'
+}
+
+onMounted(() => window.addEventListener('pointerdown', onAnyPointerDown))
+onBeforeUnmount(() => window.removeEventListener('pointerdown', onAnyPointerDown)) // stop listening when leaving the page
+
+// Back to the centred picture
+function resetCrop() {
+  saveCrop(cropSlot.value, null)
 }
 
 // ---------- FRAMES ----------
@@ -247,7 +328,7 @@ async function chooseLayout(id) {
     })
     if (!sure) return
   }
-  await saveFields(roomRef(), { stripLayoutId: id, stripCustomTemplate: null, stripSlots: {}, stripEdits: {} })
+  await saveFields(roomRef(), { stripLayoutId: id, stripCustomTemplate: null, stripSlots: {}, stripEdits: {}, stripCrops: {} })
 }
 
 // A style only changes the colours and slot shape, so the photos stay
@@ -356,9 +437,7 @@ async function producePng() {
       if (!photo) continue
 
       const img = await loadImage(photo.image)
-      const scale = Math.max(w / img.width, h / img.height)
-      const cropWidth = w / scale
-      const cropHeight = h / scale
+      const r = cropSource(img.width, img.height, w, h, cropOf(room.value.stripCrops, i)) // the part of the photo that shows
 
       ctx.save()
       ctx.beginPath()
@@ -372,7 +451,7 @@ async function producePng() {
       }
       ctx.clip()
       ctx.filter = filterCss(room.value.stripEdits?.[i]) || 'none'
-      ctx.drawImage(img, (img.width - cropWidth) / 2, (img.height - cropHeight) / 2, cropWidth, cropHeight, x, y, w, h)
+      ctx.drawImage(img, r.sx, r.sy, r.sw, r.sh, x, y, w, h)
       ctx.restore()
     }
 
@@ -513,11 +592,48 @@ async function goToStage(stage) {
           :clips="clips"
           :edited-videos="editedVideos"
           :edits="room.stripEdits || {}"
+          :crops="shownCrops"
           :stickers="room.stripStickers || []"
+          :selected-slot="cropSlot"
           @drop-photo="placePhoto"
           @slot-click="onSlotClick"
           @clear-slot="clearSlot"
+          @crop-slot="saveCrop"
         />
+
+        <!-- The reposition bar: shown after something is dropped in a slot, or a filled slot is tapped -->
+        <div v-if="cropSlot !== null && slotHasMedia(cropSlot)" class="reposition-bar mt-3" role="group" :aria-label="'Reposition ' + cropLabel">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            <span class="reposition-icon" aria-hidden="true">✥</span>
+            <div class="flex-grow-1 lh-sm">
+              <div class="fw-semibold small">Reposition {{ cropLabel }}</div>
+              <div class="reposition-tip">Drag inside the frame to move · {{ usesTouch ? 'pinch' : 'scroll' }} to zoom</div>
+            </div>
+          </div>
+
+          <!-- Zoom: − / slider / + . Zooming in gives the picture room to move. -->
+          <div class="d-flex align-items-center gap-2">
+            <button class="zoom-btn" :disabled="shownZoom <= 1" aria-label="Zoom out" @click="stepZoom(-0.25)">−</button>
+            <input
+              type="range"
+              class="form-range flex-grow-1"
+              min="1"
+              :max="MAX_ZOOM"
+              step="0.05"
+              :value="shownZoom"
+              aria-label="Zoom"
+              @input="previewZoom"
+              @change="commitZoom"
+            />
+            <button class="zoom-btn" :disabled="shownZoom >= MAX_ZOOM" aria-label="Zoom in" @click="stepZoom(0.25)">+</button>
+            <span class="zoom-value">{{ shownZoom.toFixed(1) }}×</span>
+          </div>
+
+          <div class="d-flex gap-2 mt-2">
+            <button class="btn btn-light btn-sm flex-fill" @click="resetCrop">Reset</button>
+            <button class="btn btn-primary btn-sm flex-fill" @click="cropSlot = null">Done</button>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -644,6 +760,81 @@ async function goToStage(stage) {
 </template>
 
 <style scoped>
+/* The reposition bar under the strip: a white card like the other panels, in the brand blue.
+   position: sticky + bottom keeps it on screen at the bottom of the window while the strip is in view,
+   so on a long strip (or a phone) the zoom slider can be used without scrolling down to it. */
+.reposition-bar {
+  position: sticky;
+  bottom: 12px;
+  z-index: 30;
+  width: 100%;
+  max-width: 300px;
+  margin: 0 auto;
+  background: #fff;
+  border: 1px solid #E3E6EE;
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: 0 4px 14px rgba(20, 23, 43, 0.08);
+}
+
+.reposition-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: #E8EEFF;
+  color: #2F5BEA;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.reposition-tip {
+  font-size: 0.7rem;
+  color: #6B7080;
+}
+
+/* Round − and + buttons */
+.zoom-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid #E3E6EE;
+  background: #F4F6FA;
+  color: #14172B;
+  font-weight: 700;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.zoom-btn:hover:not(:disabled) {
+  background: #E8EEFF;
+  color: #2F5BEA;
+  border-color: #2F5BEA;
+}
+
+.zoom-btn:disabled {
+  opacity: 0.4;
+}
+
+.zoom-value {
+  min-width: 34px;
+  text-align: right;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #2F5BEA;
+}
+
+/* The slider's thumb and filled part in the brand blue */
+.reposition-bar .form-range::-webkit-slider-thumb {
+  background: #2F5BEA;
+}
+
+.reposition-bar .form-range::-moz-range-thumb {
+  background: #2F5BEA;
+}
+
 .panel {
   background: #fff;
   border-radius: 14px;

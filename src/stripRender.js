@@ -1,5 +1,5 @@
 // filterCss turns a slot's saved filter and sliders into a CSS filter text (the same as on screen)
-import { filterCss } from './stripData.js'
+import { filterCss, cropOf, cropSource } from './stripData.js'
 // getClipUrl gives a local address of a clip's video. CLIP_SECONDS is how long a raw clip is.
 import { getClipUrl, CLIP_SECONDS } from './clips.js'
 
@@ -7,7 +7,7 @@ import { getClipUrl, CLIP_SECONDS } from './clips.js'
 // Used by the Export page (see ExportView.vue).
 //
 // A "scene" holds everything already downloaded (photos, stickers, videos), so any moment can be drawn quickly:
-//   const scene = await createScene({ layout, frameStyle, photosById, slotPhotos, edits, stickers, clips, editedVideos })
+//   const scene = await createScene({ layout, frameStyle, photosById, slotPhotos, edits, crops, stickers, clips, editedVideos })
 //   scene.tick(t)                  // start / pause the videos so they match the time t (seconds)
 //   scene.draw(ctx, W, H, t)       // draw the strip as it looks t seconds in
 //   scene.stop()                   // pause everything
@@ -63,11 +63,11 @@ async function loadVideo(clip) {
   return video
 }
 
-// Draw a photo or a video frame so it fills the box (cropped in the middle, like object-fit: cover)
-function drawCover(ctx, source, sourceWidth, sourceHeight, x, y, w, h, mirrored) {
-  const scale = Math.max(w / sourceWidth, h / sourceHeight)
-  const cropWidth = w / scale   // how much of the source fits in the box
-  const cropHeight = h / scale
+// Draw a photo or a video frame so it fills the box (like object-fit: cover), showing the part chosen
+// on the Pick page (crop: { x, y, zoom }, see cropSource in stripData.js).
+function drawCover(ctx, source, sourceWidth, sourceHeight, x, y, w, h, mirrored, crop) {
+  // A mirrored video is drawn flipped, so its left / right position is flipped too (the same as on screen)
+  const r = cropSource(sourceWidth, sourceHeight, w, h, mirrored ? { ...crop, x: 100 - crop.x } : crop)
   ctx.save()
   if (mirrored) {
     // flip left to right inside the box (the selfie camera is shown like a mirror)
@@ -75,7 +75,7 @@ function drawCover(ctx, source, sourceWidth, sourceHeight, x, y, w, h, mirrored)
     ctx.scale(-1, 1)
     x = 0
   }
-  ctx.drawImage(source, (sourceWidth - cropWidth) / 2, (sourceHeight - cropHeight) / 2, cropWidth, cropHeight, x, y, w, h)
+  ctx.drawImage(source, r.sx, r.sy, r.sw, r.sh, x, y, w, h)
   ctx.restore()
 }
 
@@ -113,7 +113,7 @@ async function buildTrack(entries) {
   return { segments: segments, length: offset }
 }
 
-export async function createScene({ layout, frameStyle, photosById, slotPhotos, edits, stickers, clips, editedVideos }) {
+export async function createScene({ layout, frameStyle, photosById, slotPhotos, edits, crops, stickers, clips, editedVideos }) {
   const slots = layout.slots
 
   // Download everything first, so drawing a frame is instant
@@ -219,9 +219,9 @@ export async function createScene({ layout, frameStyle, photosById, slotPhotos, 
       clipToSlot(ctx, frameStyle.shape, x, y, w, h, W)
       ctx.filter = filterCss(edits[i]) || 'none' // the same filter as on screen (Safari ignores this)
       if (videoReady) {
-        drawCover(ctx, seg.video, seg.video.videoWidth, seg.video.videoHeight, x, y, w, h, seg.mirrored)
+        drawCover(ctx, seg.video, seg.video.videoWidth, seg.video.videoHeight, x, y, w, h, seg.mirrored, cropOf(crops, i))
       } else {
-        drawCover(ctx, photos[i], photos[i].width, photos[i].height, x, y, w, h, false) // the slot's photo, if it has one
+        drawCover(ctx, photos[i], photos[i].width, photos[i].height, x, y, w, h, false, cropOf(crops, i)) // the slot's photo, if it has one
       }
       ctx.restore()
     }

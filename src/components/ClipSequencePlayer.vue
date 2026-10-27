@@ -15,6 +15,7 @@ import { getClipUrl } from '../clips.js'
 
 // What the parent gives us: the clips to play, and whether to use "bare" mode
 const props = defineProps({
+  position: { type: Object, default: null }, // bare mode: { x, y } in %, which part of the video shows in its slot (Germaine's crop)
   entries: { type: Array, default: () => [] },
   bare: { type: Boolean, default: false },
   autoplay: { type: Boolean, default: false },
@@ -160,11 +161,30 @@ onBeforeUnmount(() => {
   cancelAnimationFrame(frameRequest)
   if (video.value) video.value.pause()
 })
+
+// Where the video sits in its slot (bare mode). A mirrored clip is drawn flipped, so x is turned around
+// to make it look the same as an unflipped one: what is on the left of the screen stays on the left.
+const positionStyle = computed(() => {
+  if (!props.bare || !props.position) return null
+  const current = props.entries[index.value]
+  const flipped = current && current.clip.mirrored
+  const x = flipped ? 100 - props.position.x : props.position.x
+  return { objectPosition: x + '% ' + props.position.y + '%' }
+})
 </script>
 
 <template>
   <!-- bare mode: just the video, filling its box. Flipped (mirrored) if the clip being played came from a selfie camera. -->
-  <video v-if="bare" ref="video" class="bare" muted playsinline :class="{ mirrored: entries[index] && entries[index].clip.mirrored }"></video>
+  <video
+    v-if="bare"
+    ref="video"
+    class="bare"
+    muted
+    playsinline
+    :class="{ mirrored: entries[index] && entries[index].clip.mirrored }"
+    :style="positionStyle"
+  ></video>
+  <!-- positionStyle: the slot's crop. A mirrored clip is flipped, so its left / right position is flipped back (100 - x) -->
   <!-- normal mode: a screen with buttons under it -->
   <div v-else>
     <div class="screen">

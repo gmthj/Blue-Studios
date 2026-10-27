@@ -41,6 +41,7 @@ const frameStyle = computed(() => FRAME_STYLES.find((s) => s.id === room.value.s
 const slotPhotos = computed(() => room.value.stripSlots || {})
 const editedVideos = computed(() => resolveEditedVideos(room.value.editedVideos, clips.value))
 const edits = computed(() => room.value.stripEdits || {})
+const crops = computed(() => room.value.stripCrops || {}) // where each photo sits in its slot (Pick page)
 const stickers = computed(() => room.value.stripStickers || [])
 
 // The photos as { id: photo }, so a slot can find its photo quickly
@@ -99,6 +100,7 @@ async function makeMp4() {
       photosById: photosById.value,
       slotPhotos: slotPhotos.value,
       edits: edits.value,
+      crops: crops.value,
       stickers: stickers.value,
       clips: clips.value,
       editedVideos: editedVideos.value,
@@ -161,6 +163,7 @@ async function goToStage(stage) {
           :photos-by-id="photosById"
           :slot-photos="slotPhotos"
           :edits="edits"
+          :crops="crops"
           :stickers="stickers"
           :clips="clips"
           :edited-videos="editedVideos"
