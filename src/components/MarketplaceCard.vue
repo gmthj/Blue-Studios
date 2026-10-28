@@ -19,7 +19,12 @@ const maker = computed(() => profileOf(props.item.ownerId))
 <template>
   <router-link :to="'/marketplace/' + item.type + '/' + item.id" class="card h-100 text-decoration-none text-body item-card">
     <div class="preview" :class="item.type === 'templates' ? 'template-preview' : 'sticker-preview'">
-      <StorageImage :path="item.type === 'templates' ? item.thumbnailPath : item.imagePath" :alt="item.name" :priority="priority" />
+      <StorageImage
+        :src="item.cardUrl"
+        :path="item.type === 'templates' ? item.thumbnailPath : item.imagePath"
+        :alt="item.name"
+        :priority="priority"
+      />
     </div>
     <div class="card-body item-body">
       <p class="item-name text-truncate" :title="item.name">{{ item.name }}</p>

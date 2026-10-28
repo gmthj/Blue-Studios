@@ -51,12 +51,14 @@ service firebase.storage {
     // ---------- Templates ----------
     // templates/{uid}/{itemId}/thumbnail.png   (the preview picture)
     // templates/{uid}/{itemId}/project.json    (everything needed to open it in the editor)
+    // templates/{uid}/{itemId}/card.webp       (small copy for the grids, card.png in browsers without WebP)
 
     match /templates/{uid}/{itemId}/{fileName} {
       allow read: if signedIn() && (request.auth.uid == uid || isAdmin() || isPublicItem('templates', itemId));
 
       allow create, update: if isOwner(uid) && (
         (fileName == 'thumbnail.png' && isImageUnder(2))
+        || (fileName in ['card.webp', 'card.png'] && isImageUnder(1))
         || (fileName == 'project.json'
             && request.resource.size < 5 * 1024 * 1024
             && request.resource.contentType == 'application/json'));
@@ -65,11 +67,14 @@ service firebase.storage {
     }
 
     // ---------- Stickers ----------
-    // stickers/{uid}/{itemId}/image   (PNG, GIF or WebP)
+    // stickers/{uid}/{itemId}/image       (PNG, GIF or WebP)
+    // stickers/{uid}/{itemId}/card.webp   (small copy for the grids, card.png in browsers without WebP)
 
-    match /stickers/{uid}/{itemId}/image {
+    match /stickers/{uid}/{itemId}/{fileName} {
       allow read: if signedIn() && (request.auth.uid == uid || isAdmin() || isPublicItem('stickers', itemId));
-      allow create, update: if isOwner(uid) && isImageUnder(2);
+      allow create, update: if isOwner(uid) && (
+        (fileName == 'image' && isImageUnder(2))
+        || (fileName in ['card.webp', 'card.png'] && isImageUnder(1)));
       allow delete: if isOwner(uid) || isAdmin();
     }
 

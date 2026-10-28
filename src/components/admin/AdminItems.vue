@@ -124,7 +124,7 @@ function unhide(item) {
     <div class="row g-3">
       <div v-for="item in shown" :key="item.type + item.id" class="col-6 col-md-3 col-xl-2">
         <div class="card h-100">
-          <div class="preview"><StorageImage :path="item.type === 'templates' ? item.thumbnailPath : item.imagePath" :alt="item.name" /></div>
+          <div class="preview"><StorageImage :src="item.cardUrl" :path="item.type === 'templates' ? item.thumbnailPath : item.imagePath" :alt="item.name" /></div>
           <div class="card-body p-2 d-flex flex-column">
             <p class="small fw-semibold text-truncate mb-0" :title="item.name">{{ item.name }}</p>
             <p class="small mb-1">

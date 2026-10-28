@@ -82,6 +82,50 @@ async function myName() {
 const NEVER_CHANGES = 'public, max-age=31536000, immutable'
 const MAY_CHANGE = 'no-cache'
 
+// ---------- Card pictures ----------
+// The marketplace and My Studio grids show each item as a small card, so they get a small copy of its
+// picture (the "card", about 400px wide, WebP: tens of KB instead of a 1400px PNG of a few MB).
+// Its link is saved in the item's document too (cardUrl), so a grid can show it straight away instead
+// of asking Storage for a link for every card first.
+// The item page still shows the full picture (thumbnailPath / imagePath).
+// Items saved before cards existed have no cardUrl: StorageImage falls back to the full picture,
+// and scripts/make-cards.mjs makes their cards.
+const CARD_WIDTH = 400       // cards are about 250px wide on screen; a bit more stays sharp on phones
+const CARD_MAX_HEIGHT = 1200 // tall 4-cut strips: never taller than this
+
+// A small copy of an image: WebP (keeps see-through parts), or PNG in browsers that cannot make WebP
+async function makeCard(image) {
+  const bitmap = await createImageBitmap(image)
+  const scale = Math.min(1, CARD_WIDTH / bitmap.width, CARD_MAX_HEIGHT / bitmap.height)
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.max(1, Math.round(bitmap.width * scale))
+  canvas.height = Math.max(1, Math.round(bitmap.height * scale))
+  canvas.getContext('2d').drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+  bitmap.close()
+
+  const webp = await new Promise((resolve) => canvas.toBlob(resolve, 'image/webp', 0.85))
+  if (webp && webp.type === 'image/webp') return { blob: webp, fileName: 'card.webp' }
+  // Asked for WebP but got something else (older Safari): PNG instead
+  const png = await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
+  return { blob: png, fileName: 'card.png' }
+}
+
+// Make and upload the card for an item, e.g. uploadCard('templates/{uid}/{id}/', thumbnailBlob, MAY_CHANGE).
+// Returns { cardPath, cardUrl } to put in the item's document, or {} if it could not be made
+// (the grids then show the full picture, so the item still saves).
+async function uploadCard(folder, image, cacheControl) {
+  try {
+    const card = await makeCard(image)
+    const cardRef = ref(storage, folder + card.fileName)
+    await uploadBytes(cardRef, card.blob, { contentType: card.blob.type, cacheControl: cacheControl })
+    fileUrls.delete(folder + card.fileName) // replaced: forget the old link (see getFileUrl)
+    return { cardPath: folder + card.fileName, cardUrl: await getDownloadURL(cardRef) }
+  } catch (error) {
+    console.error('Could not make the card picture', error)
+    return {}
+  }
+}
+
 // Save a template from the editor. Leave out id to make a new one.
 export async function saveTemplate({ id, name, slotCount, categories, thumbnail, projectData }) {
   const uid = myUid()
@@ -97,6 +141,7 @@ export async function saveTemplate({ id, name, slotCount, categories, thumbnail,
   // Replaced files can get a new link: forget the old ones (see getFileUrl)
   fileUrls.delete(folder + 'thumbnail.png')
   fileUrls.delete(folder + 'project.json')
+  const card = await uploadCard(folder, thumbnail, MAY_CHANGE)
 
   const now = Date.now()
   const ownerName = await myName()
@@ -112,6 +157,7 @@ export async function saveTemplate({ id, name, slotCount, categories, thumbnail,
       saveCount: 0,
       thumbnailPath: folder + 'thumbnail.png',
       dataPath: folder + 'project.json',
+      ...card,
       createdAt: now,
       updatedAt: now,
     })
@@ -121,6 +167,7 @@ export async function saveTemplate({ id, name, slotCount, categories, thumbnail,
       name: name,
       slotCount: slotCount,
       categories: categories,
+      ...card,
       updatedAt: now,
     })
   }
@@ -132,9 +179,18 @@ export async function saveSticker({ name, kind, categories, image }) {
   const uid = myUid()
   checkCategories(categories)
   const itemId = newId('stickers')
-  const imagePath = 'stickers/' + uid + '/' + itemId + '/image'
+  const folder = 'stickers/' + uid + '/' + itemId + '/'
+  const imagePath = folder + 'image'
 
   await uploadBytes(ref(storage, imagePath), image, { contentType: image.type || 'image/png', cacheControl: NEVER_CHANGES })
+
+  // Moving stickers keep their own image as the card: a small copy made on a canvas would stop moving
+  let card
+  if (kind === 'static' && image.type !== 'image/gif') {
+    card = await uploadCard(folder, image, NEVER_CHANGES)
+  } else {
+    card = { cardPath: imagePath, cardUrl: await getDownloadURL(ref(storage, imagePath)) }
+  }
 
   const now = Date.now()
   await setDoc(doc(db, 'stickers', itemId), {
@@ -147,6 +203,7 @@ export async function saveSticker({ name, kind, categories, image }) {
     status: 'active',
     saveCount: 0,
     imagePath: imagePath,
+    ...card,
     createdAt: now,
     updatedAt: now,
   })
@@ -233,7 +290,7 @@ export async function updateDetails(item, { name, categories }) {
 export async function deleteItem(item) {
   await deleteDoc(doc(db, item.type, item.id))
 
-  const paths = [item.thumbnailPath, item.dataPath, item.imagePath].filter(Boolean)
+  const paths = [...new Set([item.thumbnailPath, item.dataPath, item.imagePath, item.cardPath].filter(Boolean))]
   for (const path of paths) {
     fileUrls.delete(path)
     try {

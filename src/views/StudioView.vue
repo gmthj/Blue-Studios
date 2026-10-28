@@ -215,7 +215,7 @@ function formatDate(time) {
           <div v-for="template in templates" :key="template.id" class="col-12 col-sm-6 col-lg-4">
             <div class="card h-100 overflow-hidden">
               <div class="row g-0 h-100">
-                <div class="col-4 preview template-preview"><StorageImage :path="template.thumbnailPath" :alt="template.name" /></div>
+                <div class="col-4 preview template-preview"><StorageImage :src="template.cardUrl" :path="template.thumbnailPath" :alt="template.name" /></div>
                 <div class="col-8">
                   <div class="card-body">
                     <div class="d-flex align-items-start justify-content-between gap-2">
@@ -271,7 +271,7 @@ function formatDate(time) {
         <div v-else class="row g-3">
           <div v-for="sticker in stickers" :key="sticker.id" class="col-6 col-md-3 col-xl-2">
             <div class="card h-100 overflow-hidden">
-              <div class="preview sticker-preview"><StorageImage :path="sticker.imagePath" :alt="sticker.name" /></div>
+              <div class="preview sticker-preview"><StorageImage :src="sticker.cardUrl" :path="sticker.imagePath" :alt="sticker.name" /></div>
               <div class="card-body item-body">
                 <div class="d-flex align-items-start justify-content-between gap-1">
                   <p class="item-name text-truncate" :title="sticker.name">{{ sticker.name }}</p>
