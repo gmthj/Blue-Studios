@@ -184,8 +184,9 @@ const columnClass = computed(() => {
     </div>
 
     <div class="row g-3 mb-4">
-      <div v-for="item in items" :key="item.id" :class="columnClass">
-        <MarketplaceCard :item="item" />
+      <!-- The first 8 cards are on screen straight away on most screens, so their pictures load first -->
+      <div v-for="(item, index) in items" :key="item.id" :class="columnClass">
+        <MarketplaceCard :item="item" :priority="index < 8" />
       </div>
 
       <!-- Grey placeholders the size of the cards while the first page loads -->

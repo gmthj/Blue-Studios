@@ -119,7 +119,7 @@ function formatDate(time) {
       <!-- The picture, on a soft grey card -->
       <div class="col-12 col-md-6 col-lg-5">
         <div class="preview" :class="item.type === 'templates' ? 'template-preview' : 'sticker-preview'">
-          <StorageImage :path="item.type === 'templates' ? item.thumbnailPath : item.imagePath" :alt="item.name" />
+          <StorageImage :path="item.type === 'templates' ? item.thumbnailPath : item.imagePath" :alt="item.name" priority />
         </div>
       </div>
 

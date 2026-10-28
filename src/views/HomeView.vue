@@ -74,10 +74,7 @@ const activeBox = computed(() => {
   return Math.min(joinCode.value.length, 3)
 })
 
-// Came from a QR code (the code is already filled in): on phones, show the join card first
-const fromQrCode = Boolean(route.query.code)
-
-// ---------- PHOTOSTRIP PICTURE (right side, lg and up) ----------
+// ---------- PHOTOSTRIP PICTURE (behind the room card, xl and up) ----------
 // It cycles through the templates, filling each one with the next pictures.
 // The files are in public/images/landing. To add or swap one, put the file in the folder and list it here
 // (a browser cannot list a folder by itself).
@@ -87,11 +84,13 @@ const STRIP_PICTURES = [
   '2021-11-08_05-11-05_2.jpg',
   'ahh cat.png',
   'elmo.jpg',
-  'jake window.webp',
   '2021-11-08_05-11-05_3.jpg',
-  'pepig.png',
-  'sonic.jpg',
   'bluestudios.jpeg',
+  'cew1.jpg',
+  'cew2.jpg',
+  'cew3.jpg',
+  'sjh1.jpg',
+  'kjs1.jpg',
 ]
 
 // A template is a frame picture with see-through holes where the photos go.
@@ -262,13 +261,14 @@ async function joinRoom() {
   <!-- Landing page: what Blue Studios is, plus creating or joining a room straight away -->
   <div class="landing">
     <!--
-      HERO with Bootstrap's grid:
-        phones / tablets (below lg, 992px):  one column: intro, then the room card
-                                             (the room card comes first if they scanned a QR code)
-        lg and up:                           two columns: [intro, room card] | photostrip picture
+      HERO with Bootstrap's grid. The room card is always on screen without scrolling:
+        phones / tablets (below lg, 992px):  one column: the room card, then the intro
+        phones held sideways:                the same, with the card in two columns so it fits the height
+        lg and up:                           two columns: intro | room card
+        xl and up:                           intro | room card, photostrip picture (side by side, never overlapping)
     -->
     <section class="row g-5 align-items-center hero">
-      <div class="col-12 col-lg-6 d-flex flex-column gap-4 gap-lg-5">
+      <div class="col-12 col-lg-6 col-xl-5 order-2 order-lg-1">
         <div>
           <span class="hero-badge"><AppIcon name="sparkle" :size="13" /> Free &middot; no booth needed</span>
           <h1 class="hero-title">Take a photostrip together, from anywhere.</h1>
@@ -284,90 +284,10 @@ async function joinRoom() {
             </a>
           </div>
         </div>
-
-        <!-- order-first: came from a QR code, so on phones the join card goes above the intro -->
-        <div class="room-col" :class="{ 'order-first order-lg-0': fromQrCode }">
-          <div v-if="closedCode" class="alert alert-info">Room {{ closedCode }} was closed.</div>
-
-          <div class="room-card">
-            <label for="nameInput" class="field-label">Your name</label>
-            <input
-              id="nameInput"
-              ref="nameInput"
-              v-model="name"
-              type="text"
-              class="form-control name-input"
-              :class="{ invalid: nameInvalid }"
-              placeholder="e.g. Cha Eun-woo"
-              maxlength="20"
-              @animationend="nameInvalid = false"
-            />
-
-            <h2 class="card-heading">Got a room code?</h2>
-            <p class="card-sub">Join your friends' room, no account needed.</p>
-            <div class="d-flex align-items-center gap-2 gap-sm-3">
-              <!-- One real input, invisible, on top of the 4 boxes (see ROOM CODE BOXES in the script) -->
-              <div class="code-boxes" :class="{ invalid: codeInvalid }" @animationend="codeInvalid = false">
-                <input
-                  ref="codeInput"
-                  :value="joinCode"
-                  class="code-input"
-                  type="text"
-                  inputmode="numeric"
-                  pattern="[0-9]*"
-                  maxlength="4"
-                  aria-label="4-digit room code"
-                  @input="onCodeInput"
-                  @focus="codeFocused = true"
-                  @blur="codeFocused = false"
-                  @keyup.enter="joinRoom"
-                />
-                <span
-                  v-for="i in 4"
-                  :key="i"
-                  class="code-box"
-                  :class="{ filled: joinCode[i - 1], active: codeFocused && activeBox === i - 1 }"
-                  aria-hidden="true"
-                >{{ joinCode[i - 1] }}</span>
-              </div>
-
-              <!-- When a full code is typed (or it came from a QR code), Join becomes the main button:
-                   filled, and it grows to fill the rest of the row -->
-              <button
-                class="btn btn-join ms-auto"
-                :class="codeComplete ? 'btn-primary join-ready' : 'btn-outline-primary'"
-                :disabled="!codeComplete || loading"
-                @click="joinRoom"
-              >
-                <span v-if="loading && action === 'join'" class="spinner-border spinner-border-sm" aria-hidden="true"></span>
-                Join
-              </button>
-            </div>
-
-            <div class="or-divider"><span>or</span></div>
-
-            <!-- Code typed: Create steps back to a small outline button, so Join is clearly the one to press -->
-            <button
-              class="btn btn-create"
-              :class="codeComplete ? 'btn-outline-primary create-quiet' : 'btn-primary btn-lg w-100'"
-              :disabled="loading"
-              @click="createRoom"
-            >
-              <span v-if="loading && action === 'create'" class="spinner-border spinner-border-sm" aria-hidden="true"></span>
-              <AppIcon v-else name="plus" :size="18" />
-              Create a new room
-            </button>
-            <p class="card-sub text-center mt-2 mb-0">
-              You'll be the host and get a code to share. Up to {{ MAX_PEOPLE }} people per room.
-            </p>
-
-            <div v-if="errorMessage" class="room-error" role="alert">{{ errorMessage }}</div>
-          </div>
-        </div>
       </div>
 
-      <!-- RIGHT (lg and up): photostrips that change every few seconds, just a picture (aria-hidden: screen readers skip it) -->
-      <div class="col-lg-6 d-none d-lg-flex justify-content-center">
+      <div class="col-12 col-lg-6 col-xl-7 order-1 order-lg-2 hero-side">
+        <!-- Photostrips that change every few seconds, just a picture (aria-hidden: screen readers skip it) -->
         <div class="strip-scene" aria-hidden="true">
           <!-- The stage keeps the same size for every template, so the page does not jump when the strip changes.
                :key changes for every strip, so Vue makes a new one: the new strip slides in while the old one fades out. -->
@@ -399,6 +319,91 @@ async function joinRoom() {
           </div>
           <span class="sticker sticker-white"><AppIcon name="users" :size="14" /> 4 friends &middot; 3 cities</span>
           <span class="sticker sticker-pink">main character energy</span>
+        </div>
+
+        <div class="room-col">
+          <div v-if="closedCode" class="alert alert-info">Room {{ closedCode }} was closed.</div>
+
+          <div class="room-card">
+            <div class="card-name">
+              <label for="nameInput" class="field-label">Your name</label>
+              <input
+                id="nameInput"
+                ref="nameInput"
+                v-model="name"
+                type="text"
+                class="form-control name-input"
+                :class="{ invalid: nameInvalid }"
+                placeholder="e.g. Cha Eun-woo"
+                maxlength="20"
+                @animationend="nameInvalid = false"
+              />
+            </div>
+
+            <div class="card-join">
+              <h2 class="card-heading">Got a room code?</h2>
+              <p class="card-sub">Join your friends' room, no account needed.</p>
+              <div class="d-flex align-items-center gap-2 gap-sm-3">
+                <!-- One real input, invisible, on top of the 4 boxes (see ROOM CODE BOXES in the script) -->
+                <div class="code-boxes" :class="{ invalid: codeInvalid }" @animationend="codeInvalid = false">
+                  <input
+                    ref="codeInput"
+                    :value="joinCode"
+                    class="code-input"
+                    type="text"
+                    inputmode="numeric"
+                    pattern="[0-9]*"
+                    maxlength="4"
+                    aria-label="4-digit room code"
+                    @input="onCodeInput"
+                    @focus="codeFocused = true"
+                    @blur="codeFocused = false"
+                    @keyup.enter="joinRoom"
+                  />
+                  <span
+                    v-for="i in 4"
+                    :key="i"
+                    class="code-box"
+                    :class="{ filled: joinCode[i - 1], active: codeFocused && activeBox === i - 1 }"
+                    aria-hidden="true"
+                  >{{ joinCode[i - 1] }}</span>
+                </div>
+
+                <!-- When a full code is typed (or it came from a QR code), Join becomes the main button:
+                     filled, and it grows to fill the rest of the row -->
+                <button
+                  class="btn btn-join ms-auto"
+                  :class="codeComplete ? 'btn-primary join-ready' : 'btn-outline-primary'"
+                  :disabled="!codeComplete || loading"
+                  @click="joinRoom"
+                >
+                  <span v-if="loading && action === 'join'" class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                  Join
+                </button>
+              </div>
+            </div>
+
+            <div class="card-create">
+              <div class="or-divider"><span>or</span></div>
+
+              <!-- Code typed: Create steps back to a small outline button, so Join is clearly the one to press -->
+              <button
+                class="btn btn-create"
+                :class="codeComplete ? 'btn-outline-primary create-quiet' : 'btn-primary btn-lg w-100'"
+                :disabled="loading"
+                @click="createRoom"
+              >
+                <span v-if="loading && action === 'create'" class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                <AppIcon v-else name="plus" :size="18" />
+                Create a new room
+              </button>
+              <p class="card-sub text-center mt-2 mb-0">
+                You'll be the host and get a code to share. Up to {{ MAX_PEOPLE }} people per room.
+              </p>
+            </div>
+
+            <div v-if="errorMessage" class="room-error" role="alert">{{ errorMessage }}</div>
+          </div>
         </div>
       </div>
     </section>
@@ -539,6 +544,38 @@ async function joinRoom() {
 /* The max width is on the column, so the "Room was closed" alert and the card are always the same width */
 .room-col {
   max-width: 34rem;
+}
+
+/* xl and up: the card (as narrow as it can be: 4 code boxes and Join) with the photostrip next to it */
+@media (min-width: 1200px) {
+  .hero-side {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+  }
+
+  .room-col {
+    flex: 0 0 25rem;
+  }
+}
+
+/* Laptops with short screens: a tighter card, so all of it fits under the navbar */
+@media (min-width: 992px) and (max-height: 760px) {
+  .hero {
+    padding-top: 16px;
+  }
+
+  .room-card {
+    padding: 20px 24px;
+  }
+
+  .name-input {
+    margin-bottom: 16px;
+  }
+
+  .or-divider {
+    margin: 16px 0 12px;
+  }
 }
 
 .room-card {
@@ -712,10 +749,64 @@ async function joinRoom() {
   font-size: 0.875rem;
 }
 
-/* ---------- PHOTOSTRIP PICTURE ---------- */
+/* Phones held sideways: the screen is too short for the card's parts one under the other, so the
+   name and the code sit side by side, with Create underneath. The smaller hints are hidden. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .room-col {
+    max-width: none;
+  }
+
+  .room-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto; /* the code boxes keep their size, the name box takes the rest */
+    align-items: end;
+    gap: 12px 20px;
+    padding: 16px 20px;
+  }
+
+  .card-create,
+  .room-error {
+    grid-column: 1 / -1;
+  }
+
+  .name-input {
+    margin-bottom: 0;
+  }
+
+  /* The same as the "Your name" label next to it, so the two line up */
+  .card-heading {
+    margin-bottom: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .card-join .card-sub,
+  .card-create .card-sub,
+  .or-divider {
+    display: none;
+  }
+
+  .room-error {
+    margin-top: 0;
+  }
+}
+
+/* ---------- PHOTOSTRIP PICTURE ----------
+   xl and up only: to the right of the room card (order: 1, it comes first in the HTML), taking the space
+   the card leaves. Hidden on smaller screens, where the card needs the space. */
 .strip-scene {
-  position: relative;
-  padding: 24px 64px;
+  display: none;
+}
+
+@media (min-width: 1200px) {
+  .strip-scene {
+    position: relative;
+    order: 1;
+    display: block;
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 24px 0;
+  }
 }
 
 /* Every template fits inside this box (as big as it can, keeping its shape), so the page never jumps.
@@ -723,8 +814,8 @@ async function joinRoom() {
 .strip-stage {
   display: grid;
   place-items: center;
-  width: clamp(280px, 25vw, 340px);
-  height: clamp(460px, 42vw, 560px);
+  width: 100%;
+  height: clamp(380px, 31vw, 460px);
   container-type: size;
 }
 
@@ -798,7 +889,7 @@ async function joinRoom() {
 }
 
 .sticker-white {
-  top: 22%;
+  top: 10%;
   right: 0;
   color: var(--ink);
   background: #ffffff;
@@ -807,8 +898,8 @@ async function joinRoom() {
 }
 
 .sticker-pink {
-  bottom: 22%;
-  left: 0;
+  bottom: 10%;
+  right: 0;
   color: #ffffff;
   background: var(--pink);
   rotate: 5deg;

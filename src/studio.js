@@ -74,6 +74,14 @@ async function myName() {
 
 // ---------- Saving ----------
 
+// How long browsers may keep a copy of an uploaded file (the Cache-Control header Storage sends with it).
+// NEVER_CHANGES: stickers and strips are never replaced, so browsers keep them for a year.
+// MAY_CHANGE: a template's thumbnail and project are replaced (same file name) when it is edited,
+//   so browsers keep a copy but check with Storage each time. Unchanged: a tiny "not modified" answer
+//   instead of the whole file. Changed: the new file.
+const NEVER_CHANGES = 'public, max-age=31536000, immutable'
+const MAY_CHANGE = 'no-cache'
+
 // Save a template from the editor. Leave out id to make a new one.
 export async function saveTemplate({ id, name, slotCount, categories, thumbnail, projectData }) {
   const uid = myUid()
@@ -84,8 +92,11 @@ export async function saveTemplate({ id, name, slotCount, categories, thumbnail,
   const projectFile = new Blob([JSON.stringify(projectData)], { type: 'application/json' })
 
   // Upload the files first, then the document that points to them
-  await uploadBytes(ref(storage, folder + 'thumbnail.png'), thumbnail, { contentType: 'image/png' })
-  await uploadBytes(ref(storage, folder + 'project.json'), projectFile, { contentType: 'application/json' })
+  await uploadBytes(ref(storage, folder + 'thumbnail.png'), thumbnail, { contentType: 'image/png', cacheControl: MAY_CHANGE })
+  await uploadBytes(ref(storage, folder + 'project.json'), projectFile, { contentType: 'application/json', cacheControl: MAY_CHANGE })
+  // Replaced files can get a new link: forget the old ones (see getFileUrl)
+  fileUrls.delete(folder + 'thumbnail.png')
+  fileUrls.delete(folder + 'project.json')
 
   const now = Date.now()
   const ownerName = await myName()
@@ -123,7 +134,7 @@ export async function saveSticker({ name, kind, categories, image }) {
   const itemId = newId('stickers')
   const imagePath = 'stickers/' + uid + '/' + itemId + '/image'
 
-  await uploadBytes(ref(storage, imagePath), image, { contentType: image.type || 'image/png' })
+  await uploadBytes(ref(storage, imagePath), image, { contentType: image.type || 'image/png', cacheControl: NEVER_CHANGES })
 
   const now = Date.now()
   await setDoc(doc(db, 'stickers', itemId), {
@@ -148,7 +159,7 @@ export async function saveStrip({ title, image }) {
   const stripId = newId('strips')
   const imagePath = 'strips/' + uid + '/' + stripId + '.jpg'
 
-  await uploadBytes(ref(storage, imagePath), image, { contentType: 'image/jpeg' })
+  await uploadBytes(ref(storage, imagePath), image, { contentType: 'image/jpeg', cacheControl: NEVER_CHANGES })
   await setDoc(doc(db, 'strips', stripId), {
     ownerId: uid,
     title: title,
@@ -175,8 +186,17 @@ export async function listMyItems(type) {
 
 // A link to show a file in an <img>, e.g. getFileUrl(template.thumbnailPath).
 // Firebase only gives the link if the storage rules allow me to see the file.
-export async function getFileUrl(path) {
-  return await getDownloadURL(ref(storage, path))
+// Each link is asked for once and then remembered until the page is reloaded, so going back to the
+// marketplace (or opening an item) does not ask Firebase again. A failed answer is not remembered.
+const fileUrls = new Map() // path -> Promise of the link
+
+export function getFileUrl(path) {
+  if (!fileUrls.has(path)) {
+    const link = getDownloadURL(ref(storage, path))
+    link.catch(() => fileUrls.delete(path)) // e.g. not allowed yet, or offline: ask again next time
+    fileUrls.set(path, link)
+  }
+  return fileUrls.get(path)
 }
 
 // The editor's project data of a template (to open it in the template editor)
@@ -215,6 +235,7 @@ export async function deleteItem(item) {
 
   const paths = [item.thumbnailPath, item.dataPath, item.imagePath].filter(Boolean)
   for (const path of paths) {
+    fileUrls.delete(path)
     try {
       await deleteObject(ref(storage, path))
     } catch (error) {

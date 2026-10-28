@@ -9,6 +9,7 @@ import { useRoom } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
 import { useFaceFilter, setCameraEffects } from '../composables/useFaceFilter.js'
 import { useBehindLayer } from '../composables/useBehindLayer.js'
+import { useFullscreen } from '../composables/useFullscreen.js'
 import { getFaceFilter } from '../filters/faceFilters.js'
 import StreamVideo from '../components/StreamVideo.vue'
 import FaceFilterPicker from '../components/FaceFilterPicker.vue'
@@ -29,6 +30,7 @@ const guestName = getGuestName()
 const { code, room, roomRef, activeMembers } = useRoom()
 const { localStream, mirrored, cameras, cameraIndex, cameraError, switchingCamera, switchCamera } = useVideoCall()
 const { faceFilterId, faceFilterLoading, faceFilterError } = useFaceFilter()
+const { fullscreen } = useFullscreen() // fullscreen hides the header, so the page gets its height too
 
 // The chosen filter's picture, shown inside the shutter button (null = no filter)
 const filterThumbnail = computed(() => getFaceFilter(faceFilterId.value).thumbnail)
@@ -248,7 +250,7 @@ async function copyJoinLink() {
 
 <template>
   <!-- The page fills the screen below the navbar: the stage bar, then the room (see .camera-page) -->
-  <div class="app-page camera-page">
+  <div class="app-page camera-page" :class="{ fullscreen }">
     <StageBar current="shoot" />
 
     <!-- Full-screen flash and countdown (position: fixed, so they cover the whole screen) -->
@@ -409,6 +411,12 @@ async function copyJoinLink() {
   padding-bottom: 0;
 }
 
+/* Fullscreen (button in the stage bar): no navbar, just 8px of space above the page (pt-2 in App.vue) */
+.camera-page.fullscreen {
+  height: calc(100vh - 8px - 16px);
+  height: calc(100dvh - 8px - 16px);
+}
+
 .room-page {
   flex: 1 1 auto;
   min-height: 0;
@@ -436,7 +444,8 @@ async function copyJoinLink() {
 /* Phones held sideways: the screen is too short, so the page keeps its natural height and scrolls,
    and the left column scrolls on its own. */
 @media (orientation: landscape) and (max-height: 500px) {
-  .camera-page {
+  .camera-page,
+  .camera-page.fullscreen {
     height: auto;
   }
 
@@ -587,8 +596,7 @@ async function copyJoinLink() {
 
 .people-behind-btn {
   position: absolute;
-  /* top: 12px; */
-  top: 50px;
+  top: 12px;
   left: 12px;
 }
 
@@ -597,20 +605,19 @@ async function copyJoinLink() {
   box-shadow: inset 0 0 0 2px #ffffff;
 }
 
-/* The host's Virtual people list: under its button (which is under the Photo / Video switch),
-   above the filter row and shutter */
+/* The host's Virtual people list: under its button, above the Photo / Video switch, filter row and shutter */
 .people-panel-pos {
   position: absolute;
   z-index: 12;
-  top: 94px;
+  top: 56px;
   left: 12px;
-  max-height: calc(100% - 94px - 112px);
+  max-height: calc(100% - 56px - 156px);
 }
 
 /* Phones held sideways: the filter row is on the right, so the list can use the full height */
 @media (orientation: landscape) and (max-height: 500px) {
   .people-panel-pos {
-    max-height: calc(100% - 94px - 12px);
+    max-height: calc(100% - 56px - 12px);
   }
 }
 
@@ -637,11 +644,13 @@ async function copyJoinLink() {
   }
 }
 
-/* Photo / Video switch: top left of the camera (the switch camera button is top right) */
+/* Photo / Video switch: just above the shutter button (76px tall, 20px from the bottom), like a camera app */
 .mode-toggle {
   position: absolute;
-  top: 12px;
-  left: 12px;
+  z-index: 10;
+  bottom: 108px;
+  left: 50%;
+  transform: translateX(-50%);
   display: inline-flex;
   padding: 3px;
   border-radius: 999px;
@@ -669,10 +678,22 @@ async function copyJoinLink() {
   opacity: 0.5;
 }
 
-/* "REC" / "Saving clip..." under the Photo / Video switch */
+/* Phones held sideways: the shutter is on the right edge with the filter column above and below it,
+   so the switch sits just left of the shutter instead */
+@media (orientation: landscape) and (max-height: 500px) {
+  .mode-toggle {
+    top: 50%;
+    bottom: auto;
+    left: auto;
+    right: 86px;
+    transform: translateY(-50%);
+  }
+}
+
+/* "REC" / "Saving clip..." top left (in the Virtual people button's place, which hides while recording) */
 .rec-badge {
   position: absolute;
-  top: 56px;
+  top: 12px;
   left: 12px;
   padding: 4px 10px;
   border-radius: 999px;

@@ -5,10 +5,15 @@ import { getFileUrl } from '../studio.js'
 // Shows an image saved in Firebase Storage, e.g. <StorageImage :path="template.thumbnailPath" alt="..." />
 // Firebase only gives us a link to the file if the storage rules allow it,
 // so a private file of someone else just shows the grey box.
+//
+// Images load lazily: the browser only downloads them when they are about to scroll into view.
+// Add priority for images that are on screen straight away (the first cards, the item page picture),
+// so they download first: <StorageImage :path="..." priority />
 
 const props = defineProps({
   path: { type: String, required: true },
   alt: { type: String, default: '' },
+  priority: { type: Boolean, default: false },
 })
 
 const url = ref('')
@@ -30,7 +35,15 @@ watch(() => props.path, load, { immediate: true })
 </script>
 
 <template>
-  <img v-if="url" :src="url" :alt="alt" class="storage-image" />
+  <img
+    v-if="url"
+    :src="url"
+    :alt="alt"
+    class="storage-image"
+    :loading="priority ? 'eager' : 'lazy'"
+    :fetchpriority="priority ? 'high' : 'auto'"
+    decoding="async"
+  />
   <div v-else class="storage-image placeholder-box">
     <span class="small text-muted">{{ failed ? 'No preview' : '' }}</span>
   </div>

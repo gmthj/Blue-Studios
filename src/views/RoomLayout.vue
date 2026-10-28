@@ -8,6 +8,7 @@ import { getUid } from '../composables/useAuth.js'
 import { isRoomFull, MAX_PEOPLE } from '../room.js'
 import { useRoom, ROOM_STAGES } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
+import { useFullscreen } from '../composables/useFullscreen.js'
 import VideoCallCard from '../components/VideoCallCard.vue'
 import MessagePage from '../components/MessagePage.vue'
 
@@ -28,6 +29,7 @@ const status = ref('loading')
 
 const { room, enterRoom, exitRoom, saveProgress } = useRoom()
 const { startCall, endCall } = useVideoCall()
+const { exitFullscreen } = useFullscreen()
 
 onMounted(async () => {
   // People who open a room link without a name are sent to the home page to type one
@@ -64,10 +66,12 @@ function tryAgain() {
   window.location.reload()
 }
 
-// Leaving the room (Leave button, closed room, or going to another website page): end the call
+// Leaving the room (Leave button, closed room, or going to another website page): end the call,
+// and leave fullscreen so the rest of the website has its header back
 onBeforeUnmount(() => {
   endCall()
   exitRoom(false)
+  exitFullscreen()
 })
 
 // Everyone in the room follows the room's "stage", so the whole group moves pages together.
