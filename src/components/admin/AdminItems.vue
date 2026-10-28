@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { listItems, hideItem, unhideItem } from '../../admin.js'
 import { CATEGORIES, categoryLabel } from '../../studio.js'
+import { itemLink } from '../../marketplace.js'
 import { useAdminTab, useSort, formatTime } from '../../composables/useAdminTab.js'
 import StorageImage from '../StorageImage.vue'
 import { askText } from '../../composables/useDialog.js'
@@ -139,7 +140,7 @@ function unhide(item) {
               {{ (item.categories || []).map(categoryLabel).join(', ') }}
             </p>
             <div class="mt-auto d-flex gap-1">
-              <router-link v-if="stateOf(item) === 'public'" :to="'/marketplace/' + item.type + '/' + item.id" class="btn btn-sm btn-outline-secondary flex-fill">Open</router-link>
+              <router-link v-if="stateOf(item) === 'public'" :to="itemLink(route, item.type, item.id)" class="btn btn-sm btn-outline-secondary flex-fill">Open</router-link>
               <button v-if="item.status === 'hidden'" class="btn btn-sm btn-outline-primary flex-fill" :disabled="busy" @click="unhide(item)">Unhide</button>
               <button v-else class="btn btn-sm btn-outline-danger flex-fill" :disabled="busy" @click="hide(item)">Hide</button>
             </div>

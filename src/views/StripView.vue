@@ -4,7 +4,8 @@ import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import { useAuth } from '../composables/useAuth.js'
 import { LAYOUTS, FRAME_STYLES, filterCss, saveFields, saveField, cropOf, cropSource, MAX_ZOOM } from '../stripData.js'
-import { listMyItems, getFileUrl, loadTemplateProject } from '../studio.js'
+import { listMyItems, getFileUrl, templateFrameFields } from '../studio.js'
+import { getItem, listMySaved } from '../marketplace.js'
 import { loadSavedFramesFromDB } from '../utils/savedFrameEngine.js'
 import { resolveEditedVideos, editedVideoList } from '../clips.js'
 import EditedVideoThumb from '../components/EditedVideoThumb.vue'
@@ -16,7 +17,7 @@ import PhotoStrip from '../components/PhotoStrip.vue'
 // The "Pick" page (a child of RoomLayout.vue): choose a frame and drag photos into it.
 //   Left:   gallery, photos grouped by session (shot)
 //   Middle: the strip (PhotoStrip.vue)
-//   Right:  saved frames (Default / Mine styles, Cut layouts), Skip video, Next
+//   Right:  saved frames (Default / Mine / Saved from the marketplace, Cut layouts), Skip video, Next
 // Everything is saved in the room document, so everyone in the room sees the same strip.
 
 const { room, photos, clips, roomRef } = useRoom()
@@ -27,6 +28,7 @@ const cropSlot = ref(null)        // the slot being repositioned (moved / zoomed
 const draftZoom = ref(null)       // the zoom slider's value while it is being dragged (only on this screen), or null
 // const showCall = ref(true)        // the video call can be hidden so it does not cover the strip
 const userTemplates = ref([])
+const savedTemplates = ref([]) // templates I saved from the marketplace (shown under "Saved")
 const loadingTemplates = ref(false)
 const exportingPng = ref(false)
 
@@ -69,6 +71,52 @@ const myStyles = FRAME_STYLES.filter((s) => s.group === 'mine')
 onMounted(loadTemplates)
 watch(isAccount, loadTemplates)
 
+// The template the room was made with ("Use template" in the marketplace or My Studio, see RoomLayout.vue).
+// Listed first under "Mine", even if it isn't mine or saved, so the room can go back to it.
+const startTemplate = ref(null)
+
+watch(() => room.value.startTemplateId, async (id) => {
+  startTemplate.value = null
+  if (!id) return
+  try {
+    const item = await getItem('templates', id)
+    if (!item || item.id !== room.value.startTemplateId) return
+    startTemplate.value = await templateSwatch(item)
+  } catch (err) {
+    console.warn("Could not load the room's template:", err) // e.g. someone else's private template
+  }
+}, { immediate: true })
+
+const mineTemplates = computed(() => {
+  const start = startTemplate.value
+  const listed = [...userTemplates.value, ...savedTemplates.value]
+  if (!start || listed.some((tpl) => tpl.id === start.id)) return userTemplates.value
+  return [start, ...userTemplates.value]
+})
+
+// A templates/{id} document (mine or saved from the marketplace) as a swatch in the list
+async function templateSwatch(item) {
+  let thumbUrl = null
+  if (item.thumbnailPath) {
+    try {
+      thumbUrl = await getFileUrl(item.thumbnailPath)
+    } catch (err) {
+      console.warn('Could not get thumbnail URL:', err)
+    }
+  }
+  return {
+    id: item.id,
+    name: item.name,
+    thumbnailUrl: thumbUrl,
+    dataPath: item.dataPath,
+    thumbnailPath: item.thumbnailPath,
+    slotCount: item.slotCount,
+    shape: 'square',
+    background: '#FFFFFF',
+    border: '#1A1A2E'
+  }
+}
+
 async function loadTemplates() {
   loadingTemplates.value = true
   const list = []
@@ -93,38 +141,24 @@ async function loadTemplates() {
     console.warn('Could not load local frames:', e)
   }
 
-  // 2. Load cloud templates
+  // 2. Load cloud templates: my own, and the ones I saved from the marketplace (both together)
+  let saved = []
   if (isAccount.value) {
     try {
-      const cloudItems = await listMyItems('templates')
-      for (const item of cloudItems) {
-        if (!list.some((existing) => existing.id === item.id)) {
-          let thumbUrl = null
-          if (item.thumbnailPath) {
-            try {
-              thumbUrl = await getFileUrl(item.thumbnailPath)
-            } catch (err) {
-              console.warn('Could not get thumbnail URL:', err)
-            }
-          }
-          list.push({
-            id: item.id,
-            name: item.name,
-            thumbnailUrl: thumbUrl,
-            dataPath: item.dataPath,
-            thumbnailPath: item.thumbnailPath,
-            slotCount: item.slotCount,
-            shape: 'square',
-            background: '#FFFFFF',
-            border: '#1A1A2E'
-          })
-        }
-      }
+      const results = await Promise.all([listMyItems('templates'), listMySaved()])
+      const mine = results[0].filter((item) => !list.some((existing) => existing.id === item.id))
+      list.push(...(await Promise.all(mine.map(templateSwatch))))
+      // Saved ones that are still available (null = the maker made it private or removed it)
+      const savedItems = results[1]
+        .filter((entry) => entry.type === 'templates' && entry.item && !list.some((existing) => existing.id === entry.id))
+        .map((entry) => entry.item)
+      saved = await Promise.all(savedItems.map(templateSwatch))
     } catch (err) {
       console.warn('Could not load cloud templates:', err)
     }
   }
 
+  savedTemplates.value = saved
   userTemplates.value = list
   loadingTemplates.value = false
 }
@@ -317,7 +351,7 @@ function resetCrop() {
 
 // A different cut has different slots, so the slots are emptied (ask first if photos would be lost)
 async function chooseLayout(id) {
-  if (id === layout.value.id && !room.value.stripCustomTemplate) return
+  if (id === layout.value.id) return
   if (filledCount.value > 0) {
     const sure = await askConfirm({
       title: 'Change the cut?',
@@ -339,26 +373,9 @@ async function chooseStyle(id) {
 // Choose a saved template from the Template Editor
 async function chooseCustomTemplate(tpl) {
   try {
-    let project = tpl.projectData
-    if (!project && tpl.dataPath) {
-      project = await loadTemplateProject(tpl)
-    }
-    const thumbUrl = tpl.thumbnailUrl || (tpl.thumbnailPath ? await getFileUrl(tpl.thumbnailPath).catch(() => null) : null) || null
+    const { fields, slotCount } = await templateFrameFields(tpl)
 
-    const aspect = project?.aspect || (3 / 10)
-    const slots = project?.slots || project?.slotRects || [
-      { x: 6, y: 3, w: 88, h: 20 },
-      { x: 6, y: 25, w: 88, h: 20 },
-      { x: 6, y: 47, w: 88, h: 20 },
-      { x: 6, y: 69, w: 88, h: 20 },
-    ]
-    const shape = (project?.slotShape || project?.shape || 'square').toLowerCase()
-    const bg = project?.background || project?.selectedBgColor || (project?.frameBg?.type === 'gradient' ? project.frameBg.value : project?.frameBg?.baseColor) || '#FFFFFF'
-    const border = project?.borderColor || project?.border || '#1A1A2E'
-    const caption = project?.captionText || project?.caption || tpl.name || ''
-    const captionColor = project?.captionColor || border
-
-    if (filledCount.value > 0 && slots.length !== layout.value.slots.length) {
+    if (filledCount.value > 0 && slotCount !== layout.value.slots.length) {
       const sure = await askConfirm({
         title: 'Use this template?',
         message: 'It has a different number of photo slots, so the photos on the strip are cleared for everyone.',
@@ -369,22 +386,7 @@ async function chooseCustomTemplate(tpl) {
       if (!sure) return
     }
 
-    await saveFields(roomRef(), {
-      stripStyleId: tpl.id,
-      stripLayoutId: project?.stripLayoutId || project?.activeLayout || 'custom',
-      stripCustomTemplate: {
-        id: tpl.id,
-        name: tpl.name || project?.templateName || 'Custom Template',
-        aspect,
-        slots,
-        shape,
-        background: bg,
-        border,
-        caption,
-        captionColor,
-        thumbnailUrl: thumbUrl
-      }
-    })
+    await saveFields(roomRef(), fields)
   } catch (err) {
     console.error('Failed to apply custom template:', err)
   }
@@ -661,7 +663,7 @@ async function goToStage(stage) {
         </h3>
         <div class="d-flex flex-wrap gap-2 align-items-center">
           <div
-            v-for="tpl in userTemplates"
+            v-for="tpl in mineTemplates"
             :key="tpl.id"
             class="position-relative"
           >
@@ -679,7 +681,7 @@ async function goToStage(stage) {
 
           <!-- Fallback if no custom templates loaded -->
           <button
-            v-if="userTemplates.length === 0"
+            v-if="mineTemplates.length === 0"
             v-for="s in myStyles"
             :key="s.id"
             class="swatch"
@@ -695,6 +697,25 @@ async function goToStage(stage) {
             title="Design a new frame in Template Editor"
           >+</router-link>
         </div>
+
+        <!-- Templates saved from the marketplace (in My Studio) -->
+        <template v-if="savedTemplates.length">
+          <h3 class="h6 mt-3">Saved</h3>
+          <div class="d-flex flex-wrap gap-2 align-items-center">
+            <button
+              v-for="tpl in savedTemplates"
+              :key="tpl.id"
+              class="swatch"
+              :class="[tpl.shape, { active: tpl.id === frameStyle.id }]"
+              :style="{
+                background: tpl.thumbnailUrl ? `url(${tpl.thumbnailUrl}) center/cover no-repeat` : tpl.background,
+                borderColor: tpl.id === frameStyle.id ? '#2F5BEA' : tpl.border
+              }"
+              :title="tpl.name"
+              @click="chooseCustomTemplate(tpl)"
+            ></button>
+          </div>
+        </template>
 
         <!-- Re-edit banner when custom template is active -->
         <div v-if="room.stripCustomTemplate" class="alert alert-light border p-2 mt-2 mb-0 d-flex align-items-center justify-content-between">
@@ -719,20 +740,23 @@ async function goToStage(stage) {
           </router-link>
         </div>
 
-        <h3 class="h6 mt-3">Cut</h3>
-        <div class="d-flex flex-column gap-2 cut-list">
-          <button
-            v-for="l in LAYOUTS"
-            :key="l.id"
-            class="cut-item text-start"
-            :class="{ active: l.id === layout.id }"
-            @click="chooseLayout(l.id)"
-          >
-            <span class="d-block fw-semibold">{{ l.name }}</span>
-            <span class="small text-muted">{{ l.slots.length }} slots</span>
-            <span v-if="l.id === layout.id" class="check">✓</span>
-          </button>
-        </div>
+        <!-- The cut is only for the default designs: a template already has its own slots -->
+        <template v-if="!room.stripCustomTemplate">
+          <h3 class="h6 mt-3">Cut</h3>
+          <div class="d-flex flex-column gap-2 cut-list">
+            <button
+              v-for="l in LAYOUTS"
+              :key="l.id"
+              class="cut-item text-start"
+              :class="{ active: l.id === layout.id }"
+              @click="chooseLayout(l.id)"
+            >
+              <span class="d-block fw-semibold">{{ l.name }}</span>
+              <span class="small text-muted">{{ l.slots.length }} slots</span>
+              <span v-if="l.id === layout.id" class="check">✓</span>
+            </button>
+          </div>
+        </template>
 
         <p class="small text-muted mt-3 mb-2">
           {{ filledCount }} of {{ layout.slots.length }} slots filled · Slots: photo or clip

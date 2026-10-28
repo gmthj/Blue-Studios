@@ -6,6 +6,10 @@ import { db } from '../firebase.js'
 import { getGuestName, getDeviceType } from '../guest.js'
 import { getUid } from '../composables/useAuth.js'
 import { isRoomFull, MAX_PEOPLE } from '../room.js'
+import { getItem } from '../marketplace.js'
+import { templateFrameFields } from '../studio.js'
+import { saveFields } from '../stripData.js'
+import { showNotice } from '../composables/useDialog.js'
 import { useRoom, ROOM_STAGES } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
 import { useFullscreen } from '../composables/useFullscreen.js'
@@ -24,10 +28,14 @@ const code = route.params.code
 const uid = getUid()
 const guestName = getGuestName()
 
+// "Use template" (marketplace / My Studio) makes the room with /room/4821/shoot?template={id}:
+// that template becomes the room's photostrip frame (see applyStartTemplate below)
+const startTemplateId = typeof route.query.template === 'string' ? route.query.template : ''
+
 // 'loading' | 'ready' | 'notFound' | 'full' | 'closed'
 const status = ref('loading')
 
-const { room, enterRoom, exitRoom, saveProgress } = useRoom()
+const { room, roomRef, enterRoom, exitRoom, saveProgress } = useRoom()
 const { startCall, endCall } = useVideoCall()
 const { exitFullscreen } = useFullscreen()
 
@@ -56,10 +64,45 @@ onMounted(async () => {
   await enterRoom(code, uid, guestName, getDeviceType())
   status.value = 'ready'
   followStage() // e.g. if the group is already making the photostrip, go straight there
+  applyStartTemplate(roomSnap.data())
 
   // Start the video call (not awaited, so the page shows while the call connects)
   startCall(code, uid)
 })
+
+// The host's new room starts with the template from "Use template", already chosen on the Pick page.
+// Only if the room has no frame yet (so opening the same link again later changes nothing).
+// The template does not need to be saved to My Studio: public ones can be read by anyone.
+async function applyStartTemplate(roomData) {
+  if (!startTemplateId) return
+  // Take ?template= off the URL, so a refresh doesn't try again
+  const query = { ...route.query }
+  delete query.template
+  router.replace({ path: route.path, query: query })
+
+  if (roomData.hostId !== uid || roomData.stripStyleId || roomData.stripCustomTemplate) return
+  try {
+    const template = await getItem('templates', startTemplateId)
+    if (!template) {
+      showNotice({
+        title: "That template isn't available",
+        message: 'It may have been made private or removed, so the room starts with the default frame.',
+        icon: 'layout',
+      })
+      return
+    }
+    const { fields } = await templateFrameFields(template)
+    // startTemplateId: so the Pick page can list it, even for people who don't own it
+    await saveFields(roomRef(), { ...fields, startTemplateId: startTemplateId })
+  } catch (error) {
+    console.error(error)
+    showNotice({
+      title: "Couldn't load the template",
+      message: 'The room starts with the default frame. You can still choose a frame on the Pick page.',
+      icon: 'layout',
+    })
+  }
+}
 
 // "Try again" on the room-full message: load the page again, so it checks for a free place again
 function tryAgain() {

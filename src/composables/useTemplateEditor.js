@@ -145,7 +145,7 @@ const {
 
 // --- Editor Navigation & Toolbar State ---
 const templateName = ref('Retro 4-cut')
-const activeLayout = ref('retro-4-cut') // 'retro-4-cut' | 'polaroid-2x2' | 'film-3-cut' | 'music-4-cut'
+const activeLayout = ref('retro-4-cut') // 'retro-4-cut' | 'polaroid-2x2' | 'film-3-cut'
 const slotShape = ref('Rounded') // 'Square' | 'Rounded' | 'Circle'
 const activeTool = ref('elements') // 'templates' | 'elements' | 'text' | 'background' | 'layers'
 const isDrawerOpen = ref(true)

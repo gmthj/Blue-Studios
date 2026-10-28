@@ -6,6 +6,7 @@ import { useFullscreen } from './composables/useFullscreen.js'
 import AppIcon from './components/AppIcon.vue'
 import ProfileDialog from './components/ProfileDialog.vue'
 import AppDialog from './components/AppDialog.vue'
+import MarketplaceItemDialog from './components/MarketplaceItemDialog.vue'
 import { profileOf } from './profiles.js'
 
 const route = useRoute()
@@ -100,6 +101,9 @@ async function logOutAndGoHome() {
     </nav>
 
     <ProfileDialog v-if="isAccount" v-model:open="profileOpen" />
+
+    <!-- One marketplace template or sticker, on top of any page whose URL has ?item=templates:{id} -->
+    <MarketplaceItemDialog />
 
     <main class="pb-3" :class="[containerClass, { 'pt-2': hideNav }]">
       <!-- Could not sign in (even as a guest), so nothing would be saved: show why instead of the page -->

@@ -1,11 +1,15 @@
 <script setup>
 import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import StorageImage from './StorageImage.vue'
 import AppIcon from './AppIcon.vue'
 import { profileOf } from '../profiles.js'
+import { itemLink } from '../marketplace.js'
 
 // One template or sticker in a marketplace grid (also used for "Saved" in My Studio).
-// Clicking it opens its page: /marketplace/templates/{id} or /marketplace/stickers/{id}
+// Clicking it opens it in a popup on top of this page (MarketplaceItemDialog.vue)
+
+const route = useRoute()
 
 const props = defineProps({
   item: { type: Object, required: true },
@@ -17,7 +21,7 @@ const maker = computed(() => profileOf(props.item.ownerId))
 </script>
 
 <template>
-  <router-link :to="'/marketplace/' + item.type + '/' + item.id" class="card h-100 text-decoration-none text-body item-card">
+  <router-link :to="itemLink(route, item.type, item.id)" class="card h-100 text-decoration-none text-body item-card">
     <div class="preview" :class="item.type === 'templates' ? 'template-preview' : 'sticker-preview'">
       <StorageImage
         :src="item.cardUrl"

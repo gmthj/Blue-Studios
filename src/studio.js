@@ -262,6 +262,59 @@ export async function loadTemplateProject(template) {
   return await response.json()
 }
 
+// "Use template": the home page, ready to make a new room that starts with this template as its frame
+// (HomeView.vue passes it on to the room, and RoomLayout.vue sets it)
+export function templateRoomLink(templateId) {
+  return { path: '/', query: { template: templateId } }
+}
+
+// The room fields that make a template the room's photostrip frame (used by the Pick page, and by
+// "Use template", which sets it when the room is made). Save them with saveFields(roomRef(), fields).
+// template: a templates/{id} document, or a frame saved in this browser by the Template Editor
+// ({ id, name, projectData, thumbnailUrl }).
+//   const { fields, slotCount } = await templateFrameFields(template)
+export async function templateFrameFields(template) {
+  let project = template.projectData
+  if (!project && template.dataPath) {
+    project = await loadTemplateProject(template)
+  }
+  let thumbnailUrl = template.thumbnailUrl || null
+  if (!thumbnailUrl && template.thumbnailPath) {
+    thumbnailUrl = await getFileUrl(template.thumbnailPath).catch(() => null)
+  }
+
+  // Older or unusual project files: fall back to a plain 4-cut strip
+  const slots = project?.slots || project?.slotRects || [
+    { x: 6, y: 3, w: 88, h: 20 },
+    { x: 6, y: 25, w: 88, h: 20 },
+    { x: 6, y: 47, w: 88, h: 20 },
+    { x: 6, y: 69, w: 88, h: 20 },
+  ]
+  const border = project?.borderColor || project?.border || '#1A1A2E'
+  const background = project?.background || project?.selectedBgColor
+    || (project?.frameBg?.type === 'gradient' ? project.frameBg.value : project?.frameBg?.baseColor) || '#FFFFFF'
+
+  return {
+    slotCount: slots.length,
+    fields: {
+      stripStyleId: template.id,
+      stripLayoutId: project?.stripLayoutId || project?.activeLayout || 'custom',
+      stripCustomTemplate: {
+        id: template.id,
+        name: template.name || project?.templateName || 'Custom Template',
+        aspect: project?.aspect || (3 / 10),
+        slots: slots,
+        shape: (project?.slotShape || project?.shape || 'square').toLowerCase(),
+        background: background,
+        border: border,
+        caption: project?.captionText || project?.caption || template.name || '',
+        captionColor: project?.captionColor || border,
+        thumbnailUrl: thumbnailUrl,
+      },
+    },
+  }
+}
+
 // ---------- Changing and deleting ----------
 
 // Make a template or sticker public (shown in the marketplace) or private.

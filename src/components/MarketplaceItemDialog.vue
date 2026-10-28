@@ -3,7 +3,7 @@ import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
 import { getItem, isSaved, saveItem, unsaveItem, hasReported, reportItem, REPORT_REASONS, parseItemParam, savedChanges } from '../marketplace.js'
-import { categoryLabel } from '../studio.js'
+import { categoryLabel, templateRoomLink } from '../studio.js'
 import StorageImage from './StorageImage.vue'
 import AppIcon from './AppIcon.vue'
 import { profileOf } from '../profiles.js'
@@ -230,11 +230,20 @@ function formatDate(time) {
           </div>
 
           <div class="actions">
+            <!-- Templates: start a room with it as the photostrip frame (no need to save it first) -->
+            <router-link
+              v-if="item.type === 'templates'"
+              :to="templateRoomLink(item.id)"
+              class="btn btn-primary d-inline-flex align-items-center justify-content-center gap-2"
+            >
+              <AppIcon name="camera" :size="16" /> Use template
+            </router-link>
+
             <!-- Someone else's item, and I have an account -->
             <button
               v-if="isAccount && !isMine"
               class="btn d-inline-flex align-items-center justify-content-center gap-2"
-              :class="saved ? 'btn-outline-primary' : 'btn-primary'"
+              :class="saved || item.type === 'templates' ? 'btn-outline-primary' : 'btn-primary'"
               :disabled="saving"
               @click="toggleSave"
             >
@@ -243,7 +252,12 @@ function formatDate(time) {
             </button>
 
             <!-- Guests -->
-            <router-link v-else-if="!isAccount" :to="loginLink" class="btn btn-primary d-inline-flex align-items-center justify-content-center gap-2">
+            <router-link
+              v-else-if="!isAccount"
+              :to="loginLink"
+              class="btn d-inline-flex align-items-center justify-content-center gap-2"
+              :class="item.type === 'templates' ? 'btn-outline-primary' : 'btn-primary'"
+            >
               <AppIcon name="bookmark" :size="16" /> Log in to save
             </router-link>
 

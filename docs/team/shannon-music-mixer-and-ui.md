@@ -45,8 +45,7 @@ Only room members can change it, and only while the room is open. That's the sam
 | Log in / Sign up | `/login`, `/login?mode=signup` | everyone | `src/views/LoginView.vue` |
 | My Studio (the "gallery") | `/studio` | accounts only (guests are sent to log in) | `src/views/StudioView.vue` |
 | Marketplace | `/marketplace?type=templates&category=cute&sort=popular` | everyone, guests too | `src/views/MarketplaceView.vue` |
-| Marketplace item | `/marketplace/templates/{id}` or `/marketplace/stickers/{id}` | everyone (save and report need an account) | `src/views/MarketplaceItemView.vue` |
-| Test page (temporary, will be removed) | `/test-upload` | accounts | `src/views/TestUploadView.vue` |
+| Marketplace item (popup) | any page + `?item=templates:{id}` or `?item=stickers:{id}` | everyone (save and report need an account) | `src/components/MarketplaceItemDialog.vue` |
 
 **Shared pieces:**
 - `src/App.vue`: the navbar has Marketplace, plus My Studio, name and Log out for accounts, or Log in and Sign up for guests. It's hidden inside rooms, because logging out there would drop you from the room. It also holds the "please confirm your email" reminder.

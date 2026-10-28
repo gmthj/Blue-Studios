@@ -7,7 +7,9 @@ import { getGuestName, saveGuestName } from '../guest.js'
 import { getUid, useAuth } from '../composables/useAuth.js'
 import { isRoomFull, MAX_PEOPLE } from '../room.js'
 import { LAYOUTS } from '../stripData.js'
+import { getItem } from '../marketplace.js'
 import AppIcon from '../components/AppIcon.vue'
+import StorageImage from '../components/StorageImage.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -36,6 +38,37 @@ const joinCode = ref(route.query.code || '')
 const errorMessage = ref('')
 const loading = ref(false)
 const action = ref('') // 'join' or 'create': which button shows the loading spinner
+
+// "Use template" in the marketplace or My Studio opens /?template={id}: the new room starts with that
+// template as its photostrip frame (RoomLayout.vue sets it once the host is in the room)
+const startTemplate = ref(null) // the templates/{id} document
+const startTemplateMissing = ref(false)
+
+watch(
+  () => route.query.template,
+  async (id) => {
+    startTemplate.value = null
+    startTemplateMissing.value = false
+    if (typeof id !== 'string' || id === '') return
+    try {
+      const template = await getItem('templates', id)
+      if (route.query.template !== id) return // changed while loading
+      startTemplate.value = template
+      startTemplateMissing.value = !template
+    } catch (error) {
+      console.error(error)
+      startTemplateMissing.value = true
+    }
+  },
+  { immediate: true },
+)
+
+// The x on the template card: make a normal room instead
+function dropStartTemplate() {
+  const query = { ...route.query }
+  delete query.template
+  router.replace({ path: '/', query: query })
+}
 
 // Shown after a room is closed (RoomLayout.vue sends everyone to /?closed=1234)
 const closedCode = route.query.closed || ''
@@ -221,7 +254,10 @@ async function createRoom() {
       createdAt: Date.now(),
     })
 
-    router.push('/room/' + code)
+    router.push({
+      path: '/room/' + code + '/shoot',
+      query: startTemplate.value ? { template: startTemplate.value.id } : {},
+    })
   } catch (error) {
     console.error(error)
     errorMessage.value = 'Could not create room. Check your internet connection.'
@@ -326,6 +362,23 @@ async function joinRoom() {
 
           <div class="card-create">
             <div class="or-divider"><span>or</span></div>
+
+            <!-- "Use template": the frame the new room starts with -->
+            <div v-if="startTemplate" class="start-template">
+              <div class="start-template-thumb">
+                <StorageImage :src="startTemplate.cardUrl" :path="startTemplate.thumbnailPath" :alt="startTemplate.name" priority />
+              </div>
+              <div class="flex-grow-1 min-w-0">
+                <p class="start-template-label">Your room will use</p>
+                <p class="start-template-name text-truncate" :title="startTemplate.name">{{ startTemplate.name }}</p>
+              </div>
+              <button type="button" class="start-template-remove" aria-label="Don't use this template" @click="dropStartTemplate">
+                <AppIcon name="close" :size="16" />
+              </button>
+            </div>
+            <p v-else-if="startTemplateMissing" class="start-template-missing">
+              That template isn't available any more, so the room will start with the default frame.
+            </p>
 
             <!-- Code typed: Create steps back to a small outline button, so Join is clearly the one to press -->
             <button
@@ -701,6 +754,71 @@ async function joinRoom() {
   display: flex;
   width: fit-content;
   margin: 0 auto;
+}
+
+/* "Your room will use ...": the template from "Use template", above the Create button */
+.start-template {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 8px 8px 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--brand-tint);
+}
+
+.start-template-thumb {
+  width: 40px;
+  height: 56px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.min-w-0 {
+  min-width: 0;
+}
+
+.start-template-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.start-template-name {
+  margin: 0;
+  font-weight: 700;
+}
+
+.start-template-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 10px;
+  color: var(--muted);
+  background: transparent;
+}
+
+.start-template-remove:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.start-template-remove:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.start-template-missing {
+  margin-bottom: 14px;
+  color: var(--muted);
+  font-size: 0.85rem;
 }
 
 /* A line with "or" in the middle */

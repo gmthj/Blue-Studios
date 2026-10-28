@@ -65,7 +65,7 @@ Gabriel needs to see this before you write any rule.
 
 ### 3. Remove temporary things
 
-- **The `/test-upload` page:** `src/views/TestUploadView.vue`, its route in `src/router.js`, its line in `vercel.json`, and its line in the README project structure. First check that nothing else imports it.
+- ~~**The `/test-upload` page**~~: already removed (page, route and README line).
 - Any other placeholder data a teammate left in that's no longer used (for example placeholder `STICKERS` / `LAYOUTS` in `src/stripData.js`). **Ask Gabriel before deleting a teammate's code.**
 - **Leave alone:** `scripts/set-admin.mjs`, `scripts/set-cors.mjs`, and the emulator branch in `api/_lib/firebaseAdmin.js`. The tests need that branch, and it only runs when `FIREBASE_AUTH_EMULATOR_HOST` is set, which it never is on Vercel.
 
@@ -134,7 +134,6 @@ Write each as numbered steps, with what to check afterwards. After each one, ask
 ### 10. Update the docs
 
 - **README "Security rules":** remove the DEV mode paragraph and describe the final rules for each feature, in the same short style as the existing bullets.
-- **README project structure:** remove `/test-upload`.
 - Add a short "Security summary" section that a marker can read in a minute: identity (anonymous plus account linking), rules (deny by default, field checks, tests), the server functions, admin and bans, Storage, the API key restrictions, and the headers.
 - If Gabriel asks, add a "Use of AI" entry in the README's style describing this lockdown.
 
