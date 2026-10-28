@@ -29,9 +29,8 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Log in to remove backgrounds' })
   }
 
-  // Check the input before spending a credit: base64 text only, and small enough for Vercel.
-  // Vercel allows about 4.5 MB per request; 3,000,000 characters is about 2.2 MB of image.
-  // (The browser already shrinks the photo to 800px, so a real request is far below this.)
+  // Check the input before spending a credit: base64 text only, and small enough for Vercel
+  // (Vercel allows about 4.5 MB per request; 3,000,000 characters is about 2.2 MB of image).
   const image = String((req.body && req.body.image) || '')
   if (image.length === 0 || image.length > 3000000 || !/^[A-Za-z0-9+/=]+$/.test(image)) {
     return res.status(400).json({ error: 'Invalid image' })
@@ -39,7 +38,7 @@ export default async function handler(req, res) {
 
   try {
     // Send the picture to remove.bg with our secret key.
-    // This is the ONLY place the key is used, and it never leaves the server.
+    // The key travels in a header, never in the URL, so it cannot leak into logs.
     const form = new FormData()
     form.append('image_file_b64', image)
     form.append('size', 'auto')
