@@ -6,9 +6,10 @@ import { useAuth } from '../composables/useAuth.js'
 // saveSticker is Gabriel's function that uploads the image and creates the sticker's Firestore document.
 import { listMyItems, getFileUrl, saveSticker, MAX_CATEGORIES } from '../studio.js'
 // Our own new helpers for personal folders (src/stickerCategories.js)
+
 import {
   DEFAULT_CATEGORIES, MAX_FOLDER_NAME, MAX_FOLDERS,
-  listMyFolders, createFolder, renameFolder, deleteFolder, addStickerToFolders,
+  listMyFolders, createFolder, renameFolder, deleteFolder, addItemToFolders,
 } from '../stickerCategories.js'
 
 // Background removal goes through our own server function, so the remove.bg key stays secret.
@@ -117,7 +118,7 @@ const visibleStickers = computed(() => {
   if (activeFolder.value === 'all') return myStickers.value
   const folder = folders.value.find((f) => f.id === activeFolder.value)
   if (!folder) return myStickers.value
-  const ids = folder.stickerIds || []
+  const ids = folder.itemIds || []
   return myStickers.value.filter((sticker) => ids.includes(sticker.id))
 })
 
@@ -825,7 +826,7 @@ async function saveToStudio() {
     // so a failure here only affects the folders.
     let folderFailed = false
     try {
-      await addStickerToFolders(stickerId, pickedFolders.value)
+      await addItemToFolders(stickerId, pickedFolders.value)
     } catch (error) {
       folderFailed = true
     }

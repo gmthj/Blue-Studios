@@ -133,7 +133,7 @@ async function unsave(savedItem) {
 
 // Which of my folders is this sticker in? (a folder stores sticker ids, so we look the id up)
 function foldersOf(sticker) {
-  return folders.value.filter((f) => (f.stickerIds || []).includes(sticker.id))
+  return folders.value.filter((f) => (f.itemIds || []).includes(sticker.id))
 }
 
 // The public labels to show. If the sticker is in one of my folders and its only public
@@ -149,7 +149,7 @@ const filteredStickers = computed(() => {
   if (folderFilter.value === 'all') return stickers.value
   if (folderFilter.value === 'mine') return stickers.value.filter((s) => foldersOf(s).length > 0)
   const folder = folders.value.find((f) => f.id === folderFilter.value)
-  const ids = folder ? folder.stickerIds || [] : []
+  const ids = folder ? folder.itemIds || [] : []
   return stickers.value.filter((s) => ids.includes(s.id))
 })
 
