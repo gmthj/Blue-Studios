@@ -6,11 +6,12 @@ import { useAuth } from '../composables/useAuth.js'
 // saveSticker is Gabriel's function that uploads the image and creates the sticker's Firestore document.
 import { listMyItems, getFileUrl, saveSticker, MAX_CATEGORIES } from '../studio.js'
 // Our own new helpers for personal folders (src/stickerCategories.js)
-
 import {
   DEFAULT_CATEGORIES, MAX_FOLDER_NAME, MAX_FOLDERS,
   listMyFolders, createFolder, renameFolder, deleteFolder, addItemToFolders,
 } from '../stickerCategories.js'
+// Our own GIF encoder wrapper (src/gif.js), which uses the gifenc library
+import { encodeGif } from '../gif.js'
 
 // Background removal goes through our own server function, so the remove.bg key stays secret.
 import { removeBackground } from '../removeBackground.js'
@@ -56,10 +57,31 @@ const stageWidth = ref(400)      // the workspace width in px, so text size scal
 const errorMessage = ref('')
 const successMessage = ref('')   // the green "saved" message
 
-// ONE list holds every layer: 'image' (photos and stickers), 'text' and 'draw'.
-// The ORDER of this list is the stacking order: the last item is drawn on top.
-const layers = ref([])
+// A GIF is a list of frames, and each frame has its own list of layers.
+// A still sticker is simply one frame, so the same editor serves both.
+// The ORDER of a frame's layers is the stacking order: the last item is drawn on top.
+const frames = ref([{ id: 'frame-1', layers: [] }])
+const activeFrameId = ref('frame-1')
+
+// The frame being edited right now (falls back to the first if the id is out of date)
+const activeFrame = computed(() => {
+  return frames.value.find((frame) => frame.id === activeFrameId.value) || frames.value[0]
+})
+
+// "layers" keeps the name the rest of this file already uses, so no other function had to change.
+// Reading it gives the active frame's layers; assigning to it replaces them.
+const layers = computed({
+  get: () => activeFrame.value.layers,
+  set: (value) => { activeFrame.value.layers = value },
+})
+
 const selectedId = ref(null)
+
+// GIF playback speed, in frames per second
+const gifSpeed = ref(6)
+
+// More than one frame means the result is a GIF, not a still sticker
+const isGif = computed(() => frames.value.length > 1)
 
 // Which tools/panels are open
 const drawing = ref(false)
@@ -609,15 +631,9 @@ function pointsToString(points) {
 // so the file on the laptop and the one in Firebase always look identical.
 // ----
 
-// Draw every layer, bottom to top, onto an off-screen canvas and return it as a PNG Blob.
-// Returns null if it fails. Anything left undrawn stays transparent, which makes it a sticker.
-async function renderPng() {
-  errorMessage.value = ''
-  if (layers.value.length === 0) {
-    errorMessage.value = 'Add a photo, text or drawing first.'
-    return null
-  }
-
+// Draw ONE frame onto an off-screen canvas and hand the canvas back.
+// The PNG export and the GIF export both use this, so a frame looks identical in both.
+async function renderFrameCanvas(frame) {
   const S = EXPORT_SIZE
   const k = S / 100 // converts "percent of the workspace" into export pixels
   const canvas = document.createElement('canvas')
@@ -625,64 +641,76 @@ async function renderPng() {
   canvas.height = S
   const ctx = canvas.getContext('2d')
 
-  try {
-    for (const layer of layers.value) {
-      ctx.save()
+  for (const layer of frame.layers) {
+    ctx.save()
 
-      if (layer.type === 'image') {
-        const img = await loadImage(layer.url)
-        const w = layer.width * k
-        const h = w * layer.ratio
-        ctx.translate(layer.x * k, layer.y * k)
-        ctx.rotate((layer.rotation * Math.PI) / 180)
-        ctx.drawImage(img, -w / 2, -h / 2, w, h)
-      } else if (layer.type === 'text') {
-        ctx.translate(layer.x * k, layer.y * k)
-        ctx.rotate((layer.rotation * Math.PI) / 180)
-        ctx.font = (layer.bold ? '700 ' : '400 ') + layer.size * k + 'px ' + FONT_FAMILY
-        ctx.fillStyle = layer.color
-        ctx.textAlign = 'center'     // matches translate(-50%, -50%) in the preview
-        ctx.textBaseline = 'middle'
-        ctx.shadowColor = 'rgba(0, 0, 0, 0.6)' // the same thin shadow as the preview
-        ctx.shadowBlur = 2 * (S / stageWidth.value)
-        ctx.fillText(layer.text, 0, 0)
-      } else if (layer.type === 'draw') {
-        for (const stroke of layer.strokes) {
+    if (layer.type === 'image') {
+      const img = await loadImage(layer.url)
+      const w = layer.width * k
+      const h = w * layer.ratio
+      ctx.translate(layer.x * k, layer.y * k)
+      ctx.rotate((layer.rotation * Math.PI) / 180)
+      ctx.drawImage(img, -w / 2, -h / 2, w, h)
+    } else if (layer.type === 'text') {
+      ctx.translate(layer.x * k, layer.y * k)
+      ctx.rotate((layer.rotation * Math.PI) / 180)
+      ctx.font = (layer.bold ? '700 ' : '400 ') + layer.size * k + 'px ' + FONT_FAMILY
+      ctx.fillStyle = layer.color
+      ctx.textAlign = 'center'     // matches translate(-50%, -50%) in the preview
+      ctx.textBaseline = 'middle'
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.6)' // the same thin shadow as the preview
+      ctx.shadowBlur = 2 * (S / stageWidth.value)
+      ctx.fillText(layer.text, 0, 0)
+    } else if (layer.type === 'draw') {
+      for (const stroke of layer.strokes) {
+        ctx.save()
+        ctx.lineCap = 'round'
+        ctx.lineJoin = 'round'
+        ctx.strokeStyle = stroke.color
+        ctx.lineWidth = stroke.width * k
+        ctx.globalAlpha = stroke.opacity
+        ctx.beginPath()
+        stroke.points.forEach((point, index) => {
+          if (index === 0) ctx.moveTo(point[0] * k, point[1] * k)
+          else ctx.lineTo(point[0] * k, point[1] * k)
+        })
+        ctx.stroke()
+        ctx.restore()
+
+        // Sparkle stars
+        for (const star of stroke.stars) {
           ctx.save()
-          ctx.lineCap = 'round'
-          ctx.lineJoin = 'round'
-          ctx.strokeStyle = stroke.color
-          ctx.lineWidth = stroke.width * k
-          ctx.globalAlpha = stroke.opacity
-          ctx.beginPath()
-          stroke.points.forEach((point, index) => {
-            if (index === 0) ctx.moveTo(point[0] * k, point[1] * k)
-            else ctx.lineTo(point[0] * k, point[1] * k)
-          })
-          ctx.stroke()
+          ctx.fillStyle = stroke.color
+          ctx.translate(star.x * k, star.y * k)
+          ctx.scale(k, k)
+          ctx.fill(new Path2D(starPath(0, 0, star.r)))
           ctx.restore()
-
-          // Sparkle stars
-          for (const star of stroke.stars) {
-            ctx.save()
-            ctx.fillStyle = stroke.color
-            ctx.translate(star.x * k, star.y * k)
-            ctx.scale(k, k)
-            ctx.fill(new Path2D(starPath(0, 0, star.r)))
-            ctx.restore()
-          }
         }
       }
-
-      ctx.restore()
     }
+
+    ctx.restore()
+  }
+
+  return canvas
+}
+
+// The still-sticker export: draw the active frame, then turn it into a PNG Blob.
+async function renderPng() {
+  errorMessage.value = ''
+  if (layers.value.length === 0) {
+    errorMessage.value = 'Add a photo, text or drawing first.'
+    return null
+  }
+
+  try {
+    const canvas = await renderFrameCanvas(activeFrame.value)
+    // toBlob uses a callback, so we wrap it in a Promise to be able to use await.
+    return await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
   } catch (error) {
     errorMessage.value = 'Could not create the PNG. If you added a saved sticker, check the Storage CORS settings.'
     return null
   }
-
-  // toBlob uses a callback, so we wrap it in a Promise to be able to use await.
-  return new Promise((resolve) => canvas.toBlob(resolve, 'image/png'))
 }
 
 // Download button: saves the PNG to the user's device only. Nothing goes to Firebase.
@@ -692,6 +720,38 @@ async function downloadPng() {
   const link = document.createElement('a')
   link.href = URL.createObjectURL(blob)
   link.download = 'sticker.png'
+  link.click()
+  URL.revokeObjectURL(link.href) // tidy up the temporary link
+}
+// Build the animated GIF: draw every frame, then hand the pictures to gifenc.
+async function renderGif() {
+  errorMessage.value = ''
+  if (frames.value.length < 2) {
+    errorMessage.value = 'Add a second frame to make a GIF.'
+    return null
+  }
+
+  try {
+    const canvases = []
+    for (const frame of frames.value) {
+      canvases.push(await renderFrameCanvas(frame))
+    }
+    // The slider is in frames per second, but a GIF wants "how long each frame stays" in ms
+    const delayMs = Math.round(1000 / gifSpeed.value)
+    return encodeGif(canvases, delayMs)
+  } catch (error) {
+    errorMessage.value = 'Could not create the GIF. Try fewer or smaller photos.'
+    return null
+  }
+}
+
+// Download button for GIFs: saves the .gif to the device only
+async function downloadGif() {
+  const blob = await renderGif()
+  if (!blob) return
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = 'sticker.gif'
   link.click()
   URL.revokeObjectURL(link.href) // tidy up the temporary link
 }
@@ -807,8 +867,9 @@ async function saveToStudio() {
 
   saving.value = true
   try {
-    const blob = await renderPng()
-    if (!blob) return // renderPng already set the error message
+    // A GIF is built from all the frames; a still sticker is just the active frame
+    const blob = isGif.value ? await renderGif() : await renderPng()
+    if (!blob) return // the render function already set the error message
     if (blob.size > 2 * 1024 * 1024) { // the storage rules reject files over 2 MB
       errorMessage.value = 'This sticker is over 2 MB. Try fewer or smaller photos.'
       return
@@ -817,7 +878,7 @@ async function saveToStudio() {
     // Step 1: upload the image + create the sticker document. Firebase makes the unique ID and returns it.
     const stickerId = await saveSticker({
       name: name,
-      kind: 'static', // GIFs will use 'animated' later
+      kind: isGif.value ? 'animated' : 'static', // 'animated' is what My Studio expects for a GIF
       categories: publicCategories,
       image: blob,
     })
@@ -845,6 +906,57 @@ async function saveToStudio() {
   } finally {
     saving.value = false // always re-enable the buttons, whether it worked or not
   }
+}
+
+// ----
+// Frames (what makes it a GIF)
+// ----
+
+// Add an empty frame after the current one and switch to it
+function addFrame() {
+  const index = frames.value.findIndex((frame) => frame.id === activeFrameId.value)
+  const frame = { id: newId(), layers: [] }
+  frames.value.splice(index + 1, 0, frame) // insert right after, so the order stays predictable
+  goToFrame(frame.id)
+}
+
+// Copy the current frame, so changing one word of text does not mean rebuilding everything
+function duplicateFrame() {
+  const index = frames.value.findIndex((frame) => frame.id === activeFrameId.value)
+  const copy = {
+    id: newId(),
+    // A JSON round-trip is the simplest deep copy; layers are plain data, so it is safe
+    layers: JSON.parse(JSON.stringify(activeFrame.value.layers)),
+  }
+  frames.value.splice(index + 1, 0, copy)
+  goToFrame(copy.id)
+}
+
+// Delete a frame. The last one cannot go, or there would be nothing left to edit.
+function deleteFrame(frame) {
+  if (frames.value.length === 1) return
+  const index = frames.value.findIndex((item) => item.id === frame.id)
+  frames.value = frames.value.filter((item) => item.id !== frame.id)
+  if (activeFrameId.value === frame.id) {
+    goToFrame(frames.value[Math.max(0, index - 1)].id) // step back to the one before it
+  }
+}
+
+// Switch frames. The selection is cleared because the selected layer belongs to the old frame.
+function goToFrame(id) {
+  activeFrameId.value = id
+  selectedId.value = null
+  drawLayerId.value = null
+  drawing.value = false
+}
+
+// Move a frame one place earlier or later in the animation
+function moveFrame(frame, direction) {
+  const index = frames.value.findIndex((item) => item.id === frame.id)
+  const target = index + direction
+  if (target < 0 || target >= frames.value.length) return
+  const moved = frames.value.splice(index, 1)[0]
+  frames.value.splice(target, 0, moved)
 }
 
 // ----
@@ -884,6 +996,11 @@ onBeforeUnmount(() => {
       </div>
       <div class="d-flex gap-2">
         <button class="btn btn-outline-success" @click="downloadPng">⬇ Download PNG</button>
+        <button class="btn btn-primary" @click="openSave">💾 Save to My Studio</button>
+      </div>
+      <div class="d-flex gap-2">
+        <button v-if="isGif" class="btn btn-outline-success" @click="downloadGif">⬇ Download GIF</button>
+        <button v-else class="btn btn-outline-success" @click="downloadPng">⬇ Download PNG</button>
         <button class="btn btn-primary" @click="openSave">💾 Save to My Studio</button>
       </div>
     </header>
@@ -1129,6 +1246,46 @@ onBeforeUnmount(() => {
           ></div>
         </div>
 
+        <!-- Frame strip: the order here is the order the GIF plays in -->
+        <div class="card mt-3">
+          <div class="card-body py-2">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <span class="small fw-bold">
+                Frames <span class="text-secondary fw-normal">({{ frames.length }})</span>
+              </span>
+              <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-outline-primary" @click="addFrame">+ Add frame</button>
+                <button class="btn btn-sm btn-outline-secondary" @click="duplicateFrame">⧉ Duplicate</button>
+              </div>
+            </div>
+
+            <div class="d-flex flex-wrap gap-2">
+              <div
+                v-for="(frame, index) in frames"
+                :key="frame.id"
+                class="frame-chip"
+                :class="{ active: frame.id === activeFrameId }"
+                role="button"
+                @click="goToFrame(frame.id)"
+              >
+                <span class="frame-number">{{ index + 1 }}</span>
+                <div class="d-flex gap-1 mt-1">
+                  <button class="btn btn-sm btn-outline-secondary py-0 px-1" title="Move earlier" @click.stop="moveFrame(frame, -1)">←</button>
+                  <button class="btn btn-sm btn-outline-secondary py-0 px-1" title="Move later" @click.stop="moveFrame(frame, 1)">→</button>
+                  <button class="btn btn-sm btn-outline-danger py-0 px-1" title="Delete frame" :disabled="frames.length === 1" @click.stop="deleteFrame(frame)">✕</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Speed only matters once there is something to animate -->
+            <div v-if="isGif" class="d-flex align-items-center gap-2 mt-2">
+              <label for="gif-speed" class="small mb-0">Speed</label>
+              <input id="gif-speed" v-model.number="gifSpeed" type="range" class="form-range w-auto" min="1" max="15" step="1" />
+              <span class="small text-secondary">{{ gifSpeed }} frames per second</span>
+            </div>
+          </div>
+        </div>
+
         <p class="small text-secondary mt-3 mb-0">
           Downloads are a 512 × 512 PNG with a transparent background.
           Tip: drag to move. Use the Size and Rotate sliders to adjust the selected layer.
@@ -1342,6 +1499,26 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+
+/* One small box per frame in the strip */
+.frame-chip {
+  width: 74px;
+  padding: 6px;
+  border: 2px solid #dee2e6;
+  border-radius: 8px;
+  text-align: center;
+  cursor: pointer;
+  background: #fff;
+}
+.frame-chip.active {
+  border-color: #0d6efd;
+  background: #e7f1ff;
+}
+.frame-number {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
 /* Round tool buttons */
 .tool-circle {
   width: 52px;
