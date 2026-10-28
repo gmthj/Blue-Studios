@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="70" viewBox="0 0 120 70">
+  <!-- Three whiskers for ONE cheek, fanning out to the left (the other cheek uses it flipped) -->
+  <g stroke="#2A2A30" stroke-width="4" stroke-linecap="round" fill="none">
+    <path d="M114 24 Q62 12 6 6" />
+    <path d="M114 35 Q62 33 6 36" />
+    <path d="M114 46 Q66 56 12 66" />
+  </g>
+</svg>

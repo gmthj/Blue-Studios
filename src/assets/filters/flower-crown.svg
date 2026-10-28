@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="300" height="110" viewBox="0 0 300 110">
+  <!-- A ring of flowers and leaves across the top of the forehead -->
+  <defs>
+    <g id="flower">
+      <circle cx="0" cy="-12" r="11" />
+      <circle cx="11.4" cy="-3.7" r="11" />
+      <circle cx="7" cy="9.7" r="11" />
+      <circle cx="-7" cy="9.7" r="11" />
+      <circle cx="-11.4" cy="-3.7" r="11" />
+    </g>
+    <path id="leaf" d="M0 0 C8 -10 22 -10 30 0 C22 10 8 10 0 0 Z" fill="#5DAA5A" stroke="#3E7D3C" stroke-width="2" />
+  </defs>
+  <path d="M8 86 Q150 30 292 86" fill="none" stroke="#6B8E4E" stroke-width="6" stroke-linecap="round" />
+  <use href="#leaf" transform="translate(30 66) rotate(-150)" />
+  <use href="#leaf" transform="translate(96 46) rotate(-30)" />
+  <use href="#leaf" transform="translate(150 40) rotate(200)" />
+  <use href="#leaf" transform="translate(204 46) rotate(-20)" />
+  <use href="#leaf" transform="translate(270 66) rotate(-30)" />
+  <use href="#flower" transform="translate(24 80)" fill="#FFB3C7" />
+  <use href="#flower" transform="translate(70 58) scale(1.15)" fill="#FFF2A8" />
+  <use href="#flower" transform="translate(120 46) scale(1.25)" fill="#F7A1D0" />
+  <use href="#flower" transform="translate(180 46) scale(1.25)" fill="#FFFFFF" />
+  <use href="#flower" transform="translate(230 58) scale(1.15)" fill="#FFB3C7" />
+  <use href="#flower" transform="translate(276 80)" fill="#C9B6FF" />
+  <g fill="#F5B81C">
+    <circle cx="24" cy="80" r="6" />
+    <circle cx="70" cy="58" r="7" />
+    <circle cx="120" cy="46" r="8" />
+    <circle cx="180" cy="46" r="8" />
+    <circle cx="230" cy="58" r="7" />
+    <circle cx="276" cy="80" r="6" />
+  </g>
+</svg>

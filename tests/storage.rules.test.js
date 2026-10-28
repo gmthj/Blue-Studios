@@ -9,11 +9,16 @@ import { ref, uploadBytes, getBytes, deleteObject } from 'firebase/storage'
 
 let testEnv
 
+// DEV: storage.rules has a block that opens everything while we build (DEV-OPEN-START ... DEV-OPEN-END).
+// Remove it here, so these tests still check the strict rules that remain after the lockdown.
+const storageRules = fs.readFileSync('storage.rules', 'utf8')
+const strictStorageRules = storageRules.replace(/\/\/ DEV-OPEN-START[\s\S]*?\/\/ DEV-OPEN-END/, '')
+
 before(async () => {
   testEnv = await initializeTestEnvironment({
     projectId: 'demo-blue-studios',
     firestore: { rules: fs.readFileSync('firestore.rules', 'utf8'), host: '127.0.0.1', port: 8080 },
-    storage: { rules: fs.readFileSync('storage.rules', 'utf8'), host: '127.0.0.1', port: 9199 },
+    storage: { rules: strictStorageRules, host: '127.0.0.1', port: 9199 },
   })
 })
 
@@ -103,20 +108,37 @@ test('strips are private: only the owner can upload and download', async () => {
   await assertFails(getBytes(ref(storageAs('bob'), 'strips/alice/st1.jpg')))
 })
 
+test('video clips: an admin can play and delete them', async () => {
+  const webm = { contentType: 'video/webm' }
+  await seedFile('clips/1234/alice/c1.webm', webm)
+  await assertSucceeds(getBytes(ref(storageAsAdmin(), 'clips/1234/alice/c1.webm')))
+  await assertFails(getBytes(ref(storageAs('bob'), 'clips/1234/alice/c1.webm')))
+  await assertFails(deleteObject(ref(storageAs('bob'), 'clips/1234/alice/c1.webm')))
+  await assertSucceeds(deleteObject(ref(storageAsAdmin(), 'clips/1234/alice/c1.webm')))
+})
+
+test('profile pictures: the owner uploads a small JPEG, anyone signed in can see it', async () => {
+  await assertSucceeds(uploadBytes(ref(storageAs('alice'), 'avatars/alice/avatar.jpg'), PNG, jpeg))
+  await assertSucceeds(getBytes(ref(storageAsGuest('g1'), 'avatars/alice/avatar.jpg')))
+  await assertFails(uploadBytes(ref(storageAs('bob'), 'avatars/alice/avatar.jpg'), PNG, jpeg))
+  await assertFails(uploadBytes(ref(storageAsGuest('g1'), 'avatars/g1/avatar.jpg'), PNG, jpeg))
+  await assertFails(uploadBytes(ref(storageAs('alice'), 'avatars/alice/avatar.jpg'), PNG, png))
+  await assertFails(uploadBytes(ref(storageAs('alice'), 'avatars/alice/avatar.jpg'), new Uint8Array(1024 * 1024), jpeg))
+})
+
 test('only the owner or an admin can delete files', async () => {
   await seedFile('templates/alice/t1/thumbnail.png', png)
   await assertFails(deleteObject(ref(storageAs('bob'), 'templates/alice/t1/thumbnail.png')))
   await assertSucceeds(deleteObject(ref(storageAs('alice'), 'templates/alice/t1/thumbnail.png')))
 })
 
-// DEV: new folders are open to signed-in users while teammates build (delete this test at lockdown)
-test('DEV: new folders are open to signed-in users (under 50 MB), but not the strict folders', async () => {
-  const guest = testEnv.authenticatedContext('g1', { firebase: { sign_in_provider: 'anonymous' } }).storage()
-  await assertSucceeds(uploadBytes(ref(guest, 'clips/1234/c1.webm'), PNG, { contentType: 'video/webm' }))
-  await assertSucceeds(getBytes(ref(storageAsGuest('g2'), 'clips/1234/c1.webm')))
-  await assertFails(getBytes(ref(testEnv.unauthenticatedContext().storage(), 'clips/1234/c1.webm')))
-  await assertFails(uploadBytes(ref(guest, 'templates/g1/t1/thumbnail.png'), PNG, png))
-  // no web pages or scripts (they could be used for phishing from a Firebase address)
-  await assertFails(uploadBytes(ref(guest, 'clips/1234/page.html'), PNG, { contentType: 'text/html' }))
-  await assertFails(uploadBytes(ref(guest, 'clips/1234/x.svg'), PNG, { contentType: 'image/svg+xml' }))
+// DEV: make sure the open block is still there and can be found (delete this test at lockdown)
+test('DEV: storage.rules has exactly one DEV-OPEN block, which the tests remove', () => {
+  if (strictStorageRules === storageRules || strictStorageRules.includes('DEV-OPEN-START')) {
+    throw new Error('expected one "// DEV-OPEN-START ... // DEV-OPEN-END" block in storage.rules')
+  }
+})
+
+test('without the DEV block, new folders are closed', async () => {
+  await assertFails(uploadBytes(ref(storageAsGuest('g1'), 'videos/1234/v1.webm'), PNG, { contentType: 'video/webm' }))
 })

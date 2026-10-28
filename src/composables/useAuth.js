@@ -14,8 +14,10 @@ import {
   sendPasswordResetEmail,
   signOut,
 } from 'firebase/auth'
-import { doc, getDoc, setDoc } from 'firebase/firestore'
-import { auth, db } from '../firebase.js'
+import { doc, getDoc, setDoc, collection, query, where, getDocs, writeBatch } from 'firebase/firestore'
+import { ref as storageRef, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
+import { auth, db, storage } from '../firebase.js'
+import { profileOf, setProfile } from '../profiles.js'
 
 // SHARED login state for the whole app.
 //
@@ -30,6 +32,8 @@ import { auth, db } from '../firebase.js'
 // Usage in a page:
 //   const { user, isAccount, isAdmin, signUp, logIn, logInWithGoogle, logOut } = useAuth()
 //   user.value.uid, user.value.displayName, user.value.email, user.value.emailVerified
+//   avatar.value   the link to my profile picture (see profiles.js for which picture)
+//   updateMyProfile({ displayName, photoFile, removePhoto })   change my name and/or picture
 //   getUid()   my uid as a plain string (outside templates)
 
 // A plain copy of the Firebase user (Vue cannot see changes inside Firebase's own user object,
@@ -103,6 +107,9 @@ export function startAuth() {
       }
 
       copyUser(firebaseUser, await readAdminMark(firebaseUser))
+      if (!firebaseUser.isAnonymous) {
+        profileOf(firebaseUser.uid) // start loading my name and picture for the navbar
+      }
       if (!started) {
         started = true
         resolve()
@@ -141,6 +148,98 @@ function googleName(firebaseUser) {
   const google = firebaseUser.providerData.find((info) => info.providerId === 'google.com')
   const name = firebaseUser.displayName || (google && google.displayName) || 'Blue Studios user'
   return name.trim().slice(0, 30)
+}
+
+// ---------- Profile picture ----------
+// Which picture is shown (see profiles.js): a photo I uploaded, otherwise a DiceBear face from my uid.
+// The uploaded photo is in Firebase Storage at avatars/{uid}/avatar.jpg, and its link is saved in my
+// public profile (users/{uid}.photoURL), so everyone can see it.
+
+// My picture, for the navbar. Guests get their DiceBear face.
+const avatar = computed(() => (user.value ? profileOf(user.value.uid).avatar : ''))
+
+// Make a picture small before uploading: a 256 x 256 square from the middle of it, as a JPEG.
+// (Phone photos are often 5 MB or more; this makes them about 20 KB.)
+const AVATAR_SIZE = 256
+
+function resizeToSquare(file) {
+  return new Promise((resolve, reject) => {
+    const image = new Image()
+    const url = URL.createObjectURL(file)
+    image.onload = () => {
+      const side = Math.min(image.width, image.height)
+      const canvas = document.createElement('canvas')
+      canvas.width = AVATAR_SIZE
+      canvas.height = AVATAR_SIZE
+      canvas.getContext('2d').drawImage(
+        image,
+        (image.width - side) / 2, (image.height - side) / 2, side, side, // the middle square of the photo
+        0, 0, AVATAR_SIZE, AVATAR_SIZE,
+      )
+      URL.revokeObjectURL(url)
+      canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Could not read the picture'))), 'image/jpeg', 0.85)
+    }
+    image.onerror = () => {
+      URL.revokeObjectURL(url)
+      reject(new Error('Could not read the picture'))
+    }
+    image.src = url
+  })
+}
+
+// When I rename myself, my templates and stickers get the new name too
+// (it is saved on each item for the marketplace search, and the security rules check it matches my profile)
+async function renameMyItems(displayName) {
+  const uid = auth.currentUser.uid
+  const batch = writeBatch(db)
+  for (const type of ['templates', 'stickers']) {
+    const snapshot = await getDocs(query(collection(db, type), where('ownerId', '==', uid)))
+    snapshot.docs.forEach((itemDoc) => {
+      batch.update(itemDoc.ref, { ownerName: displayName, updatedAt: Date.now() })
+    })
+  }
+  await batch.commit()
+}
+
+// Change my name and/or picture. Accounts only.
+//   displayName   my new name
+//   photoFile     a picture file to upload (from <input type="file">)
+//   removePhoto   true: delete my uploaded picture (I get my DiceBear face back)
+async function updateMyProfile({ displayName, photoFile, removePhoto }) {
+  const uid = auth.currentUser.uid
+  const photoRef = storageRef(storage, 'avatars/' + uid + '/avatar.jpg')
+  const changes = {}
+
+  if (photoFile) {
+    const small = await resizeToSquare(photoFile)
+    await uploadBytes(photoRef, small, { contentType: 'image/jpeg' })
+    changes.photoURL = await getDownloadURL(photoRef)
+  } else if (removePhoto) {
+    changes.photoURL = ''
+  }
+
+  if (displayName !== undefined) {
+    changes.displayName = displayName.trim().slice(0, 30)
+    await updateProfile(auth.currentUser, { displayName: changes.displayName }) // the name on my login too
+  }
+
+  if (Object.keys(changes).length > 0) {
+    await setDoc(doc(db, 'users', uid), changes, { merge: true })
+    setProfile(uid, changes)
+  }
+
+  if (removePhoto && !photoFile) {
+    try {
+      await deleteObject(photoRef)
+    } catch (error) {
+      if (error.code !== 'storage/object-not-found') console.error(error)
+    }
+  }
+
+  if (changes.displayName !== undefined) {
+    await renameMyItems(changes.displayName)
+  }
+  copyUser(auth.currentUser)
 }
 
 // ---------- Sign up, log in, log out ----------
@@ -235,5 +334,8 @@ export function authErrorMessage(error) {
 }
 
 export function useAuth() {
-  return { user, isAccount, isAdmin, authError, signUp, logIn, logInWithGoogle, logOut, resetPassword, resendVerification }
+  return {
+    user, isAccount, isAdmin, authError, avatar,
+    signUp, logIn, logInWithGoogle, logOut, resetPassword, resendVerification, updateMyProfile,
+  }
 }
