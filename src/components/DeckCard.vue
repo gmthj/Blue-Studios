@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { getPeaks } from '../waveform.js'
 import WaveformBars from './WaveformBars.vue'
+import { MAX_EDIT_SECONDS } from '../clips.js'   // the part of the song that gets used (15 s)
 
 // Data passed IN from MusicView
 const props = defineProps({
@@ -12,10 +13,15 @@ const props = defineProps({
   volume: Number,     // 0 to 100
   playing: Boolean,   // NEW: is this deck playing right now?
   loading: Boolean,   // NEW: is the song still downloading?
+  start: Number,      // NEW: where the chosen part of the song starts, in seconds
 })
 
 // Messages sent OUT to MusicView (a component must not change its own props)
-const emit = defineEmits(['change-speed', 'change-volume', 'save-speed', 'save-volume', 'toggle-play', 'cue'])
+const emit = defineEmits([
+  'change-speed', 'change-volume', 'change-start',
+  'save-speed', 'save-volume', 'save-start',
+  'toggle-play', 'cue',
+])
 
 // event.target is the slider that moved (Week 3 DOM). Its value is text, so turn it into a number.
 function onSpeedInput(event) {
@@ -35,12 +41,41 @@ function onVolumeChange(event) {
   emit('save-volume', Number(event.target.value))
 }
 
-// 60 bars in this deck's colour. computed = re-runs automatically when a new track is loaded.
+// "Start at" slider: while dragging (jump there and hear it), and on letting go (save for the room)
+function onStartInput(event) {
+  emit('change-start', Number(event.target.value))
+}
+
+function onStartChange(event) {
+  emit('save-start', Number(event.target.value))
+}
+
+// The latest start that still leaves a full 15 s of song
+const maxStart = computed(function () {
+  if (!props.track) return 0
+  return Math.max(0, Math.floor(props.track.duration - MAX_EDIT_SECONDS))
+})
+
+// 65 → "1:05"
+function formatTime(seconds) {
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.floor(seconds % 60)
+  if (secs < 10) {
+    return mins + ':0' + secs
+  }
+  return mins + ':' + secs
+}
+
+// 60 bars: the chosen 15 s in this deck's colour, the rest grey, so you can SEE which part you picked.
+// computed = re-runs automatically when the song or the start changes.
 const bars = computed(function () {
   const peaks = getPeaks(props.track, 60)
+  const duration = props.track ? props.track.duration : 0
   const result = []
   for (let i = 0; i < peaks.length; i++) {
-    result.push({ height: peaks[i], color: props.color })
+    const second = (i / peaks.length) * duration   // where in the song this bar is
+    const inPart = second >= props.start && second < props.start + MAX_EDIT_SECONDS
+    result.push({ height: peaks[i], color: inPart ? props.color : 'var(--line)' })
   }
   return result
 })
@@ -66,6 +101,24 @@ const bars = computed(function () {
       </div>
 
       <WaveformBars :bars="bars" class="mb-3" />
+
+      <!-- Which 15 s of the song to use: it loops while you listen and goes into the video -->
+      <div class="d-flex justify-content-between small">
+        <label :for="'start-' + label.slice(-1)">Start at</label>
+        <span class="time">{{ formatTime(start) }} – {{ formatTime(start + MAX_EDIT_SECONDS) }}</span>
+      </div>
+      <input
+        :id="'start-' + label.slice(-1)"
+        :value="start"
+        type="range"
+        class="form-range"
+        min="0"
+        :max="maxStart"
+        step="1"
+        :disabled="!track"
+        @input="onStartInput"
+        @change="onStartChange"
+      />
 
       <div class="d-flex justify-content-between small">
         <span>Speed</span><span>{{ speed.toFixed(2) }}×</span>
@@ -107,6 +160,11 @@ const bars = computed(function () {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* Numbers that change while dragging: every digit the same width, so the text does not wiggle */
+.time {
+  font-variant-numeric: tabular-nums;
 }
 
 /* The coloured middle of the record */

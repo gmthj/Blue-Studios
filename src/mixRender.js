@@ -15,12 +15,12 @@ export async function renderMix(settings) {
     if (settings.bufferA) {
       const playerA = new Tone.Player(settings.bufferA).connect(gainA)
       playerA.playbackRate = settings.speedA
-      playerA.start(0)
+      playerA.start(0, settings.startA || 0)   // from the chosen part (0 if no start was given)
     }
     if (settings.bufferB) {
       const playerB = new Tone.Player(settings.bufferB).connect(gainB)
       playerB.playbackRate = settings.speedB
-      playerB.start(0)
+      playerB.start(0, settings.startB || 0)
     }
   }, seconds)
 
