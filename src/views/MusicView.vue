@@ -4,7 +4,7 @@ import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import axios from 'axios'
 import * as Tone from 'tone'   // NEW: not in syllabus (your X-factor)
 import { useRoom } from '../composables/useRoom.js'
-import { getPeaks } from '../waveform.js'
+import { getPeaks, makeWaveform } from '../waveform.js'
 import DeckCard from '../components/DeckCard.vue'
 import WaveformBars from '../components/WaveformBars.vue'
 import StageBar from '../components/StageBar.vue'
@@ -78,8 +78,9 @@ async function loadDeckA(track) {
 
   try {
     const player = await makePlayer(track, gainA, speedA.value)
-    // If another song was picked while this one was downloading, throw this one away
-    if (trackA.value !== track) {
+    // If another song was picked while this one was downloading, throw this one away.
+    // Compare ids, not objects: Vue wraps objects in a ref, so the same song is never the "same object".
+    if (!trackA.value || trackA.value.id !== track.id) {
       player.dispose()
       return
     }
@@ -135,7 +136,7 @@ async function loadDeckB(track) {
 
   try {
     const player = await makePlayer(track, gainB, speedB.value)
-    if (trackB.value !== track) {
+    if (!trackB.value || trackB.value.id !== track.id) {
       player.dispose()
       return
     }
@@ -372,6 +373,13 @@ async function uploadSong(event) {
       return
     }
 
+    // Unpack the song to draw its waveform (Jamendo gives one, but an uploaded file doesn't).
+    // This happens AFTER the 4-minute check, so a long file is never unpacked (that's what uses the memory).
+    const fileUrl = URL.createObjectURL(file)
+    const decoded = await Tone.ToneAudioBuffer.fromUrl(fileUrl)
+    URL.revokeObjectURL(fileUrl)
+    const waveform = makeWaveform(decoded)
+
     // Same folder idea as the room's video clips: music/{room}/uploads/{person}/{time}
     const stamp = Date.now()
     const path = 'music/' + code.value + '/uploads/' + getUid() + '/' + stamp
@@ -392,7 +400,7 @@ async function uploadSong(event) {
       artist_name: 'Your upload',
       duration: duration,
       audio: url,
-      waveform: '',
+      waveform: waveform,
       musicinfo: { speed: '' },
     })
   } catch (error) {
