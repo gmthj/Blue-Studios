@@ -29,6 +29,8 @@ const volumeA = ref(80)     // 0 to 100 (%)
 const speedB = ref(1)
 const volumeB = ref(55)
 const crossfade = ref(0.5)  // 0 = only Deck A, 1 = only Deck B
+const startA = ref(0)       // where Deck A's chosen part starts (seconds into the song)
+const startB = ref(0)
 const playingA = ref(false)
 const playingB = ref(false)
 const loadingA = ref(false)
@@ -51,12 +53,20 @@ const gainB = new Tone.Gain(0.55).connect(crossFadeNode.b)
 let playerA = null
 let playerB = null
 
+// Loop only the chosen part, so what you hear is exactly what goes into the video.
+// At a faster speed, 15 s of video uses more of the song, so the loop is a bit longer.
+function setLoop(player, start, speed) {
+  player.loopStart = start
+  player.loopEnd = Math.min(start + MAX_EDIT_SECONDS * speed, player.buffer.duration)
+}
+
 // Downloads a song and gets a Tone player ready (connected to that deck's volume)
-async function makePlayer(track, gainNode, speed) {
+async function makePlayer(track, gainNode, speed, start) {
   const player = new Tone.Player().connect(gainNode)
   await player.load(track.audio)
   player.loop = true
   player.playbackRate = speed
+  setLoop(player, start, speed)
   return player
 }
 
@@ -77,7 +87,7 @@ async function loadDeckA(track) {
   loadingA.value = true
 
   try {
-    const player = await makePlayer(track, gainA, speedA.value)
+    const player = await makePlayer(track, gainA, speedA.value, startA.value)
     // If another song was picked while this one was downloading, throw this one away.
     // Compare ids, not objects: Vue wraps objects in a ref, so the same song is never the "same object".
     if (!trackA.value || trackA.value.id !== track.id) {
@@ -100,17 +110,17 @@ async function togglePlayA() {
     playerA.stop()
     playingA.value = false
   } else {
-    playerA.start()
+    playerA.start(undefined, startA.value)   // start at the chosen part (undefined = "right now")
     playingA.value = true
   }
 }
 
-// Cue = jump back to the start of the song
+// Cue = jump back to the start of the chosen part
 function cueA() {
   if (!playerA) return
   playerA.stop()
   if (playingA.value) {
-    playerA.start()
+    playerA.start(undefined, startA.value)
   }
 }
 
@@ -118,6 +128,19 @@ function setSpeedA(value) {
   speedA.value = value
   if (playerA) {
     playerA.playbackRate = value
+    setLoop(playerA, startA.value, value)
+  }
+}
+
+// Moving the "Start at" slider: loop the new part, and jump there if it's playing
+function setStartA(value) {
+  startA.value = value
+  if (playerA) {
+    setLoop(playerA, value, speedA.value)
+    if (playingA.value) {
+      playerA.stop()
+      playerA.start(undefined, value)
+    }
   }
 }
 
@@ -135,7 +158,7 @@ async function loadDeckB(track) {
   loadingB.value = true
 
   try {
-    const player = await makePlayer(track, gainB, speedB.value)
+    const player = await makePlayer(track, gainB, speedB.value, startB.value)
     if (!trackB.value || trackB.value.id !== track.id) {
       player.dispose()
       return
@@ -156,7 +179,7 @@ async function togglePlayB() {
     playerB.stop()
     playingB.value = false
   } else {
-    playerB.start()
+    playerB.start(undefined, startB.value)
     playingB.value = true
   }
 }
@@ -165,7 +188,7 @@ function cueB() {
   if (!playerB) return
   playerB.stop()
   if (playingB.value) {
-    playerB.start()
+    playerB.start(undefined, startB.value)
   }
 }
 
@@ -173,6 +196,18 @@ function setSpeedB(value) {
   speedB.value = value
   if (playerB) {
     playerB.playbackRate = value
+    setLoop(playerB, startB.value, value)
+  }
+}
+
+function setStartB(value) {
+  startB.value = value
+  if (playerB) {
+    setLoop(playerB, value, speedB.value)
+    if (playingB.value) {
+      playerB.stop()
+      playerB.start(undefined, value)
+    }
   }
 }
 
@@ -204,6 +239,8 @@ async function makeMix() {
     volumeA: volumeA.value,
     volumeB: volumeB.value,
     crossfade: crossfade.value,
+    startA: startA.value,
+    startB: startB.value,
   })
 
   // URL.createObjectURL gives the file a temporary address that <audio> can play
@@ -441,14 +478,25 @@ function roomTrack(track) {
 }
 
 // Clicking A or B on a song: load it here straight away, and save it on the room for everyone else
+// A new song starts at 0:00 for everyone.
 function pickTrack(deck, track) {
   const small = roomTrack(track)
   if (deck === 'A') {
+    setStartA(0)
     loadDeckA(small)
   } else {
+    setStartB(0)
     loadDeckB(small)
   }
-  saveMixer('track' + deck, small)
+
+  // Save the song AND its start together, so nobody gets the new song with the old start
+  const changes = {}
+  changes['mixer.track' + deck] = small
+  changes['mixer.start' + deck] = 0
+  updateDoc(roomRef(), changes).catch(function (error) {
+    console.error(error)
+    errorMessage.value = 'Could not share that change with the room.'
+  })
 }
 
 // Copies the room's mixer onto this screen (sliders, sound, and which songs are loaded)
@@ -460,6 +508,9 @@ function applyRoomMixer(mixer) {
   if (mixer.volumeA !== undefined) setVolumeA(mixer.volumeA)
   if (mixer.volumeB !== undefined) setVolumeB(mixer.volumeB)
   if (mixer.crossfade !== undefined) setCrossfade(mixer.crossfade)
+  // Before the songs below: a song that starts downloading uses the start that is set by then
+  if (mixer.startA !== undefined) setStartA(mixer.startA)
+  if (mixer.startB !== undefined) setStartB(mixer.startB)
 
   // Only download a song if it is a DIFFERENT one from what this deck already has
   if (mixer.trackA && (!trackA.value || trackA.value.id !== mixer.trackA.id)) {
@@ -505,6 +556,9 @@ onMounted(loadTracks)
             @change-volume="setVolumeA"
             @save-speed="saveMixer('speedA', $event)"
             @save-volume="saveMixer('volumeA', $event)"
+            :start="startA"
+            @change-start="setStartA"
+            @save-start="saveMixer('startA', $event)"
             @toggle-play="togglePlayA"
             @cue="cueA"
           />
@@ -545,6 +599,9 @@ onMounted(loadTracks)
             @change-volume="setVolumeB"
             @save-speed="saveMixer('speedB', $event)"
             @save-volume="saveMixer('volumeB', $event)"
+            :start="startB"
+            @change-start="setStartB"
+            @save-start="saveMixer('startB', $event)"
             @toggle-play="togglePlayB"
             @cue="cueB"
           />
