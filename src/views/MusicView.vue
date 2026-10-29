@@ -13,6 +13,8 @@ import { ref as storageRef, uploadBytes } from 'firebase/storage'
 import { storage } from '../firebase.js'
 import { MAX_EDIT_SECONDS } from '../clips.js'   // the exported video's length (Jun Han's Export page)
 import { saveField } from '../stripData.js'   // the same helper Decorate uses to save one room field
+import { getFileUrl } from '../studio.js'          // turns a Storage path into a link (team helper)
+import { getUid } from '../composables/useAuth.js'  // the current person's id, for their upload folder
 
 // RoomLayout already joined the room, so we just ask for the room code
 // goToStage moves the whole room to another page and updates how far the stage bar shows we've got
@@ -327,6 +329,80 @@ function formatTime(seconds) {
   return mins + ':' + secs
 }
 
+// ---------- Your own songs ----------
+// Uploaded to Firebase Storage, so everyone in the room can download them too (the mixer is shared).
+const MAX_UPLOAD_MB = 15
+const uploadedTracks = ref([])   // songs uploaded from this device, shown at the top of the list
+const uploading = ref(false)
+
+// The song list: your uploads first, then Jamendo's
+const allTracks = computed(() => uploadedTracks.value.concat(tracks.value))
+
+// Reads how long an audio file is (in seconds) without playing it
+function readDuration(file) {
+  return new Promise(function (resolve, reject) {
+    const audio = new Audio()
+    audio.onloadedmetadata = function () {
+      URL.revokeObjectURL(audio.src)
+      resolve(Math.round(audio.duration))
+    }
+    audio.onerror = function () {
+      reject(new Error('Not an audio file'))
+    }
+    audio.src = URL.createObjectURL(file)
+  })
+}
+
+async function uploadSong(event) {
+  const file = event.target.files[0]   // the file the person picked (Week 3: event.target)
+  event.target.value = ''              // so picking the same file again still works
+  if (!file) return
+  errorMessage.value = ''
+
+  if (file.size > MAX_UPLOAD_MB * 1024 * 1024) {
+    errorMessage.value = 'That file is too big. Pick a song under ' + MAX_UPLOAD_MB + ' MB.'
+    return
+  }
+
+  uploading.value = true
+  try {
+    const duration = await readDuration(file)
+    if (duration > 240) {
+      errorMessage.value = 'Pick a song of 4 minutes or less (longer songs can crash phones).'
+      return
+    }
+
+    // Same folder idea as the room's video clips: music/{room}/uploads/{person}/{time}
+    const stamp = Date.now()
+    const path = 'music/' + code.value + '/uploads/' + getUid() + '/' + stamp
+    await uploadBytes(storageRef(storage, path), file, { contentType: file.type || 'audio/mpeg' })
+    const url = await getFileUrl(path)
+
+    // The file name without ".mp3"
+    let name = file.name
+    const dot = name.lastIndexOf('.')
+    if (dot > 0) {
+      name = name.slice(0, dot)
+    }
+
+    // The same shape as a Jamendo song, so the decks, the list and the shared mixer just work
+    uploadedTracks.value.unshift({
+      id: 'upload-' + stamp,
+      name: name,
+      artist_name: 'Your upload',
+      duration: duration,
+      audio: url,
+      waveform: '',
+      musicinfo: { speed: '' },
+    })
+  } catch (error) {
+    console.error(error)
+    errorMessage.value = 'Could not upload that song. Please try another file.'
+  } finally {
+    uploading.value = false   // finally runs at the end whatever happened (even after return)
+  }
+}
+
 // ---------- Shared mixer (everyone in the room edits the same one) ----------
 // The room keeps the mixer in room.mixer: { trackA, trackB, speedA, speedB, volumeA, volumeB, crossfade }.
 // Every screen follows it, so a change by anyone shows up for everyone.
@@ -522,10 +598,22 @@ onMounted(loadTracks)
             <option value="acoustic">Acoustic</option>
             <option value="funk">Funk</option>
           </select>
+          <!-- Your own song: uploaded so everyone in the room can play it -->
+          <label for="songUpload" class="form-label small fw-bold mb-1">Or use your own song</label>
+          <input
+            id="songUpload"
+            type="file"
+            accept="audio/*"
+            class="form-control form-control-sm mb-1"
+            :disabled="uploading"
+            @change="uploadSong"
+          />
+          <p class="text-muted small mb-3">Only use songs you're allowed to share. Up to 4 min, {{ MAX_UPLOAD_MB }} MB.</p>
+          <p v-if="uploading" class="text-muted small" role="status">Uploading your song...</p>
           <p v-if="loading" class="text-muted small">Loading songs...</p>
           <div v-else-if="errorMessage" class="alert alert-warning small">{{ errorMessage }}</div>
           <div
-            v-for="track in tracks"
+            v-for="track in allTracks"
             :key="track.id"
             class="track border rounded p-2 mb-2 d-flex align-items-center gap-2"
           >
