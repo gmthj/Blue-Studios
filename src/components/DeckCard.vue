@@ -14,6 +14,7 @@ const props = defineProps({
   playing: Boolean,   // NEW: is this deck playing right now?
   loading: Boolean,   // NEW: is the song still downloading?
   start: Number,      // NEW: where the chosen part of the song starts, in seconds
+  simple: Boolean,    // NEW: simple mode = one song, no speed or Cue
 })
 
 // Messages sent OUT to MusicView (a component must not change its own props)
@@ -84,7 +85,7 @@ const bars = computed(function () {
 <template>
   <div class="card h-100">
     <div class="card-body">
-      <p class="small text-muted mb-0">{{ label }}</p>
+      <p class="small text-muted mb-0">{{ simple ? 'Your song' : label }}</p>
       <div class="d-flex justify-content-between align-items-center">
         <h2 class="h5 mb-0">{{ track ? track.name : 'No song yet' }}</h2>
         <!-- musicinfo.speed is Jamendo's rough speed: low / medium / high -->
@@ -94,7 +95,7 @@ const bars = computed(function () {
       </div>
       <p v-if="loading" class="small text-muted mb-0">Loading song...</p>
       <p v-else-if="track" class="small text-muted mb-0">{{ track.artist_name }}</p>
-      <p v-else class="small text-muted mb-0">Press {{ label.slice(-1) }} on a song to load it here.</p>
+      <p v-else class="small text-muted mb-0">Press {{ simple ? 'Use' : label.slice(-1) }} on a song to load it here.</p>
 
       <div class="vinyl my-4 mx-auto">
         <div class="vinyl-label" :style="{ background: color }"></div>
@@ -120,10 +121,13 @@ const bars = computed(function () {
         @change="onStartChange"
       />
 
-      <div class="d-flex justify-content-between small">
-        <span>Speed</span><span>{{ speed.toFixed(2) }}×</span>
-      </div>
-      <input :value="speed" type="range" class="form-range" min="0.5" max="1.5" step="0.05" @input="onSpeedInput" @change="onSpeedChange" />
+      <!-- Speed is a DJ booth control: hidden in simple mode (<template> groups without adding a box) -->
+      <template v-if="!simple">
+        <div class="d-flex justify-content-between small">
+          <span>Speed</span><span>{{ speed.toFixed(2) }}×</span>
+        </div>
+        <input :value="speed" type="range" class="form-range" min="0.5" max="1.5" step="0.05" @input="onSpeedInput" @change="onSpeedChange" />
+      </template>
 
       <div class="d-flex justify-content-between small">
         <span>Volume</span><span>{{ volume }}%</span>
@@ -144,7 +148,7 @@ const bars = computed(function () {
         >
           {{ playing ? '❚❚' : '▶' }}
         </button>
-        <button class="btn btn-outline-secondary" :disabled="!track || loading" @click="emit('cue')">Cue</button>
+        <button v-if="!simple" class="btn btn-outline-secondary" :disabled="!track || loading" @click="emit('cue')">Cue</button>
       </div>
     </div>
   </div>
