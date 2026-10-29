@@ -14,7 +14,8 @@ import { storage } from '../firebase.js'
 import { MAX_EDIT_SECONDS } from '../clips.js'   // the exported video's length (Jun Han's Export page)
 
 // RoomLayout already joined the room, so we just ask for the room code
-const { code, roomRef } = useRoom()
+// goToStage moves the whole room to another page and updates how far the stage bar shows we've got
+const { code, roomRef, goToStage } = useRoom()
 
 // ---------- Decks (what the page shows) ----------
 const trackA = ref(null)    // the song loaded in Deck A (null = empty)
@@ -322,11 +323,6 @@ function formatTime(seconds) {
   return mins + ':' + secs
 }
 
-// Moves everyone in the room back to the Decorate page (RoomLayout.vue follows the room's "stage")
-async function goBack() {
-  await updateDoc(roomRef(), { stage: 'decorate' })
-}
-
 // Load some songs as soon as the page opens
 onMounted(loadTracks)
 </script>
@@ -336,7 +332,7 @@ onMounted(loadTracks)
     <StageBar current="music" />
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2 class="h4 mb-0">Music mixer</h2>
-        <button class="btn btn-outline-secondary btn-sm" @click="goBack">&larr; Decorate</button>
+        <button class="btn btn-outline-secondary btn-sm" @click="goToStage('decorate')">&larr; Decorate</button>
     </div>
     <div class="row g-4">
     <!-- LEFT: decks, mixer and your mix -->
@@ -408,8 +404,24 @@ onMounted(loadTracks)
                 <button class="btn btn-outline-secondary" :disabled="rendering" @click="makeMix">
                   {{ rendering ? 'Rendering...' : '▷ Preview' }}
                 </button>
-                <button class="btn btn-primary" :disabled="saving || rendering" @click="useMix">
-                    {{ saving ? 'Saving...' : saved ? 'Saved ✓' : 'Use this mix' }}
+                <!-- Blue until the mix is saved, then it steps back so "Export video" becomes the main button
+                     (design guide: one main button per area, promote the next step once it makes sense) -->
+                <button
+                  class="btn"
+                  :class="saved ? 'btn-outline-secondary' : 'btn-primary'"
+                  :disabled="saving || rendering"
+                  @click="useMix"
+                >
+                  {{ saving ? 'Saving...' : saved ? 'Saved ✓' : 'Use this mix' }}
+                </button>
+                <!-- Always clickable, so people can export without music too -->
+                <button
+                  class="btn"
+                  :class="saved ? 'btn-primary' : 'btn-outline-secondary'"
+                  :disabled="saving || rendering"
+                  @click="goToStage('export')"
+                >
+                  Export video &rarr;
                 </button>
               </div>
             </div>
