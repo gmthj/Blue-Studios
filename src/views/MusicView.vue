@@ -1,6 +1,6 @@
 <script setup>
 import { updateDoc } from 'firebase/firestore'
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import axios from 'axios'
 import * as Tone from 'tone'   // NEW: not in syllabus (your X-factor)
 import { useRoom } from '../composables/useRoom.js'
@@ -12,10 +12,12 @@ import { renderMix } from '../mixRender.js'
 import { ref as storageRef, uploadBytes } from 'firebase/storage'
 import { storage } from '../firebase.js'
 import { MAX_EDIT_SECONDS } from '../clips.js'   // the exported video's length (Jun Han's Export page)
+import { saveField } from '../stripData.js'   // the same helper Decorate uses to save one room field
 
 // RoomLayout already joined the room, so we just ask for the room code
 // goToStage moves the whole room to another page and updates how far the stage bar shows we've got
-const { code, roomRef, goToStage } = useRoom()
+// room: the live room document (it updates by itself when anyone changes it)
+const { code, room, roomRef, goToStage } = useRoom()
 
 // ---------- Decks (what the page shows) ----------
 const trackA = ref(null)    // the song loaded in Deck A (null = empty)
@@ -325,6 +327,70 @@ function formatTime(seconds) {
   return mins + ':' + secs
 }
 
+// ---------- Shared mixer (everyone in the room edits the same one) ----------
+// The room keeps the mixer in room.mixer: { trackA, trackB, speedA, speedB, volumeA, volumeB, crossfade }.
+// Every screen follows it, so a change by anyone shows up for everyone.
+// Play / pause is NOT shared: browsers only allow sound after each person taps on their own device.
+
+// Saves one mixer value on the room, e.g. saveMixer('speedA', 1.2) saves room.mixer.speedA
+async function saveMixer(key, value) {
+  try {
+    await saveField(roomRef(), 'mixer.' + key, value)
+  } catch (error) {
+    console.error(error)
+    errorMessage.value = 'Could not share that change with the room.'
+  }
+}
+
+// Only the parts of a Jamendo song the decks need (keeps the room document small).
+// Firestore does not accept undefined, so missing values become ''.
+function roomTrack(track) {
+  return {
+    id: track.id,
+    name: track.name,
+    artist_name: track.artist_name,
+    duration: track.duration,
+    audio: track.audio,
+    waveform: track.waveform || '',
+    musicinfo: { speed: track.musicinfo ? track.musicinfo.speed : '' },
+  }
+}
+
+// Clicking A or B on a song: load it here straight away, and save it on the room for everyone else
+function pickTrack(deck, track) {
+  const small = roomTrack(track)
+  if (deck === 'A') {
+    loadDeckA(small)
+  } else {
+    loadDeckB(small)
+  }
+  saveMixer('track' + deck, small)
+}
+
+// Copies the room's mixer onto this screen (sliders, sound, and which songs are loaded)
+function applyRoomMixer(mixer) {
+  if (!mixer) return   // nobody has used the mixer in this room yet: keep the starting values
+
+  if (mixer.speedA !== undefined) setSpeedA(mixer.speedA)
+  if (mixer.speedB !== undefined) setSpeedB(mixer.speedB)
+  if (mixer.volumeA !== undefined) setVolumeA(mixer.volumeA)
+  if (mixer.volumeB !== undefined) setVolumeB(mixer.volumeB)
+  if (mixer.crossfade !== undefined) setCrossfade(mixer.crossfade)
+
+  // Only download a song if it is a DIFFERENT one from what this deck already has
+  if (mixer.trackA && (!trackA.value || trackA.value.id !== mixer.trackA.id)) {
+    loadDeckA(mixer.trackA)
+  }
+  if (mixer.trackB && (!trackB.value || trackB.value.id !== mixer.trackB.id)) {
+    loadDeckB(mixer.trackB)
+  }
+}
+
+// Whenever the room changes (anyone's edit), apply its mixer here.
+// immediate: true = also run once now, so people who join late get the current mix.
+// (It sits at the end of the script because it runs straight away and uses everything above.)
+watch(() => room.value && room.value.mixer, applyRoomMixer, { immediate: true })
+
 // Load some songs as soon as the page opens
 onMounted(loadTracks)
 </script>
@@ -336,6 +402,7 @@ onMounted(loadTracks)
         <h2 class="h4 mb-0">Music mixer</h2>
         <button class="btn btn-outline-secondary btn-sm" @click="goToStage('decorate')">&larr; Decorate</button>
     </div>
+    <p class="small text-muted mb-3">Everyone in the room shares this mixer. ▶ plays on your own device.</p>
     <div class="row g-4">
     <!-- LEFT: decks, mixer and your mix -->
     <div class="col-12 col-lg-9">
@@ -352,6 +419,8 @@ onMounted(loadTracks)
             :loading="loadingA"
             @change-speed="setSpeedA"
             @change-volume="setVolumeA"
+            @save-speed="saveMixer('speedA', $event)"
+            @save-volume="saveMixer('volumeA', $event)"
             @toggle-play="togglePlayA"
             @cue="cueA"
           />
@@ -370,6 +439,7 @@ onMounted(loadTracks)
                 max="1"
                 step="0.01"
                 @input="setCrossfade(Number($event.target.value))"
+                @change="saveMixer('crossfade', Number($event.target.value))"
               />
               <div class="d-flex justify-content-between small fw-bold">
                 <span class="text-deck-a">A</span><span class="text-deck-b">B</span>
@@ -389,6 +459,8 @@ onMounted(loadTracks)
             :loading="loadingB"
             @change-speed="setSpeedB"
             @change-volume="setVolumeB"
+            @save-speed="saveMixer('speedB', $event)"
+            @save-volume="saveMixer('volumeB', $event)"
             @toggle-play="togglePlayB"
             @cue="cueB"
           />
@@ -462,9 +534,9 @@ onMounted(loadTracks)
               <p class="mb-0 fw-semibold small">{{ track.name }}</p>
               <p class="mb-0 text-muted small">{{ track.artist_name }} · {{ formatTime(track.duration) }}</p>
             </div>
-            <!-- Clicking A or B downloads this song into that deck -->
-            <button class="btn btn-sm btn-deck-a" @click="loadDeckA(track)">A</button>
-            <button class="btn btn-sm btn-deck-b" @click="loadDeckB(track)">B</button>
+            <!-- Clicking A or B loads this song into that deck, for everyone in the room -->
+            <button class="btn btn-sm btn-deck-a" @click="pickTrack('A', track)">A</button>
+            <button class="btn btn-sm btn-deck-b" @click="pickTrack('B', track)">B</button>
           </div>
         </div>
       </div>

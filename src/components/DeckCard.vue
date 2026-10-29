@@ -15,7 +15,7 @@ const props = defineProps({
 })
 
 // Messages sent OUT to MusicView (a component must not change its own props)
-const emit = defineEmits(['change-speed', 'change-volume', 'toggle-play', 'cue'])
+const emit = defineEmits(['change-speed', 'change-volume', 'save-speed', 'save-volume', 'toggle-play', 'cue'])
 
 // event.target is the slider that moved (Week 3 DOM). Its value is text, so turn it into a number.
 function onSpeedInput(event) {
@@ -24,6 +24,15 @@ function onSpeedInput(event) {
 
 function onVolumeInput(event) {
   emit('change-volume', Number(event.target.value))
+}
+
+// Let go of a slider: save it on the room so everyone gets it (once, not on every tiny movement)
+function onSpeedChange(event) {
+  emit('save-speed', Number(event.target.value))
+}
+
+function onVolumeChange(event) {
+  emit('save-volume', Number(event.target.value))
 }
 
 // 60 bars in this deck's colour. computed = re-runs automatically when a new track is loaded.
@@ -61,12 +70,12 @@ const bars = computed(function () {
       <div class="d-flex justify-content-between small">
         <span>Speed</span><span>{{ speed.toFixed(2) }}×</span>
       </div>
-      <input :value="speed" type="range" class="form-range" min="0.5" max="1.5" step="0.05" @input="onSpeedInput" />
+      <input :value="speed" type="range" class="form-range" min="0.5" max="1.5" step="0.05" @input="onSpeedInput" @change="onSpeedChange" />
 
       <div class="d-flex justify-content-between small">
         <span>Volume</span><span>{{ volume }}%</span>
       </div>
-      <input :value="volume" type="range" class="form-range" min="0" max="100" @input="onVolumeInput" />
+      <input :value="volume" type="range" class="form-range" min="0" max="100" @input="onVolumeInput" @change="onVolumeChange" />
 
       <div class="d-flex gap-2 mt-2">
         <!-- Shows ❚❚ (pause) while playing, ▶ (play) when stopped.
