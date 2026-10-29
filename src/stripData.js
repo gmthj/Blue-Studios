@@ -136,3 +136,44 @@ export function saveField(ref, path, value) {
 export function saveFields(ref, fields) {
   return updateDoc(ref, fields)
 }
+
+// ---------- CROP (moving and zooming a photo inside its slot) ----------
+// Saved per slot in the room document, like stripEdits:
+//   stripCrops: { 0: { x: 50, y: 50, zoom: 1 }, ... }
+//   x, y: which part of the photo shows, in % (0 = left / top edge, 50 = centre, 100 = right / bottom edge)
+//   zoom: 1 = the photo just fills the slot, up to 3 = three times bigger
+// No crop saved = { x: 50, y: 50, zoom: 1 }, the centred photo, so older strips look the same as before.
+export const DEFAULT_CROP = { x: 50, y: 50, zoom: 1 }
+export const MAX_ZOOM = 3
+
+// A slot's crop, with the default values for anything not saved yet
+export function cropOf(crops, index) {
+  return { ...DEFAULT_CROP, ...((crops && crops[index]) || {}) }
+}
+
+// The CSS that shows a crop on screen, in two parts (both on top of object-fit: cover):
+//   cropPositionCss goes on the <img> / <video>: object-position slides it so the chosen part shows
+//   cropZoomCss goes on a box around it: scale() zooms in around that same point, so the slot is always filled
+// The zoom is on a separate box because a selfie video already uses "transform" to flip itself like a mirror.
+export function cropPositionCss(crop) {
+  return { objectPosition: crop.x + '% ' + crop.y + '%' }
+}
+
+export function cropZoomCss(crop) {
+  return { transform: 'scale(' + crop.zoom + ')', transformOrigin: crop.x + '% ' + crop.y + '%' }
+}
+
+// The same crop for a <canvas>: which part of the photo or video frame (in its own pixels) to draw in a w x h slot.
+// Use it as ctx.drawImage(img, r.sx, r.sy, r.sw, r.sh, x, y, w, h), so the download matches the screen.
+// (For a mirrored selfie video, pass x as 100 - x: see drawCover in stripRender.js.)
+export function cropSource(imageWidth, imageHeight, w, h, crop) {
+  const scale = Math.max(w / imageWidth, h / imageHeight) // the same scale as object-fit: cover
+  const sw = w / scale / crop.zoom                         // the part of the photo that fits in the slot
+  const sh = h / scale / crop.zoom
+  return {
+    sx: (imageWidth - sw) * (crop.x / 100),                // x = 0 starts at the left edge, 100 ends at the right edge
+    sy: (imageHeight - sh) * (crop.y / 100),
+    sw: sw,
+    sh: sh,
+  }
+}

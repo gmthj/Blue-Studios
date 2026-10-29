@@ -1,26 +1,64 @@
 <script setup>
-import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import { collection, addDoc, runTransaction } from 'firebase/firestore'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { collection, addDoc, runTransaction, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { getGuestName } from '../guest.js'
 import { getUid } from '../composables/useAuth.js'
+import { CLIP_SECONDS, recordStream, uploadClip } from '../clips.js'
 import { useRoom } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
+import { useFaceFilter, setCameraEffects } from '../composables/useFaceFilter.js'
+import { useBehindLayer } from '../composables/useBehindLayer.js'
+import { getFaceFilter } from '../filters/faceFilters.js'
 import StreamVideo from '../components/StreamVideo.vue'
+import FaceFilterPicker from '../components/FaceFilterPicker.vue'
+import VirtualPeoplePanel from '../components/VirtualPeoplePanel.vue'
 import RoomGallery from '../components/RoomGallery.vue'
 import StageBar from '../components/StageBar.vue'
 import AppIcon from '../components/AppIcon.vue'
 import { showNotice } from '../composables/useDialog.js'
 
 // The camera page (a child of RoomLayout.vue, which has already joined the room and the call)
+// Photo mode: everyone's camera takes a photo when the countdown ends.
+// Video mode: everyone's camera records a short clip (CLIP_SECONDS) instead. Both are saved in the room gallery.
+// The mode is saved in the room document (captureMode), so everyone in the room is in the same mode.
 
 const uid = getUid()
 const guestName = getGuestName()
 
-const { code, room, roomRef } = useRoom()
+const { code, room, roomRef, activeMembers } = useRoom()
 const { localStream, mirrored, cameras, cameraIndex, cameraError, switchingCamera, switchCamera } = useVideoCall()
+const { faceFilterId, faceFilterLoading, faceFilterError } = useFaceFilter()
+
+// The chosen filter's picture, shown inside the shutter button (null = no filter)
+const filterThumbnail = computed(() => getFaceFilter(faceFilterId.value).thumbnail)
+
+watch(faceFilterError, (message) => {
+  if (message) showNotice({ title: 'Filter unavailable', message: message, icon: 'sparkle' })
+})
+
+// The layer behind me: only the host can add people behind them
+const { peopleCount, behindLayerError, keepOnlyMembers } = useBehindLayer()
+const isHost = computed(() => room.value.hostId === uid)
+
+const showPeoplePanel = ref(false) // the host's list of people to put behind them is open
+
+// Someone left the room: take them out of the line-up
+watch(activeMembers, (members) => {
+  keepOnlyMembers(members.map((member) => member.id))
+})
+
+// Face stickers and the people layer only run on this (shoot) page, not during the other stages
+onMounted(() => setCameraEffects(true))
+onBeforeUnmount(() => setCameraEffects(false))
+
+watch(behindLayerError, (message) => {
+  if (message) showNotice({ title: 'Virtual people unavailable', message: message, icon: 'users' })
+})
 
 const mainVideo = ref(null) // the big camera preview (a StreamVideo component)
+const recording = ref(false)    // true while my camera is recording a clip
+const savingClip = ref(false)   // true while my clip is uploading
 const copied = ref(false)   // shows "Link copied!" for a moment after copying
 
 // ---------- FLASH SETTINGS: change these numbers to test and adjust the flash ----------
@@ -46,6 +84,12 @@ const flashStyle = computed(() => {
 })
 let lastShotNumber = room.value.shotNumber // the last shot this device has already handled
 
+// 'photo' or 'video'. Rooms made before this feature have no captureMode, so they are in photo mode.
+const captureMode = computed(() => room.value.captureMode || 'photo')
+
+// True while this device is busy taking the shot (the countdown, recording, or uploading the clip)
+const capturing = computed(() => countdown.value > 0 || recording.value || savingClip.value)
+
 // Join card: the website address without "https://", the join link, and its QR code (goqr.me API)
 const siteAddress = window.location.host
 const joinLink = window.location.origin + '/?code=' + code.value
@@ -68,12 +112,19 @@ onBeforeUnmount(() => {
   clearTimeout(flashOffTimer)
 })
 
+// Anyone can switch between photo and video, but not in the middle of a shot.
+// The mode is saved in the room, so every device switches too.
+async function setMode(mode) {
+  if (capturing.value || mode === captureMode.value) return
+  await updateDoc(roomRef(), { captureMode: mode })
+}
+
 // Anyone can press the shutter. If two people press at the same moment, only one countdown must start.
 // A Firestore TRANSACTION reads and writes the room as one step: it only adds 1 to shotNumber
 // if shotNumber is still the number I saw. If someone else got there first, it has already
 // changed, so my press is ignored (their countdown is already starting on every device).
 async function pressShutter() {
-  if (countdown.value > 0) return
+  if (capturing.value) return
   const seenShotNumber = room.value.shotNumber
 
   try {
@@ -97,21 +148,29 @@ async function pressShutter() {
 // shutter a little later than the others), so a long flash makes sure every screen is still
 // lit up when every device takes its photo.
 function startCountdown() {
+  const videoMode = captureMode.value === 'video' // decided now, so a late mode change does not matter
   countdown.value = COUNTDOWN_SECONDS
   const photoInMs = COUNTDOWN_SECONDS * 1000 // the photo is taken when the countdown reaches 0
 
   // Flash on, FLASH_BEFORE_MS before the photo (Math.max: never less than 0 ms from now)
+  // (No flash in video mode: a white screen would cover the camera while it records)
   clearTimeout(flashOffTimer)
-  flashOnTimer = setTimeout(() => {
-    flash.value = true
-  }, Math.max(photoInMs - FLASH_BEFORE_MS, 0))
+  if (!videoMode) {
+    flashOnTimer = setTimeout(() => {
+      flash.value = true
+    }, Math.max(photoInMs - FLASH_BEFORE_MS, 0))
+  }
 
   countdownTimer = setInterval(() => {
     countdown.value = countdown.value - 1
 
     if (countdown.value === 0) {
       clearInterval(countdownTimer)
-      takePhoto()
+      if (videoMode) {
+        takeClip()
+      } else {
+        takePhoto()
+      }
 
       // Flash off, FLASH_AFTER_MS after the photo
       flashOffTimer = setTimeout(() => {
@@ -150,6 +209,26 @@ async function takePhoto() {
     image: image,
     createdAt: Date.now(),
   })
+}
+
+// Record my camera for CLIP_SECONDS, then upload the clip. Like a photo, it belongs to this shot number.
+async function takeClip() {
+  if (!localStream.value) return // no camera, nothing to record
+
+  const shotNumber = lastShotNumber
+  const isMirrored = mirrored.value // the clip is flipped when shown, so it matches the mirrored preview
+  recording.value = true
+  try {
+    const blob = await recordStream(localStream.value, CLIP_SECONDS)
+    recording.value = false
+    savingClip.value = true
+    await uploadClip(code.value, blob, { name: guestName, shotNumber: shotNumber, mirrored: isMirrored })
+  } catch (error) {
+    console.error(error)
+    showNotice({ title: 'Video not saved', message: 'Could not save your video clip. Please try again.' })
+  }
+  recording.value = false
+  savingClip.value = false
 }
 
 async function copyJoinLink() {
@@ -210,7 +289,7 @@ async function copyJoinLink() {
               <div class="min-w-0">
                 <span class="join-label">Invite friends</span>
                 <strong class="room-code d-block">{{ code }}</strong>
-                <p class="join-text">Scan, or go to <strong>{{ siteAddress }}</strong> and enter the code.</p>
+                <p class="join-text">Scan or go to <strong>{{ siteAddress }}</strong> and enter the code</p>
                 <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" @click="copyJoinLink">
                   <AppIcon :name="copied ? 'check' : 'duplicate'" :size="14" /> {{ copied ? 'Link copied!' : 'Copy link' }}
                 </button>
@@ -220,7 +299,7 @@ async function copyJoinLink() {
 
           <!-- Gallery here on sm / md / lg. Hidden on xs (it goes below the camera) and on xl (its own column).
                d-sm-flex, not d-sm-block, because the gallery card is a flex column. -->
-          <RoomGallery class="side-gallery d-none d-sm-flex d-xl-none" :countdown-running="countdown > 0" />
+          <RoomGallery class="side-gallery d-none d-sm-flex d-xl-none" :countdown-running="capturing" />
         </div>
 
         <!-- MIDDLE: my camera (flex-grow-1 makes it fill the rest of the screen on phones) -->
@@ -235,11 +314,20 @@ async function copyJoinLink() {
               <span>Starting your camera...</span>
             </div>
 
+            <!-- Photo / Video: the same for everyone in the room -->
+            <div class="mode-toggle" role="group" aria-label="Photo or video">
+              <button :class="{ active: captureMode === 'photo' }" :disabled="capturing" @click="setMode('photo')">Photo</button>
+              <button :class="{ active: captureMode === 'video' }" :disabled="capturing" @click="setMode('video')">Video</button>
+            </div>
+
+            <div v-if="recording" class="rec-badge recording">● REC</div>
+            <div v-else-if="savingClip" class="rec-badge">Saving clip...</div>
+
             <!-- Only shown if the device has more than one camera (e.g. phones with front + back) -->
             <button
               v-if="cameras.length > 1"
               class="glass-btn switch-camera-btn"
-              :disabled="countdown > 0 || switchingCamera"
+              :disabled="capturing || switchingCamera"
               :title="'Switch camera (' + (cameraIndex + 1) + '/' + cameras.length + ')'"
               @click="switchCamera"
             >
@@ -247,26 +335,61 @@ async function copyJoinLink() {
               <span class="d-none d-md-inline">Switch camera</span>
             </button>
 
+            <!-- Host only: opens the Virtual people list (people from the call put into my camera).
+                 Shows how many are chosen. On phones, just the icon (and the number).
+                 Hidden while a clip records / saves: the REC badge shows in the same spot. -->
+            <button
+              v-if="localStream && isHost && !recording && !savingClip"
+              class="glass-btn people-behind-btn"
+              :class="{ 'people-on': peopleCount > 0 }"
+              aria-label="Virtual people"
+              :aria-expanded="showPeoplePanel"
+              @click="showPeoplePanel = !showPeoplePanel"
+            >
+              <AppIcon name="users" :size="16" />
+              <span class="d-none d-sm-inline">Virtual people</span>
+              <span v-if="peopleCount > 0">({{ peopleCount }})</span>
+            </button>
+
+            <VirtualPeoplePanel
+              v-if="localStream && isHost && showPeoplePanel"
+              class="people-panel-pos"
+              :disabled="capturing"
+              @close="showPeoplePanel = false"
+            />
+
+            <!-- The face filters: a row that scrolls behind the shutter button (the middle one is chosen) -->
+            <FaceFilterPicker v-if="localStream" class="filter-carousel-pos" :disabled="capturing" />
+
             <div v-if="cameraError" class="camera-error">
               <AppIcon name="camera" :size="28" />
               <p class="mb-0">{{ cameraError }}</p>
             </div>
 
-            <!-- Shutter button: anyone can press it. It sits on the camera view, bottom middle. -->
-            <button class="shutter-btn" :disabled="countdown > 0" aria-label="Take a photo" @click="pressShutter">
-              <span class="shutter-inner"></span>
+            <!-- Shutter button: anyone can press it. It sits on the camera view, bottom middle.
+                 With a face filter on, the filter's picture shows inside it (like Instagram). -->
+            <button
+              class="shutter-btn"
+              :class="{ video: captureMode === 'video', 'filter-loading': faceFilterLoading }"
+              :disabled="capturing"
+              :aria-label="captureMode === 'video' ? 'Record a video' : 'Take a photo'"
+              @click="pressShutter"
+            >
+              <span class="shutter-inner" :class="{ 'has-filter': filterThumbnail }">
+                <img v-if="filterThumbnail" :src="filterThumbnail" alt="" draggable="false" />
+              </span>
             </button>
           </div>
         </div>
 
         <!-- BOTTOM (xs only): the gallery as a sideways row below the camera -->
         <div class="col-12 d-sm-none">
-          <RoomGallery :countdown-running="countdown > 0" />
+          <RoomGallery :countdown-running="capturing" />
         </div>
 
         <!-- RIGHT (xl only): the gallery in its own column. d-none d-xl-block = hidden until xl. -->
         <div class="d-none d-xl-block col-xl-3 h-100">
-          <RoomGallery class="h-100" :countdown-running="countdown > 0" />
+          <RoomGallery class="h-100" :countdown-running="capturing" />
         </div>
       </div>
     </div>
@@ -351,7 +474,7 @@ async function copyJoinLink() {
   flex-shrink: 0;
   padding: 4px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 6px;
   background: #ffffff;
 }
 
@@ -462,6 +585,107 @@ async function copyJoinLink() {
   right: 12px;
 }
 
+.people-behind-btn {
+  position: absolute;
+  /* top: 12px; */
+  top: 50px;
+  left: 12px;
+}
+
+/* Some people are behind me: a white ring around the button */
+.people-behind-btn.people-on {
+  box-shadow: inset 0 0 0 2px #ffffff;
+}
+
+/* The host's Virtual people list: under its button (which is under the Photo / Video switch),
+   above the filter row and shutter */
+.people-panel-pos {
+  position: absolute;
+  z-index: 12;
+  top: 94px;
+  left: 12px;
+  max-height: calc(100% - 94px - 112px);
+}
+
+/* Phones held sideways: the filter row is on the right, so the list can use the full height */
+@media (orientation: landscape) and (max-height: 500px) {
+  .people-panel-pos {
+    max-height: calc(100% - 94px - 12px);
+  }
+}
+
+/* The filter row: the full width of the camera, lined up with the shutter button
+   (76px tall, 20px from the bottom), and just below it (z-index 9 vs 10), so it passes behind it */
+.filter-carousel-pos {
+  position: absolute;
+  z-index: 9;
+  left: 0;
+  right: 0;
+  bottom: 20px;
+  height: 76px;
+}
+
+/* Phones held sideways: the shutter is on the right edge, so the row runs top to bottom there */
+@media (orientation: landscape) and (max-height: 500px) {
+  .filter-carousel-pos {
+    top: 0;
+    bottom: 0;
+    left: auto;
+    right: 12px;
+    width: 62px;
+    height: auto;
+  }
+}
+
+/* Photo / Video switch: top left of the camera (the switch camera button is top right) */
+.mode-toggle {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(14, 16, 32, 0.55);
+  backdrop-filter: blur(8px);
+}
+
+.mode-toggle button {
+  padding: 5px 12px;
+  border: 0;
+  border-radius: 999px;
+  color: #ffffff;
+  background: transparent;
+  font-size: 0.85rem;
+  font-weight: 600;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.mode-toggle button.active {
+  color: #0E1020;
+  background: #ffffff;
+}
+
+.mode-toggle button:disabled {
+  opacity: 0.5;
+}
+
+/* "REC" / "Saving clip..." under the Photo / Video switch */
+.rec-badge {
+  position: absolute;
+  top: 56px;
+  left: 12px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  color: #ffffff;
+  background: rgba(14, 16, 32, 0.55);
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.rec-badge.recording {
+  background: #dc3545;
+}
+
 /* ---------- SHUTTER BUTTON ----------
    On top of the camera view (position: absolute inside .camera-area).
    Default: bottom middle of the camera (computers, tablets, phones upright).
@@ -487,11 +711,43 @@ async function copyJoinLink() {
 }
 
 .shutter-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 56px;
   height: 56px;
   border-radius: 50%;
   background: var(--brand);
   transition: transform 160ms var(--ease-out), background-color 150ms ease;
+}
+
+/* A filter is on: its picture on a dark background instead of the blue button */
+.shutter-inner.has-filter {
+  background: rgba(14, 16, 32, 0.6);
+}
+
+.shutter-inner img {
+  width: 70%;
+  height: 70%;
+  object-fit: contain;
+  pointer-events: none;
+}
+
+/* While the chosen filter downloads: a spinning ring around the shutter */
+.shutter-btn.filter-loading::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+  border: 3px solid transparent;
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  animation: shutter-spin 0.8s linear infinite;
+}
+
+@keyframes shutter-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Pressed: the inner button shrinks, like pushing a real shutter */
@@ -504,12 +760,16 @@ async function copyJoinLink() {
   outline-offset: 3px;
 }
 
+.shutter-btn.video .shutter-inner {
+  background: #dc3545; /* red in video mode, so it is clear the shutter records */
+}
+
 .shutter-btn:disabled {
   opacity: 0.5;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .shutter-btn:not(:disabled):hover .shutter-inner {
+  .shutter-btn:not(:disabled):hover .shutter-inner:not(.has-filter) {
     background: var(--brand-dark);
   }
 }

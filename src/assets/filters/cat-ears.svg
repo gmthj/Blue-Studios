@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="260" height="130" viewBox="0 0 260 130">
+  <!-- Two pointy cat ears, one each side of the top of the head. Their bottoms sit on the head. -->
+  <g id="ear">
+    <path d="M14 122 L34 10 L104 92 Z" fill="#3A3A44" stroke="#22222A" stroke-width="6" stroke-linejoin="round" />
+    <path d="M34 106 L42 38 L84 88 Z" fill="#F4A7B9" />
+  </g>
+  <use href="#ear" transform="translate(260 0) scale(-1 1)" />
+</svg>

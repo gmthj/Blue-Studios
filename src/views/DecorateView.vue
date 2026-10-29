@@ -5,7 +5,8 @@ import { useRoom } from '../composables/useRoom.js'
 import { getGuestName } from '../guest.js'
 import { useAuth } from '../composables/useAuth.js'
 import { saveStrip } from '../studio.js'
-import { LAYOUTS, FRAME_STYLES, STICKERS, FILTERS, filterCss, saveField, saveFields } from '../stripData.js'
+import { resolveEditedVideos } from '../clips.js'
+import { LAYOUTS, FRAME_STYLES, STICKERS, FILTERS, filterCss, saveField, saveFields, cropOf, cropSource } from '../stripData.js'
 import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
 
@@ -15,7 +16,7 @@ import PhotoStrip from '../components/PhotoStrip.vue'
 //   Right:  sticker tray, size / rotate, layers, Mix soundtrack
 // Layers use z-index: a bigger z is drawn in front.
 
-const { code, room, photos, roomRef } = useRoom()
+const { code, room, photos, clips, roomRef } = useRoom()
 const myName = getGuestName()
 
 const selectedSlot = ref(0)          // the photo the filters change ("Applied to photo 1")
@@ -60,7 +61,15 @@ const frameStyle = computed(() => {
 
 const slotPhotos = computed(() => room.value.stripSlots || {})
 const edits = computed(() => room.value.stripEdits || {})
+const crops = computed(() => room.value.stripCrops || {}) // where each photo sits in its slot (set on the Pick page)
 const stickers = computed(() => room.value.stripStickers || [])
+const editedVideos = computed(() => resolveEditedVideos(room.value.editedVideos, clips.value)) // the videos made on the Video page
+
+// True if any slot holds a video (a clip, or an edited video). A strip with a video cannot be saved as a
+// JPG, because a JPG is a still picture: it will be exported as an MP4 instead (Export step, not built yet).
+const hasVideoSlot = computed(() => {
+  return Object.values(slotPhotos.value).some((id) => editedVideos.value[id] || clips.value.some((c) => c.id === id))
+})
 
 const photosById = computed(() => {
   const map = {}
@@ -236,9 +245,7 @@ async function drawStripCanvas() {
     if (!photo) continue // empty slot
 
     const img = await loadImage(photo.image)
-    const scale = Math.max(w / img.width, h / img.height)
-    const cropWidth = w / scale
-    const cropHeight = h / scale
+    const r = cropSource(img.width, img.height, w, h, cropOf(crops.value, i)) // the part of the photo that shows (Pick page crop)
 
     ctx.save()
     // Only draw inside the slot's shape (an ellipse for circle slots)
@@ -253,7 +260,7 @@ async function drawStripCanvas() {
     }
     ctx.clip()
     ctx.filter = filterCss(edits.value[i]) || 'none' // the same filter as on screen
-    ctx.drawImage(img, (img.width - cropWidth) / 2, (img.height - cropHeight) / 2, cropWidth, cropHeight, x, y, w, h)
+    ctx.drawImage(img, r.sx, r.sy, r.sw, r.sh, x, y, w, h)
     ctx.restore()
   }
 
@@ -360,7 +367,10 @@ async function saveToStudio() {
           :photos-by-id="photosById"
           :slot-photos="slotPhotos"
           :edits="edits"
+          :crops="crops"
           :stickers="stickers"
+          :clips="clips"
+          :edited-videos="editedVideos"
           :selected-slot="selectedStickerId ? null : selectedSlot"
           :selected-sticker-id="selectedStickerId"
           @drop-sticker="addSticker"
@@ -441,13 +451,16 @@ async function saveToStudio() {
           <button class="btn btn-primary w-100 mb-2" @click="goToStage('music')">Mix soundtrack</button>
           <div class="d-flex gap-2">
             <button class="btn btn-outline-secondary btn-sm flex-fill" @click="goToStage('pick')">&larr; Pick</button>
-            <button class="btn btn-outline-secondary btn-sm flex-fill" :disabled="exporting" @click="downloadJpg">
+            <button class="btn btn-outline-secondary btn-sm flex-fill" :disabled="exporting || hasVideoSlot" :title="hasVideoSlot ? 'A strip with video is exported as an MP4' : ''" @click="downloadJpg">
               {{ exporting ? 'Saving...' : 'Download JPG' }}
             </button>
           </div>
-          <button v-if="isAccount" class="btn btn-outline-primary btn-sm w-100 mt-2" :disabled="saving" @click="saveToStudio">
+          <button v-if="isAccount" class="btn btn-outline-primary btn-sm w-100 mt-2" :disabled="saving || hasVideoSlot" @click="saveToStudio">
             {{ saving ? 'Saving...' : 'Save to My Studio' }}
           </button>
+          <!-- A strip with video is exported as an MP4 on the Export page (the JPG buttons above are for photo strips) -->
+          <button v-if="hasVideoSlot" class="btn btn-primary btn-sm w-100 mt-2" @click="goToStage('export')">Export video &rarr;</button>
+          <p v-if="hasVideoSlot" class="small text-muted text-center mt-1 mb-0">This strip has a video, so it is exported as an MP4.</p>
           <p v-if="saveMessage" class="small text-center mt-2 mb-0">{{ saveMessage }}</p>
         </div>
       </div>

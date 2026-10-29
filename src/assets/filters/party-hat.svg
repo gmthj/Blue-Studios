@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="120" height="170" viewBox="0 0 120 170">
+  <!-- A striped party hat with a pom-pom. Its bottom edge sits on top of the head. -->
+  <defs>
+    <clipPath id="cone">
+      <path d="M60 22 L112 158 L8 158 Z" />
+    </clipPath>
+  </defs>
+  <path d="M60 22 L112 158 L8 158 Z" fill="#3B6FE0" />
+  <g clip-path="url(#cone)" stroke="#FFD43B" stroke-width="14">
+    <path d="M-20 70 L140 40" />
+    <path d="M-20 112 L140 82" />
+    <path d="M-20 154 L140 124" />
+  </g>
+  <path d="M60 22 L112 158 L8 158 Z" fill="none" stroke="#1F3F9A" stroke-width="4" stroke-linejoin="round" />
+  <rect x="2" y="152" width="116" height="14" rx="7" fill="#FFFFFF" stroke="#C9CFE0" stroke-width="2" />
+  <g fill="#F0304F">
+    <circle cx="60" cy="16" r="13" />
+    <circle cx="50" cy="10" r="6" />
+    <circle cx="70" cy="10" r="6" />
+  </g>
+  <g fill="#E3344F">
+    <circle cx="36" cy="120" r="4" />
+    <circle cx="80" cy="98" r="4" />
+    <circle cx="62" cy="140" r="4" />
+  </g>
+</svg>
