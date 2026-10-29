@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="70" height="60" viewBox="0 0 70 60">
+  <!-- A little pink cat nose with a cat mouth under it. Its centre goes on the nose tip. -->
+  <path d="M35 30 C19 30 11 12 19 6 C25 2 45 2 51 6 C59 12 51 30 35 30 Z" fill="#F07C9B" stroke="#C4536F" stroke-width="3" />
+  <path d="M35 30 L35 42 M35 42 Q25 54 14 47 M35 42 Q45 54 56 47" stroke="#2A2A30" stroke-width="3.5" stroke-linecap="round" fill="none" />
+</svg>

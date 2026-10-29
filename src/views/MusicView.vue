@@ -11,9 +11,11 @@ import StageBar from '../components/StageBar.vue'
 import { renderMix } from '../mixRender.js'
 import { ref as storageRef, uploadBytes } from 'firebase/storage'
 import { storage } from '../firebase.js'
+import { MAX_EDIT_SECONDS } from '../clips.js'   // the exported video's length (Jun Han's Export page)
 
 // RoomLayout already joined the room, so we just ask for the room code
-const { code, roomRef } = useRoom()
+// goToStage moves the whole room to another page and updates how far the stage bar shows we've got
+const { code, roomRef, goToStage } = useRoom()
 
 // ---------- Decks (what the page shows) ----------
 const trackA = ref(null)    // the song loaded in Deck A (null = empty)
@@ -226,7 +228,7 @@ async function useMix() {
     // 1. Upload the file to Firebase Storage
     await uploadBytes(storageRef(storage, audioPath), mixBlob, { contentType: 'audio/wav' })
     // 2. Save its location on the room, for Jun Han's Export page
-    await updateDoc(roomRef(), { music: { audioPath: audioPath, duration: 5 } })
+    await updateDoc(roomRef(), { music: { audioPath: audioPath, duration: MAX_EDIT_SECONDS } })
     saved.value = true
   } catch (error) {
     console.error(error)
@@ -296,6 +298,8 @@ async function loadTracks() {
         limit: 10,
         tags: genre.value,
         include: 'musicinfo',   // adds musicinfo.speed (low / medium / high) for the deck badge
+        durationbetween: '30_240', // 30 s to 4 min: a loaded song is unpacked into memory
+                                   // (about 64 MB for 3 min, 169 MB for 8 min), too much for phones
         offset: Math.floor(Math.random() * 50),
       },
     })
@@ -321,28 +325,21 @@ function formatTime(seconds) {
   return mins + ':' + secs
 }
 
-// Moves everyone in the room back to the Decorate page (RoomLayout.vue follows the room's "stage")
-async function goBack() {
-  await updateDoc(roomRef(), { stage: 'decorate' })
-}
-
 // Load some songs as soon as the page opens
 onMounted(loadTracks)
 </script>
 
 <template>
+  <div class="app-page music-page">
     <StageBar current="music" />
-
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h2 class="h4 mb-0">Music mixer</h2>
-        <button class="btn btn-outline-secondary btn-sm" @click="goBack">&larr; Decorate</button>
+        <button class="btn btn-outline-secondary btn-sm" @click="goToStage('decorate')">&larr; Decorate</button>
     </div>
-
     <div class="row g-4">
     <!-- LEFT: decks, mixer and your mix -->
     <div class="col-12 col-lg-9">
       <div class="row g-3">
-
         <!-- DECK A: each @event calls a function above with the value DeckCard emitted -->
         <div class="col-12 col-md-5">
           <DeckCard
@@ -359,7 +356,6 @@ onMounted(loadTracks)
             @cue="cueA"
           />
         </div>
-
         <!-- MIXER (crossfader) -->
         <div class="col-12 col-md-2">
           <div class="card h-100">
@@ -381,7 +377,6 @@ onMounted(loadTracks)
             </div>
           </div>
         </div>
-
         <!-- DECK B -->
         <div class="col-12 col-md-5">
           <DeckCard
@@ -398,39 +393,50 @@ onMounted(loadTracks)
             @cue="cueB"
           />
         </div>
-
         <!-- YOUR MIX -->
         <div class="col-12">
           <div class="card">
             <div class="card-body">
               <h2 class="h5 mb-0">Your mix</h2>
-              <p class="small text-muted">5 s loop · matches your video frame</p>
+              <p class="small text-muted">{{ MAX_EDIT_SECONDS }} s · the same length as your video</p>
               <WaveformBars :bars="mixBars" class="mb-3" />
-
               <!-- Shows up after Preview has made the mix -->
               <audio v-if="previewUrl" :src="previewUrl" controls class="w-100 mb-3"></audio>
-
               <div class="d-flex flex-wrap gap-2 justify-content-end">
                 <button class="btn btn-outline-secondary" :disabled="rendering" @click="makeMix">
                   {{ rendering ? 'Rendering...' : '▷ Preview' }}
                 </button>
-                <button class="btn btn-primary" :disabled="saving || rendering" @click="useMix">
-                    {{ saving ? 'Saving...' : saved ? 'Saved ✓' : 'Use this mix' }}
+                <!-- Blue until the mix is saved, then it steps back so "Export video" becomes the main button
+                     (design guide: one main button per area, promote the next step once it makes sense) -->
+                <button
+                  class="btn"
+                  :class="saved ? 'btn-outline-secondary' : 'btn-primary'"
+                  :disabled="saving || rendering"
+                  @click="useMix"
+                >
+                  {{ saving ? 'Saving...' : saved ? 'Saved ✓' : 'Use this mix' }}
+                </button>
+                <!-- Always clickable, so people can export without music too -->
+                <button
+                  class="btn"
+                  :class="saved ? 'btn-primary' : 'btn-outline-secondary'"
+                  :disabled="saving || rendering"
+                  @click="goToStage('export')"
+                >
+                  Export video &rarr;
                 </button>
               </div>
             </div>
           </div>
         </div>
-
       </div>
     </div>
-
-    <!-- RIGHT: browse Jamendo -->
-    <div class="col-12 col-lg-3">
+    <!-- RIGHT on laptops, FIRST on phones (you pick songs before you can mix them).
+         order-first moves it to the top on small screens, order-lg-0 puts it back from "lg" (992px) up. -->
+    <div class="col-12 col-lg-3 order-first order-lg-0">
       <div class="card h-100">
         <div class="card-body">
           <h2 class="h5">Browse Jamendo</h2>
-
           <!-- @change runs loadTracks every time a new genre is picked -->
           <select v-model="genre" class="form-select mb-3" @change="loadTracks">
             <option value="chillout">Chill</option>
@@ -444,10 +450,8 @@ onMounted(loadTracks)
             <option value="acoustic">Acoustic</option>
             <option value="funk">Funk</option>
           </select>
-
           <p v-if="loading" class="text-muted small">Loading songs...</p>
           <div v-else-if="errorMessage" class="alert alert-warning small">{{ errorMessage }}</div>
-
           <div
             v-for="track in tracks"
             :key="track.id"
@@ -465,14 +469,15 @@ onMounted(loadTracks)
         </div>
       </div>
     </div>
+      </div>
   </div>
 </template>
 
 <style scoped>
 /* Deck colours from the Figma */
-.text-deck-a { color: #14a39a; }
+.text-deck-a { color: #0D7C75; }   
 .text-deck-b { color: #7c3aed; }
-.btn-deck-a { background: #14a39a; color: white; }
+.btn-deck-a { background: #0D7C75; color: white; }
 .btn-deck-b { background: #7c3aed; color: white; }
 
 .track-icon {

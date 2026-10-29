@@ -10,6 +10,7 @@ import MarketplaceCard from '../components/MarketplaceCard.vue'
 import AppIcon from '../components/AppIcon.vue'
 import { profileOf } from '../profiles.js'
 import { askConfirm } from '../composables/useDialog.js'
+import { listMyFolders } from '../stickerCategories.js'
 
 // My Studio (/studio): everything this account has saved. Accounts only (see router.js).
 //   - shortcuts: make a frame, make a sticker
@@ -24,6 +25,8 @@ const { user } = useAuth()
 const strips = ref([])
 const templates = ref([])
 const stickers = ref([])
+const folders = ref([])          // my personal folders, loaded from Firebase
+const folderFilter = ref('all')  // 'all', 'mine', or a folder id: which stickers are shown
 const saved = ref([]) // from the marketplace: { id, type, savedAt, item } (item is null if no longer available)
 const editingId = ref('') // the template or sticker whose name and categories are being edited
 const loading = ref(true)
@@ -43,11 +46,16 @@ async function loadAll() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const results = await Promise.all([listMyItems('strips'), listMyItems('templates'), listMyItems('stickers'), listMySaved()])
+    // .catch(() => []) means if folders fail to load, the rest of the page still works
+    const results = await Promise.all([
+      listMyItems('strips'), listMyItems('templates'), listMyItems('stickers'), listMySaved(),
+      listMyFolders().catch(() => []),
+    ])
     strips.value = results[0]
     templates.value = results[1]
     stickers.value = results[2]
     saved.value = results[3]
+    folders.value = results[4]
   } catch (error) {
     console.error(error)
     errorMessage.value = 'Could not load your studio. Check your internet connection and refresh.'
@@ -118,6 +126,28 @@ async function unsave(savedItem) {
   }
   busyId.value = ''
 }
+
+// Which of my folders is this sticker in? (a folder stores sticker ids, so we look the id up)
+function foldersOf(sticker) {
+  return folders.value.filter((f) => (f.itemIds || []).includes(sticker.id))
+}
+
+// The public labels to show. If the sticker is in one of my folders and its only public
+// category is the auto-added 'other', hide it so the folder name shows instead.
+function visibleCategories(sticker) {
+  const cats = sticker.categories || []
+  if (foldersOf(sticker).length > 0 && cats.length === 1 && cats[0] === 'other') return []
+  return cats
+}
+
+// The stickers matching the filter row. computed() re-runs by itself when the filter changes.
+const filteredStickers = computed(() => {
+  if (folderFilter.value === 'all') return stickers.value
+  if (folderFilter.value === 'mine') return stickers.value.filter((s) => foldersOf(s).length > 0)
+  const folder = folders.value.find((f) => f.id === folderFilter.value)
+  const ids = folder ? folder.itemIds || [] : []
+  return stickers.value.filter((s) => ids.includes(s.id))
+})
 
 function formatDate(time) {
   return new Date(time).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
@@ -268,8 +298,20 @@ function formatDate(time) {
           <span class="empty-icon"><AppIcon name="sparkle" :size="22" /></span>
           No stickers yet. Make one in the sticker maker.
         </div>
+        <!-- Filter row: All / Mine (anything in one of my folders) / one button per folder -->
+        <div v-if="stickers.length > 0" class="d-flex flex-wrap gap-2 mb-3">
+          <button class="btn btn-sm rounded-pill" :class="folderFilter === 'all' ? 'btn-primary' : 'btn-outline-primary'" @click="folderFilter = 'all'">All</button>
+          <button class="btn btn-sm rounded-pill" :class="folderFilter === 'mine' ? 'btn-primary' : 'btn-outline-primary'" @click="folderFilter = 'mine'">My Privates</button>
+          <button
+            v-for="f in folders"
+            :key="f.id"
+            class="btn btn-sm rounded-pill"
+            :class="folderFilter === f.id ? 'btn-primary' : 'btn-outline-primary'"
+            @click="folderFilter = f.id"
+          >{{ f.name }}</button>
+        </div>
         <div v-else class="row g-3">
-          <div v-for="sticker in stickers" :key="sticker.id" class="col-6 col-md-3 col-xl-2">
+          <div v-for="sticker in filteredStickers" :key="sticker.id" class="col-6 col-md-3 col-xl-2">
             <div class="card h-100 overflow-hidden">
               <div class="preview sticker-preview"><StorageImage :path="sticker.imagePath" :alt="sticker.name" /></div>
               <div class="card-body item-body">
@@ -281,7 +323,9 @@ function formatDate(time) {
                 </div>
                 <p class="item-meta mb-1">{{ sticker.kind }}</p>
                 <div class="d-flex flex-wrap gap-1 mb-1">
-                  <span v-for="c in sticker.categories" :key="c" class="badge text-bg-light border">{{ categoryLabel(c) }}</span>
+                  <!-- Folder names first (blue), then the public labels (grey) -->
+                  <span v-for="f in foldersOf(sticker)" :key="f.id" class="badge text-bg-primary">{{ f.name }}</span>
+                  <span v-for="c in visibleCategories(sticker)" :key="c" class="badge text-bg-light border">{{ categoryLabel(c) }}</span>
                 </div>
                 <span v-if="sticker.status === 'hidden'" class="badge text-bg-warning mb-1">Hidden by a moderator</span>
 

@@ -20,6 +20,7 @@ import { getClipUrl } from '../clips.js'
 
 // What the parent gives us: the clips to play, and how to play them
 const props = defineProps({
+  position: { type: Object, default: null }, // bare mode: { x, y } in %, which part of the video shows in its slot (Germaine's crop)
   entries: { type: Array, default: () => [] },
   bare: { type: Boolean, default: false },
   autoplay: { type: Boolean, default: false },
@@ -208,6 +209,14 @@ watch(playing, (isPlaying) => emit('playing', isPlaying))
 defineExpose({ play, stop })
 // Stop everything when the player is removed from the page
 onBeforeUnmount(halt)
+
+// Where a clip's video sits in its slot (bare mode). A mirrored clip is drawn flipped, so x is turned around
+// to make it look the same as an unflipped one: what is on the left of the screen stays on the left.
+function positionStyle(entry) {
+  if (!props.bare || !props.position) return null
+  const x = entry.clip.mirrored ? 100 - props.position.x : props.position.x
+  return { objectPosition: x + '% ' + props.position.y + '%' }
+}
 </script>
 
 <template>
@@ -221,6 +230,7 @@ onBeforeUnmount(halt)
       :ref="(el) => setVideo(el, i)"
       class="layer"
       :class="{ shown: i === visibleIndex, mirrored: entry.clip.mirrored }"
+      :style="positionStyle(entry)"
       muted
       playsinline
       preload="auto"

@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="200" height="130" viewBox="0 0 200 130">
+  <!-- A gold crown. Its bottom edge sits on top of the head. -->
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFE27A" />
+      <stop offset="1" stop-color="#E0A21B" />
+    </linearGradient>
+  </defs>
+  <path d="M14 104 L22 34 L62 74 L100 16 L138 74 L178 34 L186 104 Z" fill="url(#gold)" stroke="#A8700B" stroke-width="5" stroke-linejoin="round" />
+  <rect x="12" y="100" width="176" height="24" rx="6" fill="url(#gold)" stroke="#A8700B" stroke-width="5" />
+  <circle cx="22" cy="30" r="9" fill="#FFE27A" stroke="#A8700B" stroke-width="4" />
+  <circle cx="100" cy="12" r="10" fill="#FFE27A" stroke="#A8700B" stroke-width="4" />
+  <circle cx="178" cy="30" r="9" fill="#FFE27A" stroke="#A8700B" stroke-width="4" />
+  <circle cx="58" cy="112" r="6" fill="#E3344F" />
+  <circle cx="100" cy="112" r="7" fill="#3B6FE0" />
+  <circle cx="142" cy="112" r="6" fill="#E3344F" />
+  <path d="M100 52 L108 66 L100 80 L92 66 Z" fill="#3B6FE0" stroke="#A8700B" stroke-width="3" />
+</svg>
