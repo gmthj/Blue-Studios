@@ -298,6 +298,8 @@ async function loadTracks() {
         limit: 10,
         tags: genre.value,
         include: 'musicinfo',   // adds musicinfo.speed (low / medium / high) for the deck badge
+        durationbetween: '30_240', // 30 s to 4 min: a loaded song is unpacked into memory
+                                   // (about 64 MB for 3 min, 169 MB for 8 min), too much for phones
         offset: Math.floor(Math.random() * 50),
       },
     })
@@ -429,8 +431,9 @@ onMounted(loadTracks)
         </div>
       </div>
     </div>
-    <!-- RIGHT: browse Jamendo -->
-    <div class="col-12 col-lg-3">
+    <!-- RIGHT on laptops, FIRST on phones (you pick songs before you can mix them).
+         order-first moves it to the top on small screens, order-lg-0 puts it back from "lg" (992px) up. -->
+    <div class="col-12 col-lg-3 order-first order-lg-0">
       <div class="card h-100">
         <div class="card-body">
           <h2 class="h5">Browse Jamendo</h2>
