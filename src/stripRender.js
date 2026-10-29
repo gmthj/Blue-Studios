@@ -16,6 +16,9 @@ import { getClipUrl, CLIP_SECONDS } from './clips.js'
 // Every slot with a video is a "track": the clips that play in it, one after another. A raw clip is a track
 // of one clip. A track shorter than the video repeats from its start (t % the track's length).
 
+// How many seconds before a clip's turn it is jumped to its start (so it is ready the moment it plays)
+const PREPARE_AHEAD = 0.4
+
 // Sticker images can be set by anyone in the room, so only these places are allowed (see Germaine's guide)
 const TRUSTED_STICKER_SOURCES = ['https://firebasestorage.googleapis.com/', 'data:image/', 'https://media.giphy.com/']
 
@@ -100,13 +103,16 @@ async function buildTrack(entries) {
   let offset = 0
   for (const entry of entries) {
     const length = entry.end - entry.start
+    const video = await loadVideo(entry.clip)
+    await seekTo(video, entry.start) // every clip waits at its start frame, so the first frame of the video is never empty
     segments.push({
-      video: await loadVideo(entry.clip),
+      video: video,
       mirrored: entry.clip.mirrored,
       start: entry.start,
       from: offset,
       to: offset + length,
       playing: false,
+      prepared: true, // true while it has been jumped to its start and is ready to play
     })
     offset += length
   }
@@ -148,6 +154,10 @@ export async function createScene({ layout, frameStyle, photosById, slotPhotos, 
     }
   }
 
+  // The last good picture of each slot with video. While a video has no picture for a moment (right after it was
+  // jumped to a time), this is shown instead of the photo or the empty frame, so there is no flash.
+  const holds = slots.map(() => null)
+
   // The segment of a track that is on at time t (the track repeats, so we look at t % its length)
   function activeSegment(track, t) {
     const u = t % track.length
@@ -171,8 +181,22 @@ export async function createScene({ layout, frameStyle, photosById, slotPhotos, 
       track.lastU = u
       for (const seg of track.segments) {
         const on = u >= seg.from && u < seg.to
+
+        // Jumping a video to a time takes a moment, and for that moment it has no picture (which was a white blink
+        // in the exported video). So a clip that is about to play is jumped to its start a little BEFORE its turn,
+        // while it is paused. (How long until its turn: the track repeats, so it can also be just after the repeat.)
+        if (!on && !seg.playing && !seg.prepared) {
+          const startsIn = seg.from >= u ? seg.from - u : seg.from + track.length - u
+          if (startsIn <= PREPARE_AHEAD) {
+            seg.video.currentTime = seg.start
+            seg.prepared = true
+          }
+        }
+
         if (on && !seg.playing) {
-          seg.video.currentTime = seg.start + (u - seg.from) // jump to where it should be, then play
+          // If it was not prepared (e.g. a track with one clip, which repeats without ever switching off), jump now
+          if (!seg.prepared) seg.video.currentTime = seg.start + (u - seg.from)
+          seg.prepared = false
           // (An AbortError only means a pause() came right after, which is fine)
           seg.video.play().catch((error) => {
             if (error.name !== 'AbortError') console.error(error)
@@ -192,6 +216,7 @@ export async function createScene({ layout, frameStyle, photosById, slotPhotos, 
       for (const seg of track.segments) {
         seg.video.pause()
         seg.playing = false
+        seg.prepared = false
       }
       track.lastU = undefined
     }
@@ -213,17 +238,33 @@ export async function createScene({ layout, frameStyle, photosById, slotPhotos, 
       // The video playing in this slot right now (only if it has a picture ready to draw)
       const seg = tracks[i] ? activeSegment(tracks[i], t) : null
       const videoReady = seg && seg.video.readyState >= 2
-      if (!videoReady && !photos[i]) continue // nothing to draw (empty slot)
+      const held = tracks[i] ? holds[i] : null // the last good picture of this slot (null until there was one)
+      if (!videoReady && !held && !photos[i]) continue // nothing to draw (empty slot)
 
       ctx.save()
       clipToSlot(ctx, frameStyle.shape, x, y, w, h, W)
-      ctx.filter = filterCss(edits[i]) || 'none' // the same filter as on screen (Safari ignores this)
       if (videoReady) {
+        ctx.filter = filterCss(edits[i]) || 'none' // the same filter as on screen (Safari ignores this)
         drawCover(ctx, seg.video, seg.video.videoWidth, seg.video.videoHeight, x, y, w, h, seg.mirrored)
+      } else if (held) {
+        // No picture for a moment: show the last good one (it already has the filter on it, so no filter here)
+        ctx.filter = 'none'
+        ctx.drawImage(held, 0, 0, held.width, held.height, x, y, w, h)
       } else {
+        ctx.filter = filterCss(edits[i]) || 'none'
         drawCover(ctx, photos[i], photos[i].width, photos[i].height, x, y, w, h, false) // the slot's photo, if it has one
       }
       ctx.restore()
+
+      // Keep a copy of what this slot looks like now, as the picture to hold if the next one is late
+      if (videoReady) {
+        if (!holds[i] || holds[i].width !== Math.round(w) || holds[i].height !== Math.round(h)) {
+          holds[i] = document.createElement('canvas')
+          holds[i].width = Math.round(w)
+          holds[i].height = Math.round(h)
+        }
+        holds[i].getContext('2d').drawImage(ctx.canvas, x, y, w, h, 0, 0, holds[i].width, holds[i].height)
+      }
     }
 
     // Stickers. Move to the sticker's centre, rotate (canvas uses radians), draw it centred.
