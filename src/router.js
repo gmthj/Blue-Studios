@@ -11,8 +11,6 @@ import VideoView from './views/VideoView.vue'
 import ExportView from './views/ExportView.vue'
 import StudioView from './views/StudioView.vue'
 import MarketplaceView from './views/MarketplaceView.vue'
-import MarketplaceItemView from './views/MarketplaceItemView.vue'
-import TestUploadView from './views/TestUploadView.vue'
 import AdminView from './views/AdminView.vue'
 import NotFoundView from './views/NotFoundView.vue'
 import { useAuth } from './composables/useAuth.js'
@@ -27,10 +25,12 @@ const routes = [
   { path: '/studio', component: StudioView, meta: { requiresAccount: true } },
   // Anyone can browse the marketplace, guests too. /marketplace?type=stickers&category=cute&sort=popular
   { path: '/marketplace', component: MarketplaceView },
-  // One item, e.g. /marketplace/templates/aZ3kQ9 (type can only be templates or stickers)
-  { path: '/marketplace/:type(templates|stickers)/:id', component: MarketplaceItemView },
-  // TEMPORARY: make test templates/stickers until the editors are merged (remove before submission)
-  { path: '/test-upload', component: TestUploadView, meta: { requiresAccount: true } },
+  // One item opens as a popup: /marketplace?type=templates&item=templates:aZ3kQ9 (see itemLink() in marketplace.js).
+  // Old links to an item's own page, e.g. /marketplace/templates/aZ3kQ9, open that popup.
+  {
+    path: '/marketplace/:type(templates|stickers)/:id',
+    redirect: (to) => ({ path: '/marketplace', query: { type: to.params.type, item: to.params.type + ':' + to.params.id } }),
+  },
   // Moderators only (accounts with the admin mark, see scripts/set-admin.mjs). /admin?tab=overview|reports|items|accounts|rooms|log
   { path: '/admin', component: AdminView, meta: { requiresAdmin: true } },
   {

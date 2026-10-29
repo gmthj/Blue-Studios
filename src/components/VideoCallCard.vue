@@ -1,24 +1,21 @@
 <script setup>
 import { ref, computed, nextTick, onMounted, onBeforeUnmount } from 'vue'
-import { useRouter } from 'vue-router'
-import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
 import { getUid } from '../composables/useAuth.js'
 import { MAX_PEOPLE } from '../room.js'
 import VideoTile from './VideoTile.vue'
-import { askConfirm } from '../composables/useDialog.js'
 
 // The video call window: everyone in the room (live video, name, device, mute icon),
-// plus the mute/unmute, leave and close room buttons, all in a small title bar to save space.
+// plus the mute/unmute button, in a small title bar to save space.
+// (Leave and close room are in the stage bar at the top of the page, StageBar.vue.)
 // It floats over the page (position: fixed). Drag the title bar to put it anywhere on the screen,
-// and drag the grip in its bottom corner to resize it.
+// and drag any edge or corner to resize it, like a window on a computer.
 // The "–" button (or double-clicking the title bar) minimises it to just the title bar. The call keeps running while minimised.
 // It is shown once by RoomLayout.vue, so it is on every page inside a room.
 
-const router = useRouter()
 const uid = getUid()
-const { room, activeMembers, roomRef, exitRoom } = useRoom()
+const { room, activeMembers } = useRoom()
 const { micOn, micBusy, toggleMic, callError } = useVideoCall()
 
 // The position and minimised state are remembered on this device (localStorage), so they stay the same
@@ -39,12 +36,14 @@ function saveSetting(key, value) {
   }
 }
 
-// Phones (narrower than Bootstrap "sm", 576px) start minimised, so the call does not cover the page
-const minimised = ref(loadSetting('callMinimised', window.innerWidth < 576 ? 'yes' : 'no') === 'yes')
+// Phones (narrower than Bootstrap "sm", 576px) start minimised, so the call does not cover the page.
+// localStorage only stores text, so true / false are saved as 'true' / 'false'.
+const savedMinimised = loadSetting('callMinimised', '')
+const minimised = ref(savedMinimised ? savedMinimised === 'true' : window.innerWidth < 576)
 
 async function toggleMinimised() {
   minimised.value = !minimised.value
-  saveSetting('callMinimised', minimised.value ? 'yes' : 'no')
+  saveSetting('callMinimised', String(minimised.value))
   await nextTick()  // wait for the new size...
   keepOnScreen()    // ...then make sure it did not grow off the screen
 }
@@ -87,6 +86,7 @@ function loadDock() {
 // left / right and top / bottom for the style, depending on the corner it is docked to
 const windowStyle = computed(() => {
   const style = { width: minimised.value ? 'auto' : width.value + 'px' }
+  if (!minimised.value && height.value) style.height = height.value + 'px'
   style[dock.value.right ? 'right' : 'left'] = dock.value.x + 'px'
   style[dock.value.bottom ? 'bottom' : 'top'] = dock.value.y + 'px'
   return style
@@ -95,6 +95,7 @@ const windowStyle = computed(() => {
 // Moves the window back inside the screen (after resizing it, un-minimising, or the screen changing size)
 function keepOnScreen() {
   if (!windowEl.value) return
+  if (height.value) height.value = clampHeight(height.value)
   const maxX = window.innerWidth - windowEl.value.offsetWidth - EDGE
   const maxY = window.innerHeight - windowEl.value.offsetHeight - EDGE
   dock.value = { ...dock.value, x: clamp(dock.value.x, EDGE, maxX), y: clamp(dock.value.y, EDGE, maxY) }
@@ -120,16 +121,22 @@ function onDrag(event) {
   const left = clamp(event.clientX - grabOffset.x, EDGE, window.innerWidth - w - EDGE)
   const top = clamp(event.clientY - grabOffset.y, EDGE, window.innerHeight - h - EDGE)
 
-  // Dock to the closest corner: is the middle of the window in the right half / bottom half of the screen?
-  const right = left + w / 2 > window.innerWidth / 2
-  const bottom = top + h / 2 > window.innerHeight / 2
-  let x = right ? window.innerWidth - w - left : left
-  let y = bottom ? window.innerHeight - h - top : top
+  const { x, y, right, bottom } = closestDock(left, top, w, h)
 
   // Close to an edge: stick to it
-  if (x < SNAP) x = EDGE
-  if (y < SNAP) y = EDGE
-  dock.value = { x, y, right, bottom }
+  dock.value = { x: x < SNAP ? EDGE : x, y: y < SNAP ? EDGE : y, right, bottom }
+}
+
+// Dock to the closest corner: is the middle of the window in the right half / bottom half of the screen?
+function closestDock(left, top, w, h) {
+  const right = left + w / 2 > window.innerWidth / 2
+  const bottom = top + h / 2 > window.innerHeight / 2
+  return {
+    x: right ? window.innerWidth - w - left : left,
+    y: bottom ? window.innerHeight - h - top : top,
+    right,
+    bottom,
+  }
 }
 
 function endDrag(event) {
@@ -140,13 +147,20 @@ function endDrag(event) {
 }
 
 // ---------- RESIZING ----------
-// Drag the grip in the bottom corner to make the window wider or narrower. The grip is on the side
-// facing the middle of the screen (bottom-left when docked on the right), so the window grows away from its edge.
-// Only the width is set: the height follows, because every tile keeps its 4:3 shape.
-const MIN_WIDTH = 220 // wide enough for all the title bar buttons on one line
+// Drag any edge or corner to resize the window, like a window on a computer. The edge on the other side
+// stays where it is while resizing.
+// Until someone drags the top or bottom edge (or a corner), the height follows the width, because every
+// tile keeps its 4:3 shape. After that the height is kept too, and the tiles shrink to fit inside it.
+const MIN_WIDTH = 140  // wide enough for 2 tiles side by side
+const MIN_HEIGHT = 140 // the title bar and one row of small tiles
 const width = ref(Number(loadSetting('callWidth', '')) || defaultWidth())
+const height = ref(Number(loadSetting('callHeight', '')) || null) // null = follows the width
 const resizing = ref(false)
-let resizeStart = { x: 0, width: 0 }
+let resizeEdges = '' // which edges are being dragged: 'n', 'se', 'w', ...
+let resizeStart = { x: 0, y: 0, left: 0, top: 0, w: 0, h: 0 }
+
+// The 8 handles: 4 edges and 4 corners (n = top, s = bottom, e = right, w = left)
+const RESIZE_HANDLES = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
 
 // The first time: about a fifth of the screen, but at least 260px (2 tiles side by side) and at most 400px.
 // Short screens (phones held sideways) get a wider window, because the tiles have to go 3 across to fit the height.
@@ -155,46 +169,115 @@ function defaultWidth() {
   return Math.round(clamp(window.innerWidth * share, 260, 400))
 }
 
-// Never narrower than MIN_WIDTH, never wider than the screen
+// Never smaller than the minimum, never bigger than the screen
 function clampWidth(w) {
   return Math.max(MIN_WIDTH, Math.min(w, window.innerWidth - EDGE * 2))
 }
 
-function startResize(event) {
+function clampHeight(h) {
+  return Math.max(MIN_HEIGHT, Math.min(h, window.innerHeight - EDGE * 2))
+}
+
+function startResize(event, edges) {
   if (dragPointer !== null) return
-  resizeStart = { x: event.clientX, width: windowEl.value.offsetWidth }
+  const w = windowEl.value.offsetWidth
+  const h = windowEl.value.offsetHeight
+  resizeStart = {
+    x: event.clientX,
+    y: event.clientY,
+    left: dock.value.right ? window.innerWidth - w - dock.value.x : dock.value.x,
+    top: dock.value.bottom ? window.innerHeight - h - dock.value.y : dock.value.y,
+    w,
+    h,
+  }
+  resizeEdges = edges
   dragPointer = event.pointerId
   resizing.value = true
   event.currentTarget.setPointerCapture(event.pointerId)
 }
 
-async function onResize(event) {
+function onResize(event) {
   if (!resizing.value || event.pointerId !== dragPointer) return
-  // Docked on the right, the grip is on the left: dragging it left makes the window wider
-  const moved = event.clientX - resizeStart.x
-  width.value = clampWidth(resizeStart.width + (dock.value.right ? -moved : moved))
-  await nextTick() // wait for the new size...
-  keepOnScreen()   // ...then pull it back in if it grew off the screen
+  const start = resizeStart
+  const dx = event.clientX - start.x
+  const dy = event.clientY - start.y
+  const right = start.left + start.w // where the right edge started
+  const bottom = start.top + start.h // where the bottom edge started
+  const next = { ...dock.value }
+
+  // Left or right edge: the other side stays put (the window is docked to it while resizing)
+  if (resizeEdges.includes('w')) {
+    width.value = clamp(start.w - dx, MIN_WIDTH, right - EDGE)
+    next.right = true
+    next.x = window.innerWidth - right
+  } else if (resizeEdges.includes('e')) {
+    width.value = clamp(start.w + dx, MIN_WIDTH, window.innerWidth - EDGE - start.left)
+    next.right = false
+    next.x = start.left
+  }
+
+  // Top or bottom edge: from now on the height is kept
+  if (resizeEdges.includes('n')) {
+    height.value = clamp(start.h - dy, MIN_HEIGHT, bottom - EDGE)
+    next.bottom = true
+    next.y = window.innerHeight - bottom
+  } else if (resizeEdges.includes('s')) {
+    height.value = clamp(start.h + dy, MIN_HEIGHT, window.innerHeight - EDGE - start.top)
+    next.bottom = false
+    next.y = start.top
+  }
+
+  dock.value = next
 }
 
 function endResize(event) {
   if (!resizing.value || event.pointerId !== dragPointer) return
   resizing.value = false
   dragPointer = null
+
+  // Dock to the closest corner again, so it grows towards the middle of the screen when people join
+  const w = windowEl.value.offsetWidth
+  const h = windowEl.value.offsetHeight
+  const left = dock.value.right ? window.innerWidth - w - dock.value.x : dock.value.x
+  const top = dock.value.bottom ? window.innerHeight - h - dock.value.y : dock.value.y
+  dock.value = closestDock(left, top, w, h)
+
   saveSetting('callWidth', String(width.value))
+  if (height.value) saveSetting('callHeight', String(height.value))
+  saveSetting('callDock', JSON.stringify(dock.value))
 }
 
 // ---------- TILE LAYOUT ----------
-// How many tiles go across. The rows are balanced (4 people: 2 + 2, not 3 + 1), and the tiles never
+// How many tiles go across, and how wide each one is.
+// Height follows the width: the rows are balanced (4 people: 2 + 2, not 3 + 1), and the tiles never
 // make the window taller than the screen allows: a phone held sideways gets more, smaller tiles across
-// instead of having to scroll. A shorter last row is centred (see .tiles in the CSS).
+// instead of having to scroll.
+// Height kept (someone dragged the top or bottom edge): whichever number across gives the biggest tiles
+// that still fit inside the window.
+// A shorter last row is centred (see .tiles in the CSS).
 const MIN_TILE = 96 // narrowest a tile gets because of the width (in pixels)
 const GAP = 6       // space between the tiles, and around them (same as the CSS)
 const screenHeight = ref(window.innerHeight)
+const titlebarEl = ref(null)
+const titlebarHeight = ref(38) // measured when the window appears (it is taller on phones)
 
-const columns = computed(() => {
+const layout = computed(() => {
   const count = Math.max(activeMembers.value.length, 1)
   const inner = width.value - GAP * 2 - 2 // minus the padding and the 1px border
+
+  if (height.value) {
+    const innerHeight = height.value - titlebarHeight.value - GAP - 2 // minus the bottom padding and the border
+    let best = { across: 1, tileWidth: 0 }
+    for (let across = 1; across <= count; across++) {
+      const rows = Math.ceil(count / across)
+      const fitWidth = (inner - GAP * (across - 1)) / across
+      const fitHeight = (innerHeight - GAP * (rows - 1)) / rows / 0.75 // tiles are 4:3
+      const tileWidth = Math.min(fitWidth, fitHeight)
+      if (tileWidth > best.tileWidth) best = { across, tileWidth }
+    }
+    return { across: best.across, tileWidth: Math.max(Math.floor(best.tileWidth), 40) }
+  }
+
   const fitAcross = Math.max(1, Math.floor((inner + GAP) / (MIN_TILE + GAP)))
 
   // As few rows as possible, then the tiles spread evenly over those rows
@@ -208,7 +291,7 @@ const columns = computed(() => {
   while (across < count && tilesHeight(count, across, inner) > maxHeight) {
     across++
   }
-  return across
+  return { across, tileWidth: Math.floor((inner - GAP * (across - 1)) / across) }
 })
 
 // Height of all the rows of tiles, if `across` tiles go in each row
@@ -223,11 +306,13 @@ function tilesHeight(count, across, inner) {
 async function onWindowResize() {
   screenHeight.value = window.innerHeight
   width.value = clampWidth(width.value)
+  if (height.value) height.value = clampHeight(height.value)
   await nextTick()
   keepOnScreen()
 }
 
 onMounted(() => {
+  titlebarHeight.value = titlebarEl.value.offsetHeight
   onWindowResize()
   window.addEventListener('resize', onWindowResize)
 })
@@ -235,43 +320,18 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener('resize', onWindowResize)
 })
-
-// ---------- CALL BUTTONS ----------
-// The host can always close the room. If the host has left, anyone can (so the room is not stuck open).
-const canCloseRoom = computed(() => {
-  const hostIsHere = activeMembers.value.some((member) => member.id === room.value.hostId)
-  return room.value.hostId === uid || !hostIsHere
-})
-
-async function leaveRoom() {
-  await exitRoom(true) // true: remove me from the members list straight away
-  router.push('/')     // RoomLayout.vue then ends the video call
-}
-
-// Closing the room ends the video call for everyone (saves Agora minutes) and stops new people joining.
-// Every device sees closed: true in the room document and goes back to the home page (see RoomLayout.vue).
-async function closeRoom() {
-  const sure = await askConfirm({
-    title: 'Close this room for everyone?',
-    message: 'The video call ends and everyone goes back to the home page.',
-    confirmLabel: 'Close room',
-    danger: true,
-    icon: 'lock',
-  })
-  if (!sure) return
-  await updateDoc(roomRef(), { closed: true })
-}
 </script>
 
 <template>
   <div
     ref="windowEl"
     class="call-window"
-    :class="{ minimised, dragging: dragging || resizing }"
+    :class="{ minimised, dragging: dragging || resizing, 'fixed-height': height && !minimised }"
     :style="windowStyle"
   >
     <!-- Title bar: drag it to move the window. All the buttons live here to save space. -->
     <div
+      ref="titlebarEl"
       class="call-titlebar d-flex align-items-center"
       title="Drag to move"
       @pointerdown="startDrag"
@@ -317,30 +377,6 @@ async function closeRoom() {
         </svg>
       </button>
 
-      <template v-if="!minimised">
-        <!-- Leave: an "exit" arrow -->
-        <button class="bar-btn" title="Leave the room" aria-label="Leave the room" @click="leaveRoom">
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-            <path d="M16 17l5-5-5-5" />
-            <path d="M21 12H9" />
-          </svg>
-        </button>
-        <!-- Close room: a power button, solid red because it ends the room for everyone -->
-        <button
-          v-if="canCloseRoom"
-          class="bar-btn bar-btn-danger"
-          title="Close the room for everyone"
-          aria-label="Close the room for everyone"
-          @click="closeRoom"
-        >
-          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 2v10" />
-            <path d="M18.4 6.6a9 9 0 1 1-12.77.04" />
-          </svg>
-        </button>
-      </template>
-
       <button
         class="bar-btn"
         :title="minimised ? 'Show the call' : 'Minimise'"
@@ -363,8 +399,8 @@ async function closeRoom() {
     <div v-show="!minimised" class="call-body">
       <p v-if="callError" class="call-error small mb-1">{{ callError }}</p>
 
-      <!-- --columns: how many tiles go across (worked out in the script, see TILE LAYOUT) -->
-      <div class="tiles" :style="{ '--columns': columns }">
+      <!-- --tile-width: how wide each tile is (worked out in the script, see TILE LAYOUT) -->
+      <div class="tiles" :style="{ '--tile-width': layout.tileWidth + 'px' }">
         <VideoTile
           v-for="member in activeMembers"
           :key="member.id"
@@ -375,17 +411,26 @@ async function closeRoom() {
       </div>
     </div>
 
-    <!-- Resize grip: bottom corner, on the side facing the middle of the screen -->
-    <div
-      v-show="!minimised"
-      class="resize-grip"
-      :class="dock.right ? 'grip-left' : 'grip-right'"
-      title="Drag to resize"
-      @pointerdown="startResize"
-      @pointermove="onResize"
-      @pointerup="endResize"
-      @pointercancel="endResize"
-    ></div>
+    <!-- Resize handles: the 4 edges and 4 corners. The bottom corner facing the middle of the screen
+         also shows a grip, so people can see the window can be resized. -->
+    <template v-if="!minimised">
+      <div
+        v-for="edges in RESIZE_HANDLES"
+        :key="edges"
+        class="call-resize"
+        :class="'call-resize-' + edges"
+        @pointerdown="startResize($event, edges)"
+        @pointermove="onResize"
+        @pointerup="endResize"
+        @pointercancel="endResize"
+      >
+        <!-- The grip: two short diagonal lines, tucked inside the rounded corner -->
+        <svg v-if="edges === (dock.right ? 'sw' : 'se')" class="call-resize-grip" viewBox="0 0 10 10" aria-hidden="true">
+          <path v-if="edges === 'se'" d="M9 3 3 9M9 6.5 6.5 9" />
+          <path v-else d="M1 3l6 6M1 6.5 3.5 9" />
+        </svg>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -397,7 +442,6 @@ async function closeRoom() {
   --call-text: #E8EBF5;
   --call-muted-text: #8A90A0;
   --brand: #2F5BEA;
-  --danger: #EF4444;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 
   /* position: fixed = floats over the page and stays put when the page scrolls (left / top are set by the script).
@@ -405,7 +449,8 @@ async function closeRoom() {
      and the camera countdown (2000+). */
   position: fixed;
   z-index: 1040;
-  max-width: calc(100vw - 16px); /* never wider than the screen (the width is set by the script) */
+  max-width: calc(100vw - 16px); /* never bigger than the screen (the width and height are set by the script) */
+  max-height: calc(100vh - 16px);
   overflow: hidden;
   color: var(--call-text);
   background: var(--call-bg);
@@ -498,10 +543,6 @@ async function closeRoom() {
   .bar-btn-muted:hover {
     background: rgba(239, 68, 68, 0.28);
   }
-
-  .bar-btn-danger:hover {
-    background: #DC2626;
-  }
 }
 
 /* Shrinks a little when pressed, so you can feel it was clicked */
@@ -521,11 +562,6 @@ async function closeRoom() {
 .bar-btn-muted {
   color: #FCA5A5;
   background: rgba(239, 68, 68, 0.18);
-}
-
-.bar-btn-danger {
-  color: #ffffff;
-  background: var(--danger);
 }
 
 .icon {
@@ -565,7 +601,7 @@ async function closeRoom() {
   color: #FCA5A5;
 }
 
-/* --columns tiles across, all the same width (set by the script). Flexbox, not grid,
+/* Every tile is --tile-width wide (set by the script). Flexbox, not grid,
    so a shorter last row is centred instead of leaving a gap on the right. */
 .tiles {
   display: flex;
@@ -575,44 +611,115 @@ async function closeRoom() {
 }
 
 .tiles > * {
-  flex: 0 0 calc((100% - (var(--columns) - 1) * 6px) / var(--columns));
+  flex: 0 0 var(--tile-width);
 }
 
-/* Resize grip: two short diagonal lines in a bottom corner, sitting on top of the tiles.
+/* Height kept (someone dragged the top or bottom edge): the tiles fill the space under the title bar,
+   in the middle of it */
+.call-window.fixed-height {
+  display: flex;
+  flex-direction: column;
+}
+
+.call-window.fixed-height .call-body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 0;
+  max-height: none;
+}
+
+/* Resize handles: invisible strips along the 4 edges and squares in the 4 corners, on top of the tiles.
    touch-action: none stops phones scrolling the page while resizing. */
-.resize-grip {
+.call-resize {
   position: absolute;
-  bottom: 0;
-  width: 18px;
-  height: 18px;
+  z-index: 2;
   touch-action: none;
-  opacity: 0.6;
+}
+
+.call-resize-n,
+.call-resize-s {
+  left: 12px;
+  right: 12px;
+  height: 6px;
+  cursor: ns-resize;
+}
+
+.call-resize-e,
+.call-resize-w {
+  top: 12px;
+  bottom: 12px;
+  width: 6px;
+  cursor: ew-resize;
+}
+
+.call-resize-n { top: 0; }
+.call-resize-s { bottom: 0; }
+.call-resize-e { right: 0; }
+.call-resize-w { left: 0; }
+
+.call-resize-ne,
+.call-resize-nw,
+.call-resize-se,
+.call-resize-sw {
+  width: 16px;
+  height: 16px;
+}
+
+.call-resize-ne { top: 0; right: 0; cursor: nesw-resize; }
+.call-resize-sw { bottom: 0; left: 0; cursor: nesw-resize; }
+.call-resize-nw { top: 0; left: 0; cursor: nwse-resize; }
+.call-resize-se { bottom: 0; right: 0; cursor: nwse-resize; }
+
+/* Fingers are bigger than a mouse pointer: bigger handles */
+@media (pointer: coarse) {
+  .call-resize-n,
+  .call-resize-s {
+    height: 12px;
+  }
+
+  .call-resize-e,
+  .call-resize-w {
+    width: 12px;
+  }
+
+  .call-resize-ne,
+  .call-resize-nw,
+  .call-resize-se,
+  .call-resize-sw {
+    width: 24px;
+    height: 24px;
+  }
+}
+
+/* The grip: two short diagonal lines in the bottom corner facing the middle of the screen,
+   inset so the rounded corner of the window does not cut them off */
+.call-resize-grip {
+  position: absolute;
+  bottom: 4px;
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: #ffffff;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  opacity: 0.55;
+  pointer-events: none;
   transition: opacity 150ms ease;
 }
 
-.grip-right {
-  right: 0;
-  cursor: nwse-resize;
-  background: linear-gradient(
-    135deg,
-    transparent 55%, #ffffff 55%, #ffffff 62%, transparent 62%,
-    transparent 75%, #ffffff 75%, #ffffff 82%, transparent 82%
-  );
+.call-resize-se .call-resize-grip {
+  right: 4px;
 }
 
-.grip-left {
-  left: 0;
-  cursor: nesw-resize;
-  background: linear-gradient(
-    225deg,
-    transparent 55%, #ffffff 55%, #ffffff 62%, transparent 62%,
-    transparent 75%, #ffffff 75%, #ffffff 82%, transparent 82%
-  );
+.call-resize-sw .call-resize-grip {
+  left: 4px;
 }
 
-.resize-grip:hover,
-.call-window.dragging .resize-grip {
-  opacity: 1;
+.call-window:hover .call-resize-grip,
+.call-window.dragging .call-resize-grip {
+  opacity: 0.9;
 }
 
 /* Short screens (like phones held sideways): the tiles get less of the height (the script uses the same 500px) */

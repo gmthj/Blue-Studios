@@ -7,7 +7,9 @@ import { getGuestName, saveGuestName } from '../guest.js'
 import { getUid, useAuth } from '../composables/useAuth.js'
 import { isRoomFull, MAX_PEOPLE } from '../room.js'
 import { LAYOUTS } from '../stripData.js'
+import { getItem } from '../marketplace.js'
 import AppIcon from '../components/AppIcon.vue'
+import StorageImage from '../components/StorageImage.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -36,6 +38,37 @@ const joinCode = ref(route.query.code || '')
 const errorMessage = ref('')
 const loading = ref(false)
 const action = ref('') // 'join' or 'create': which button shows the loading spinner
+
+// "Use template" in the marketplace or My Studio opens /?template={id}: the new room starts with that
+// template as its photostrip frame (RoomLayout.vue sets it once the host is in the room)
+const startTemplate = ref(null) // the templates/{id} document
+const startTemplateMissing = ref(false)
+
+watch(
+  () => route.query.template,
+  async (id) => {
+    startTemplate.value = null
+    startTemplateMissing.value = false
+    if (typeof id !== 'string' || id === '') return
+    try {
+      const template = await getItem('templates', id)
+      if (route.query.template !== id) return // changed while loading
+      startTemplate.value = template
+      startTemplateMissing.value = !template
+    } catch (error) {
+      console.error(error)
+      startTemplateMissing.value = true
+    }
+  },
+  { immediate: true },
+)
+
+// The x on the template card: make a normal room instead
+function dropStartTemplate() {
+  const query = { ...route.query }
+  delete query.template
+  router.replace({ path: '/', query: query })
+}
 
 // Shown after a room is closed (RoomLayout.vue sends everyone to /?closed=1234)
 const closedCode = route.query.closed || ''
@@ -74,10 +107,7 @@ const activeBox = computed(() => {
   return Math.min(joinCode.value.length, 3)
 })
 
-// Came from a QR code (the code is already filled in): on phones, show the join card first
-const fromQrCode = Boolean(route.query.code)
-
-// ---------- PHOTOSTRIP PICTURE (right side, lg and up) ----------
+// ---------- PHOTOSTRIP PICTURE (behind the room card, xl and up) ----------
 // It cycles through the templates, filling each one with the next pictures.
 // The files are in public/images/landing. To add or swap one, put the file in the folder and list it here
 // (a browser cannot list a folder by itself).
@@ -87,11 +117,13 @@ const STRIP_PICTURES = [
   '2021-11-08_05-11-05_2.jpg',
   'ahh cat.png',
   'elmo.jpg',
-  'jake window.webp',
   '2021-11-08_05-11-05_3.jpg',
-  'pepig.png',
-  'sonic.jpg',
   'bluestudios.jpeg',
+  'cew1.jpg',
+  'cew2.jpg',
+  'cew3.jpg',
+  'sjh1.jpg',
+  'kjs1.jpg',
 ]
 
 // A template is a frame picture with see-through holes where the photos go.
@@ -222,7 +254,10 @@ async function createRoom() {
       createdAt: Date.now(),
     })
 
-    router.push('/room/' + code)
+    router.push({
+      path: '/room/' + code + '/shoot',
+      query: startTemplate.value ? { template: startTemplate.value.id } : {},
+    })
   } catch (error) {
     console.error(error)
     errorMessage.value = 'Could not create room. Check your internet connection.'
@@ -261,35 +296,13 @@ async function joinRoom() {
 <template>
   <!-- Landing page: what Blue Studios is, plus creating or joining a room straight away -->
   <div class="landing">
-    <!--
-      HERO with Bootstrap's grid:
-        phones / tablets (below lg, 992px):  one column: intro, then the room card
-                                             (the room card comes first if they scanned a QR code)
-        lg and up:                           two columns: [intro, room card] | photostrip picture
-    -->
-    <section class="row g-5 align-items-center hero">
-      <div class="col-12 col-lg-6 d-flex flex-column gap-4 gap-lg-5">
-        <div>
-          <span class="hero-badge"><AppIcon name="sparkle" :size="13" /> Free &middot; no booth needed</span>
-          <h1 class="hero-title">Take a photostrip together, from anywhere.</h1>
-          <p class="hero-lead">
-            Create a room, share a 4-digit code and shoot on one synchronised countdown, with friends on their own
-            phones and laptops.
-          </p>
-          <div class="d-flex flex-wrap gap-2">
-            <router-link v-if="isAccount" to="/studio" class="btn btn-primary btn-lg">Go to My Studio</router-link>
-            <router-link v-else to="/login?mode=signup" class="btn btn-primary btn-lg">Get started</router-link>
-            <a href="#how-it-works" class="btn btn-light btn-lg btn-soft">
-              <AppIcon name="play" :size="16" /> How it works
-            </a>
-          </div>
-        </div>
+    <!-- FIRST SCREEN: only the room card, in the middle of the screen under the navbar -->
+    <section class="room-screen">
+      <div class="room-col">
+        <div v-if="closedCode" class="alert alert-info">Room {{ closedCode }} was closed.</div>
 
-        <!-- order-first: came from a QR code, so on phones the join card goes above the intro -->
-        <div class="room-col" :class="{ 'order-first order-lg-0': fromQrCode }">
-          <div v-if="closedCode" class="alert alert-info">Room {{ closedCode }} was closed.</div>
-
-          <div class="room-card">
+        <div class="room-card">
+          <div class="card-name">
             <label for="nameInput" class="field-label">Your name</label>
             <input
               id="nameInput"
@@ -302,7 +315,9 @@ async function joinRoom() {
               maxlength="20"
               @animationend="nameInvalid = false"
             />
+          </div>
 
+          <div class="card-join">
             <h2 class="card-heading">Got a room code?</h2>
             <p class="card-sub">Join your friends' room, no account needed.</p>
             <div class="d-flex align-items-center gap-2 gap-sm-3">
@@ -343,8 +358,27 @@ async function joinRoom() {
                 Join
               </button>
             </div>
+          </div>
 
+          <div class="card-create">
             <div class="or-divider"><span>or</span></div>
+
+            <!-- "Use template": the frame the new room starts with -->
+            <div v-if="startTemplate" class="start-template">
+              <div class="start-template-thumb">
+                <StorageImage :src="startTemplate.cardUrl" :path="startTemplate.thumbnailPath" :alt="startTemplate.name" priority />
+              </div>
+              <div class="flex-grow-1 min-w-0">
+                <p class="start-template-label">Your room will use</p>
+                <p class="start-template-name text-truncate" :title="startTemplate.name">{{ startTemplate.name }}</p>
+              </div>
+              <button type="button" class="start-template-remove" aria-label="Don't use this template" @click="dropStartTemplate">
+                <AppIcon name="close" :size="16" />
+              </button>
+            </div>
+            <p v-else-if="startTemplateMissing" class="start-template-missing">
+              That template isn't available any more, so the room will start with the default frame.
+            </p>
 
             <!-- Code typed: Create steps back to a small outline button, so Join is clearly the one to press -->
             <button
@@ -360,13 +394,35 @@ async function joinRoom() {
             <p class="card-sub text-center mt-2 mb-0">
               You'll be the host and get a code to share. Up to {{ MAX_PEOPLE }} people per room.
             </p>
-
-            <div v-if="errorMessage" class="room-error" role="alert">{{ errorMessage }}</div>
           </div>
+
+          <div v-if="errorMessage" class="room-error" role="alert">{{ errorMessage }}</div>
+        </div>
+      </div>
+    </section>
+
+    <!--
+      INTRO, below the room card, with Bootstrap's grid:
+        below lg (992px):  just the intro (the photostrip picture is hidden)
+        lg and up:         two columns: intro | photostrip picture
+    -->
+    <section class="row g-5 align-items-center hero">
+      <div class="col-12 col-lg-6">
+        <span class="hero-badge"><AppIcon name="sparkle" :size="13" /> Free &middot; no booth needed</span>
+        <h1 class="hero-title">Take a photostrip together, from anywhere.</h1>
+        <p class="hero-lead">
+          Create a room, share a 4-digit code and shoot on one synchronised countdown, with friends on their own
+          phones and laptops.
+        </p>
+        <div class="d-flex flex-wrap gap-2">
+          <router-link v-if="isAccount" to="/studio" class="btn btn-primary btn-lg">Go to My Studio</router-link>
+          <router-link v-else to="/login?mode=signup" class="btn btn-primary btn-lg">Get started</router-link>
+          <a href="#how-it-works" class="btn btn-light btn-lg btn-soft">
+            <AppIcon name="play" :size="16" /> How it works
+          </a>
         </div>
       </div>
 
-      <!-- RIGHT (lg and up): photostrips that change every few seconds, just a picture (aria-hidden: screen readers skip it) -->
       <div class="col-lg-6 d-none d-lg-flex justify-content-center">
         <div class="strip-scene" aria-hidden="true">
           <!-- The stage keeps the same size for every template, so the page does not jump when the strip changes.
@@ -490,15 +546,29 @@ async function joinRoom() {
   transform: scale(0.97);
 }
 
-/* ---------- HERO ---------- */
+/* ---------- FIRST SCREEN ----------
+   Exactly the visible screen under the navbar (57px tall + 24px space under it) and the page's bottom
+   space (16px), with the room card in the middle. Taller content (a phone held sideways) just makes it
+   taller. */
+.room-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: calc(100vh - 81px - 16px);  /* for older browsers */
+  min-height: calc(100dvh - 81px - 16px); /* 100dvh = the visible screen height */
+  padding-bottom: 24px; /* a little more space under the card than above, so it looks centred */
+}
+
+/* ---------- INTRO ---------- */
 .hero {
-  padding-top: 8px;
+  margin-top: 16px;
   margin-bottom: 64px;
 }
 
 @media (min-width: 992px) {
   .hero {
-    padding-top: 32px;
+    margin-top: 32px;
     margin-bottom: 96px;
   }
 }
@@ -538,7 +608,8 @@ async function joinRoom() {
 /* ---------- ROOM CARD ---------- */
 /* The max width is on the column, so the "Room was closed" alert and the card are always the same width */
 .room-col {
-  max-width: 34rem;
+  width: 100%;
+  max-width: 30rem;
 }
 
 .room-card {
@@ -685,6 +756,71 @@ async function joinRoom() {
   margin: 0 auto;
 }
 
+/* "Your room will use ...": the template from "Use template", above the Create button */
+.start-template {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 14px;
+  padding: 8px 8px 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--brand-tint);
+}
+
+.start-template-thumb {
+  width: 40px;
+  height: 56px;
+  flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 6px;
+  background: #ffffff;
+}
+
+.min-w-0 {
+  min-width: 0;
+}
+
+.start-template-label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.start-template-name {
+  margin: 0;
+  font-weight: 700;
+}
+
+.start-template-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 10px;
+  color: var(--muted);
+  background: transparent;
+}
+
+.start-template-remove:hover {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.start-template-remove:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+.start-template-missing {
+  margin-bottom: 14px;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 /* A line with "or" in the middle */
 .or-divider {
   display: flex;
@@ -712,7 +848,49 @@ async function joinRoom() {
   font-size: 0.875rem;
 }
 
-/* ---------- PHOTOSTRIP PICTURE ---------- */
+/* Phones held sideways: the screen is too short for the card's parts one under the other, so the
+   name and the code sit side by side, with Create underneath. The smaller hints are hidden. */
+@media (orientation: landscape) and (max-height: 500px) {
+  .room-col {
+    max-width: none;
+  }
+
+  .room-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto; /* the code boxes keep their size, the name box takes the rest */
+    align-items: end;
+    gap: 12px 20px;
+    padding: 16px 20px;
+  }
+
+  .card-create,
+  .room-error {
+    grid-column: 1 / -1;
+  }
+
+  .name-input {
+    margin-bottom: 0;
+  }
+
+  /* The same as the "Your name" label next to it, so the two line up */
+  .card-heading {
+    margin-bottom: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+  }
+
+  .card-join .card-sub,
+  .card-create .card-sub,
+  .or-divider {
+    display: none;
+  }
+
+  .room-error {
+    margin-top: 0;
+  }
+}
+
+/* ---------- PHOTOSTRIP PICTURE (next to the intro, lg and up) ---------- */
 .strip-scene {
   position: relative;
   padding: 24px 64px;

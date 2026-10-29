@@ -1,9 +1,9 @@
 <script setup>
-import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, computed, watch, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
-import { listMyItems, setVisibility, deleteItem, categoryLabel } from '../studio.js'
-import { listMySaved, unsaveItem } from '../marketplace.js'
+import { listMyItems, setVisibility, deleteItem, categoryLabel, templateRoomLink } from '../studio.js'
+import { listMySaved, unsaveItem, itemLink, savedChanges } from '../marketplace.js'
 import StorageImage from '../components/StorageImage.vue'
 import ItemDetailsForm from '../components/ItemDetailsForm.vue'
 import MarketplaceCard from '../components/MarketplaceCard.vue'
@@ -19,6 +19,7 @@ import { listMyFolders } from '../stickerCategories.js'
 //     renamed, and given categories
 //   - things I saved from the marketplace
 
+const route = useRoute()
 const router = useRouter()
 const { user } = useAuth()
 
@@ -62,6 +63,15 @@ async function loadAll() {
   }
   loading.value = false
 }
+
+// Saved or unsaved something in the item popup (MarketplaceItemDialog.vue): get the "Saved" list again
+watch(savedChanges, async () => {
+  try {
+    saved.value = await listMySaved()
+  } catch (error) {
+    console.error(error)
+  }
+})
 
 // Public <-> private
 async function toggleVisibility(item) {
@@ -245,7 +255,7 @@ function formatDate(time) {
           <div v-for="template in templates" :key="template.id" class="col-12 col-sm-6 col-lg-4">
             <div class="card h-100 overflow-hidden">
               <div class="row g-0 h-100">
-                <div class="col-4 preview template-preview"><StorageImage :path="template.thumbnailPath" :alt="template.name" /></div>
+                <div class="col-4 preview template-preview"><StorageImage :src="template.cardUrl" :path="template.thumbnailPath" :alt="template.name" /></div>
                 <div class="col-8">
                   <div class="card-body">
                     <div class="d-flex align-items-start justify-content-between gap-2">
@@ -274,9 +284,10 @@ function formatDate(time) {
                         <label class="form-check-label small" :for="'vis-' + template.id">Show in the marketplace</label>
                       </div>
                       <div class="item-actions">
+                        <router-link :to="templateRoomLink(template.id)" class="btn btn-sm btn-link px-0 fw-semibold">Use</router-link>
                         <button class="btn btn-sm btn-link px-0" @click="editingId = template.id">Edit</button>
                         <router-link :to="'/template-editor?template=' + template.id" class="btn btn-sm btn-link px-0">Open in editor</router-link>
-                        <router-link v-if="isListed(template)" :to="'/marketplace/templates/' + template.id" class="btn btn-sm btn-link px-0">View</router-link>
+                        <router-link v-if="isListed(template)" :to="itemLink(route, 'templates', template.id)" class="btn btn-sm btn-link px-0">View</router-link>
                         <button class="btn btn-sm btn-link text-danger px-0" :disabled="busyId === template.id" @click="remove(template)">Delete</button>
                       </div>
                     </template>
@@ -313,7 +324,7 @@ function formatDate(time) {
         <div v-else class="row g-3">
           <div v-for="sticker in filteredStickers" :key="sticker.id" class="col-6 col-md-3 col-xl-2">
             <div class="card h-100 overflow-hidden">
-              <div class="preview sticker-preview"><StorageImage :path="sticker.imagePath" :alt="sticker.name" /></div>
+              <div class="preview sticker-preview"><StorageImage :src="sticker.cardUrl" :path="sticker.imagePath" :alt="sticker.name" /></div>
               <div class="card-body item-body">
                 <div class="d-flex align-items-start justify-content-between gap-1">
                   <p class="item-name text-truncate" :title="sticker.name">{{ sticker.name }}</p>
@@ -344,7 +355,7 @@ function formatDate(time) {
                   </div>
                   <div class="item-actions">
                     <button class="btn btn-sm btn-link px-0" @click="editingId = sticker.id">Edit</button>
-                    <router-link v-if="isListed(sticker)" :to="'/marketplace/stickers/' + sticker.id" class="btn btn-sm btn-link px-0">View</router-link>
+                    <router-link v-if="isListed(sticker)" :to="itemLink(route, 'stickers', sticker.id)" class="btn btn-sm btn-link px-0">View</router-link>
                     <button class="btn btn-sm btn-link text-danger px-0" :disabled="busyId === sticker.id" @click="remove(sticker)">Delete</button>
                   </div>
                 </template>
@@ -370,7 +381,10 @@ function formatDate(time) {
             <div v-else class="empty-state h-100 justify-content-center small">
               No longer available: the maker made it private or removed it.
             </div>
-            <button class="btn btn-sm btn-link text-danger" :disabled="busyId === savedItem.id" @click="unsave(savedItem)">Remove</button>
+            <div class="d-flex justify-content-center gap-3">
+              <router-link v-if="savedItem.item && savedItem.type === 'templates'" :to="templateRoomLink(savedItem.id)" class="btn btn-sm btn-link px-0 fw-semibold">Use</router-link>
+              <button class="btn btn-sm btn-link text-danger px-0" :disabled="busyId === savedItem.id" @click="unsave(savedItem)">Remove</button>
+            </div>
           </div>
         </div>
       </section>

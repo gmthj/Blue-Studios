@@ -101,6 +101,16 @@ test('sticker images follow the same rules', async () => {
   await assertSucceeds(getBytes(ref(storageAs('bob'), 'stickers/alice/s1/image')))
 })
 
+test('card pictures (small copies for the grids) can be uploaded next to the item, up to 1 MB', async () => {
+  const storage = storageAs('alice')
+  const webp = { contentType: 'image/webp' }
+  await assertSucceeds(uploadBytes(ref(storage, 'templates/alice/t1/card.webp'), PNG, webp))
+  await assertSucceeds(uploadBytes(ref(storage, 'stickers/alice/s1/card.png'), PNG, png))
+  await assertFails(uploadBytes(ref(storageAs('bob'), 'stickers/alice/s1/card.webp'), PNG, webp))
+  await assertFails(uploadBytes(ref(storage, 'stickers/alice/s1/evil.exe'), PNG, png))
+  await assertFails(uploadBytes(ref(storage, 'templates/alice/t1/card.webp'), new Uint8Array(1.5 * 1024 * 1024), webp))
+})
+
 test('strips are private: only the owner can upload and download', async () => {
   await assertSucceeds(uploadBytes(ref(storageAs('alice'), 'strips/alice/st1.jpg'), PNG, jpeg))
   await assertFails(uploadBytes(ref(storageAs('alice'), 'strips/alice/st1.jpg'), PNG, png))

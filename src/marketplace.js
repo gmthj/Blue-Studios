@@ -1,6 +1,7 @@
 import {
   collection, doc, getDoc, getDocs, setDoc, deleteDoc, query, where, orderBy, limit, startAfter, writeBatch, increment,
 } from 'firebase/firestore'
+import { ref } from 'vue'
 import { db, auth } from './firebase.js'
 
 // The marketplace: public templates and stickers that other people can browse and save.
@@ -16,6 +17,24 @@ import { db, auth } from './firebase.js'
 //   - each account can report an item once (the report id is itemId_uid)
 
 export const PAGE_SIZE = 24
+
+// ---------- Opening one item ----------
+// One item opens as a popup (MarketplaceItemDialog.vue, in App.vue) on top of the page I am on,
+// e.g. /studio?item=templates:aZ3kQ9. The browser's back button then closes it.
+
+// Where a click on an item goes: this same page, with ?item= added
+export function itemLink(route, type, itemId) {
+  return { path: route.path, query: { ...route.query, item: type + ':' + itemId } }
+}
+
+// ?item=templates:aZ3kQ9 -> { type: 'templates', id: 'aZ3kQ9' } (null if missing or not like that)
+export function parseItemParam(value) {
+  const match = typeof value === 'string' ? value.match(/^(templates|stickers):([A-Za-z0-9_-]+)$/) : null
+  return match ? { type: match[1], id: match[2] } : null
+}
+
+// Goes up by 1 when the popup saves or unsaves something, so My Studio can reload its "Saved" list
+export const savedChanges = ref(0)
 
 export const REPORT_REASONS = [
   { id: 'inappropriate', label: 'Inappropriate or offensive' },

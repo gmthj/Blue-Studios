@@ -100,6 +100,20 @@ service cloud.firestore {
         && value.toSet().size() == value.size();
     }
 
+    // An item's card picture (see "Card pictures" in src/studio.js): optional, older items have none.
+    // If there, cardPath must be one of this item's own files in my folder (fileNames: a regex of the
+    // allowed names), and cardUrl must be that file's Firebase Storage link, so nobody can show an
+    // outside picture in the marketplace instead of the one that was checked.
+    function isMyCard(data, type, itemId, fileNames) {
+      let folder = type + '/' + request.auth.uid + '/' + itemId + '/';
+      return (!('cardPath' in data) && !('cardUrl' in data))
+        || (data.cardPath is string
+            && data.cardPath.matches(folder + '(' + fileNames + ')')
+            && data.cardUrl is string
+            && data.cardUrl.matches('https://firebasestorage[.]googleapis[.]com/v0/b/[^/?]+/o/'
+                 + data.cardPath.replace('/', '%2F').replace('[.]', '[.]') + '[?].*'));
+    }
+
     function itemPath(type, itemId) {
       return /databases/$(database)/documents/$(type)/$(itemId);
     }
@@ -323,14 +337,14 @@ service cloud.firestore {
 
     // ---------- Templates (frames made in the template editor) ----------
     // templates/{id}  { ownerId, ownerName, name, slotCount, categories, visibility, status, saveCount,
-    //                   thumbnailPath, dataPath, createdAt, updatedAt }
-    // The files are in Firebase Storage: templates/{uid}/{id}/thumbnail.png and project.json
+    //                   thumbnailPath, dataPath, cardPath?, cardUrl?, createdAt, updatedAt }
+    // The files are in Firebase Storage: templates/{uid}/{id}/thumbnail.png, project.json and card.webp (or card.png)
 
     match /templates/{itemId} {
       allow read: if canSeeItem();
 
       allow create: if isCreator()
-        && request.resource.data.keys().hasOnly(['ownerId', 'ownerName', 'name', 'slotCount', 'categories', 'visibility', 'status', 'saveCount', 'thumbnailPath', 'dataPath', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['ownerId', 'ownerName', 'name', 'slotCount', 'categories', 'visibility', 'status', 'saveCount', 'thumbnailPath', 'dataPath', 'cardPath', 'cardUrl', 'createdAt', 'updatedAt'])
         && request.resource.data.ownerId == request.auth.uid
         && isMyName(request.resource.data.ownerName)
         && isTitle(request.resource.data.name)
@@ -343,13 +357,16 @@ service cloud.firestore {
         && request.resource.data.saveCount == 0
         && request.resource.data.thumbnailPath == 'templates/' + request.auth.uid + '/' + itemId + '/thumbnail.png'
         && request.resource.data.dataPath == 'templates/' + request.auth.uid + '/' + itemId + '/project.json'
+        && isMyCard(request.resource.data, 'templates', itemId, 'card[.](webp|png)')
         && request.resource.data.createdAt is int
         && request.resource.data.updatedAt is int;
 
-      // The owner can rename, change slots and categories, make public/private. Not status (admins) or saveCount.
+      // The owner can rename, change slots and categories, make public/private, and replace the card picture
+      // (when the template is edited). Not status (admins) or saveCount.
       allow update: if isCreator()
         && resource.data.ownerId == request.auth.uid
-        && onlyChanged(['ownerName', 'name', 'slotCount', 'categories', 'visibility', 'updatedAt'])
+        && onlyChanged(['ownerName', 'name', 'slotCount', 'categories', 'visibility', 'cardPath', 'cardUrl', 'updatedAt'])
+        && isMyCard(request.resource.data, 'templates', itemId, 'card[.](webp|png)')
         && isMyName(request.resource.data.ownerName)
         && isTitle(request.resource.data.name)
         && request.resource.data.slotCount is int
@@ -371,14 +388,16 @@ service cloud.firestore {
     }
 
     // ---------- Stickers (made in the sticker maker) ----------
-    // stickers/{id}  { ownerId, ownerName, name, kind, categories, visibility, status, saveCount, imagePath, createdAt, updatedAt }
-    // The image is in Firebase Storage: stickers/{uid}/{id}/image
+    // stickers/{id}  { ownerId, ownerName, name, kind, categories, visibility, status, saveCount, imagePath,
+    //                  cardPath?, cardUrl?, createdAt, updatedAt }
+    // The files are in Firebase Storage: stickers/{uid}/{id}/image and card.webp (or card.png).
+    // Moving stickers use their image as the card (cardPath = imagePath).
 
     match /stickers/{itemId} {
       allow read: if canSeeItem();
 
       allow create: if isCreator()
-        && request.resource.data.keys().hasOnly(['ownerId', 'ownerName', 'name', 'kind', 'categories', 'visibility', 'status', 'saveCount', 'imagePath', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['ownerId', 'ownerName', 'name', 'kind', 'categories', 'visibility', 'status', 'saveCount', 'imagePath', 'cardPath', 'cardUrl', 'createdAt', 'updatedAt'])
         && request.resource.data.ownerId == request.auth.uid
         && isMyName(request.resource.data.ownerName)
         && isTitle(request.resource.data.name)
@@ -388,6 +407,7 @@ service cloud.firestore {
         && request.resource.data.status == 'active'
         && request.resource.data.saveCount == 0
         && request.resource.data.imagePath == 'stickers/' + request.auth.uid + '/' + itemId + '/image'
+        && isMyCard(request.resource.data, 'stickers', itemId, 'card[.](webp|png)|image')
         && request.resource.data.createdAt is int
         && request.resource.data.updatedAt is int;
 

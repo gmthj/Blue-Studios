@@ -47,17 +47,6 @@ export const LAYOUTS = [
       { x: 8, y: 62, w: 84, h: 26 },
     ],
   },
-  {
-    id: 'music-4-cut',
-    name: 'Music 4-cut',
-    aspect: 3 / 10,
-    slots: [
-      { x: 6, y: 3, w: 42, h: 42 },
-      { x: 52, y: 3, w: 42, h: 42 },
-      { x: 6, y: 47, w: 42, h: 42 },
-      { x: 52, y: 47, w: 42, h: 42 },
-    ],
-  },
 ]
 
 // ---------- FRAME STYLES ("Default" and "Mine" on the Pick page) ----------

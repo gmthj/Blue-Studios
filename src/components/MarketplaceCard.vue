@@ -1,14 +1,19 @@
 <script setup>
 import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 import StorageImage from './StorageImage.vue'
 import AppIcon from './AppIcon.vue'
 import { profileOf } from '../profiles.js'
+import { itemLink } from '../marketplace.js'
 
 // One template or sticker in a marketplace grid (also used for "Saved" in My Studio).
-// Clicking it opens its page: /marketplace/templates/{id} or /marketplace/stickers/{id}
+// Clicking it opens it in a popup on top of this page (MarketplaceItemDialog.vue)
+
+const route = useRoute()
 
 const props = defineProps({
   item: { type: Object, required: true },
+  priority: { type: Boolean, default: false }, // on screen straight away: load its picture first (see StorageImage.vue)
 })
 
 // The maker's name and picture now (so a new name or picture shows on their older items too)
@@ -16,9 +21,14 @@ const maker = computed(() => profileOf(props.item.ownerId))
 </script>
 
 <template>
-  <router-link :to="'/marketplace/' + item.type + '/' + item.id" class="card h-100 text-decoration-none text-body item-card">
+  <router-link :to="itemLink(route, item.type, item.id)" class="card h-100 text-decoration-none text-body item-card">
     <div class="preview" :class="item.type === 'templates' ? 'template-preview' : 'sticker-preview'">
-      <StorageImage :path="item.type === 'templates' ? item.thumbnailPath : item.imagePath" :alt="item.name" />
+      <StorageImage
+        :src="item.cardUrl"
+        :path="item.type === 'templates' ? item.thumbnailPath : item.imagePath"
+        :alt="item.name"
+        :priority="priority"
+      />
     </div>
     <div class="card-body item-body">
       <p class="item-name text-truncate" :title="item.name">{{ item.name }}</p>

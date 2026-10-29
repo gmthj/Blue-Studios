@@ -2,9 +2,11 @@
 import { ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuth } from './composables/useAuth.js'
+import { useFullscreen } from './composables/useFullscreen.js'
 import AppIcon from './components/AppIcon.vue'
 import ProfileDialog from './components/ProfileDialog.vue'
 import AppDialog from './components/AppDialog.vue'
+import MarketplaceItemDialog from './components/MarketplaceItemDialog.vue'
 import { profileOf } from './profiles.js'
 
 const route = useRoute()
@@ -19,6 +21,10 @@ const inRoom = computed(() => route.path.startsWith('/room/'))
 const containerClass = computed(() => {
   return inRoom.value ? 'container-fluid' : 'container'
 })
+
+// Fullscreen button in a room (StageBar.vue): the header is hidden so the room gets the whole screen
+const { fullscreen } = useFullscreen()
+const hideNav = computed(() => inRoom.value && fullscreen.value)
 
 // Accounts that have not clicked the link in their verification email yet
 const showVerifyReminder = computed(() => isAccount.value && !user.value.emailVerified && !inRoom.value)
@@ -51,7 +57,7 @@ async function logOutAndGoHome() {
       White bar with the logo. Sticky: it stays at the top while the page scrolls (not in a room,
       where the camera needs all the height). On phones the links become icons, so everything fits on one line.
     -->
-    <nav class="app-nav mb-4" :class="{ sticky: !inRoom }">
+    <nav v-if="!hideNav" class="app-nav mb-4" :class="{ sticky: !inRoom }">
       <div class="nav-inner" :class="containerClass">
         <router-link to="/" class="brand">
           <!-- The camera and film strip from the logo (public/images/bluestudios.jpeg), cut out with a see-through background -->
@@ -96,7 +102,10 @@ async function logOutAndGoHome() {
 
     <ProfileDialog v-if="isAccount" v-model:open="profileOpen" />
 
-    <main class="pb-3" :class="containerClass">
+    <!-- One marketplace template or sticker, on top of any page whose URL has ?item=templates:{id} -->
+    <MarketplaceItemDialog />
+
+    <main class="pb-3" :class="[containerClass, { 'pt-2': hideNav }]">
       <!-- Could not sign in (even as a guest), so nothing would be saved: show why instead of the page -->
       <div v-if="authError" class="alert alert-danger">{{ authError }}</div>
 

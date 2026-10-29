@@ -402,6 +402,40 @@ test('the owner can make a template public/private, but not change status, saveC
   await assertFails(updateDoc(doc(db, 'templates/t1'), { ownerId: 'bob' }))
 })
 
+// A card picture's fields, as saveTemplate / saveSticker save them (see "Card pictures" in studio.js)
+function cardOf(path) {
+  return {
+    cardPath: path,
+    cardUrl: 'https://firebasestorage.googleapis.com/v0/b/demo.appspot.com/o/' + encodeURIComponent(path) + '?alt=media&token=abc',
+  }
+}
+
+test('items can have a card picture, but only their own file in Storage', async () => {
+  await seedAlice()
+  const db = dbAsAccount('alice')
+  await assertSucceeds(setDoc(doc(db, 'templates/t1'), newTemplate('alice', 't1', cardOf('templates/alice/t1/card.webp'))))
+  await assertSucceeds(setDoc(doc(db, 'stickers/s1'), newSticker('alice', 's1', cardOf('stickers/alice/s1/card.png'))))
+  await assertSucceeds(setDoc(doc(db, 'stickers/s2'), newSticker('alice', 's2', cardOf('stickers/alice/s2/image'))))
+
+  // Someone else's file, another item's file, a file that is not a card, or a link somewhere else
+  await assertFails(setDoc(doc(db, 'templates/t2'), newTemplate('alice', 't2', cardOf('templates/bob/t2/card.webp'))))
+  await assertFails(setDoc(doc(db, 'templates/t3'), newTemplate('alice', 't3', cardOf('templates/alice/t1/card.webp'))))
+  await assertFails(setDoc(doc(db, 'templates/t4'), newTemplate('alice', 't4', cardOf('templates/alice/t4/project.json'))))
+  await assertFails(setDoc(doc(db, 'templates/t5'), newTemplate('alice', 't5', {
+    cardPath: 'templates/alice/t5/card.webp',
+    cardUrl: 'https://example.com/templates%2Falice%2Ft5%2Fcard.webp?x',
+  })))
+  await assertFails(setDoc(doc(db, 'templates/t6'), newTemplate('alice', 't6', { cardUrl: cardOf('templates/alice/t6/card.webp').cardUrl })))
+})
+
+test('the owner can replace a template card when editing it', async () => {
+  await seedAlice()
+  await seed('templates/t1', newTemplate('alice', 't1', cardOf('templates/alice/t1/card.webp')))
+  const db = dbAsAccount('alice')
+  await assertSucceeds(updateDoc(doc(db, 'templates/t1'), { ...cardOf('templates/alice/t1/card.png'), updatedAt: 2 }))
+  await assertFails(updateDoc(doc(db, 'templates/t1'), { ...cardOf('templates/bob/x/card.png'), updatedAt: 3 }))
+})
+
 test('banned accounts cannot save or change templates', async () => {
   await seedAlice({ banned: true })
   await seed('templates/t1', newTemplate('alice', 't1'))
