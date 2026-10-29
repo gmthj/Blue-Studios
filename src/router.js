@@ -16,9 +16,11 @@ import TestUploadView from './views/TestUploadView.vue'
 import AdminView from './views/AdminView.vue'
 import NotFoundView from './views/NotFoundView.vue'
 import { useAuth } from './composables/useAuth.js'
+import StickerMakerView from './views/StickerMakerView.vue'
 
 const routes = [
   { path: '/', component: HomeView },
+  { path: '/sticker-maker', component: StickerMakerView },
   { path: '/template-editor', component: TemplateEditorView },
   { path: '/login', component: LoginView }, // /login?mode=signup shows the sign up tab
   // meta.requiresAccount: guests are sent to the log in page first (see beforeEach below)
