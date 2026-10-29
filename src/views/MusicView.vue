@@ -11,6 +11,7 @@ import StageBar from '../components/StageBar.vue'
 import { renderMix } from '../mixRender.js'
 import { ref as storageRef, uploadBytes } from 'firebase/storage'
 import { storage } from '../firebase.js'
+import { MAX_EDIT_SECONDS } from '../clips.js'   // the exported video's length (Jun Han's Export page)
 
 // RoomLayout already joined the room, so we just ask for the room code
 const { code, roomRef } = useRoom()
@@ -226,7 +227,7 @@ async function useMix() {
     // 1. Upload the file to Firebase Storage
     await uploadBytes(storageRef(storage, audioPath), mixBlob, { contentType: 'audio/wav' })
     // 2. Save its location on the room, for Jun Han's Export page
-    await updateDoc(roomRef(), { music: { audioPath: audioPath, duration: 5 } })
+    await updateDoc(roomRef(), { music: { audioPath: audioPath, duration: MAX_EDIT_SECONDS } })
     saved.value = true
   } catch (error) {
     console.error(error)
@@ -399,7 +400,7 @@ onMounted(loadTracks)
           <div class="card">
             <div class="card-body">
               <h2 class="h5 mb-0">Your mix</h2>
-              <p class="small text-muted">5 s loop · matches your video frame</p>
+              <p class="small text-muted">{{ MAX_EDIT_SECONDS }} s · the same length as your video</p>
               <WaveformBars :bars="mixBars" class="mb-3" />
               <!-- Shows up after Preview has made the mix -->
               <audio v-if="previewUrl" :src="previewUrl" controls class="w-100 mb-3"></audio>
