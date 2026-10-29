@@ -69,11 +69,15 @@ const bars = computed(function () {
       <input :value="volume" type="range" class="form-range" min="0" max="100" @input="onVolumeInput" />
 
       <div class="d-flex gap-2 mt-2">
-        <!-- Shows ❚❚ (pause) while playing, ▶ (play) when stopped -->
+        <!-- Shows ❚❚ (pause) while playing, ▶ (play) when stopped.
+             aria-label: screen readers say "Play Deck A" instead of reading out the ▶ symbol.
+             aria-pressed: tells them whether the deck is playing right now. -->
         <button
           class="btn rounded-circle text-white"
           :style="{ background: color }"
           :disabled="!track || loading"
+          :aria-label="(playing ? 'Pause ' : 'Play ') + label"
+          :aria-pressed="playing"
           @click="emit('toggle-play')"
         >
           {{ playing ? '❚❚' : '▶' }}
