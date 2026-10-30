@@ -513,24 +513,24 @@ onMounted(() => {
                         @touchend.stop
                         @pointerdown.stop
                       >
-                        <div class="popover-header">Layer Ordering</div>
+                        <div class="popover-header d-none d-lg-block">Layer Ordering</div>
                         <button class="popover-item" @click="bringForward(el.id)">
-                          <span class="item-icon">▲</span>
+                          <span class="item-icon d-none d-lg-inline-block">▲</span>
                           <span class="item-label">Bring Forward</span>
                           <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.bringForward }}</span>
                         </button>
                         <button class="popover-item" @click="bringToFront(el.id)">
-                          <span class="item-icon">⇪▲</span>
+                          <span class="item-icon d-none d-lg-inline-block">⇪▲</span>
                           <span class="item-label">Bring to Front</span>
                           <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.bringToFront }}</span>
                         </button>
                         <button class="popover-item" @click="sendBackward(el.id)">
-                          <span class="item-icon">▼</span>
+                          <span class="item-icon d-none d-lg-inline-block">▼</span>
                           <span class="item-label">Send Backward</span>
                           <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.sendBackward }}</span>
                         </button>
                         <button class="popover-item" @click="sendToBack(el.id)">
-                          <span class="item-icon">⇪▼</span>
+                          <span class="item-icon d-none d-lg-inline-block">⇪▼</span>
                           <span class="item-label">Send to Back</span>
                           <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.sendToBack }}</span>
                         </button>
@@ -702,14 +702,14 @@ onMounted(() => {
                     @touchend.stop
                     @pointerdown.stop
                   >
-                    <div class="popover-header">Layer Ordering</div>
+                    <div class="popover-header d-none d-lg-block">Layer Ordering</div>
                     <button class="popover-item" @click="bringToFrontSelected">
-                      <span class="item-icon">⇪▲</span>
+                      <span class="item-icon d-none d-lg-inline-block">⇪▲</span>
                       <span class="item-label">Bring to Front</span>
                       <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.bringToFront }}</span>
                     </button>
                     <button class="popover-item" @click="sendToBackSelected">
-                      <span class="item-icon">⇪▼</span>
+                      <span class="item-icon d-none d-lg-inline-block">⇪▼</span>
                       <span class="item-label">Send to Back</span>
                       <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.sendToBack }}</span>
                     </button>

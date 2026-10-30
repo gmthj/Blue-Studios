@@ -2354,16 +2354,25 @@ label[for],
     height: 14px !important;
   }
 
-  /* Hide keyboard hotkey tags on mobile screens */
+  /* Hide keyboard hotkey tags, modifier glyphs, and popover header on mobile screens */
   .item-shortcut,
   .shortcut-tag,
-  .context-shortcut {
+  .context-shortcut,
+  .item-icon,
+  .context-icon,
+  .position-popover .popover-header {
     display: none !important;
   }
 
   /* Compact Position Popover on mobile */
   .position-popover {
-    min-width: 135px !important;
+    min-width: 125px !important;
+    padding: 4px !important;
+  }
+
+  .popover-item {
+    padding: 7px 10px !important;
+    font-size: 12.5px !important;
   }
 }
 

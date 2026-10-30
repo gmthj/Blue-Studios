@@ -62,22 +62,22 @@ const {
         <div v-if="canGroupSelected || canUngroupSelected" class="context-divider"></div>
 
         <button class="context-item" @click="bringForward(); closeContextMenu()">
-          <span class="context-icon">▲</span>
+          <span class="context-icon d-none d-lg-inline-block">▲</span>
           <span class="context-label">Bring Forward</span>
           <span class="context-shortcut d-none d-lg-inline-block">{{ shortcuts.bringForward }}</span>
         </button>
         <button class="context-item" @click="bringToFrontSelected(); closeContextMenu()">
-          <span class="context-icon">⇪▲</span>
+          <span class="context-icon d-none d-lg-inline-block">⇪▲</span>
           <span class="context-label">Bring to Front</span>
           <span class="context-shortcut d-none d-lg-inline-block">{{ shortcuts.bringToFront }}</span>
         </button>
         <button class="context-item" @click="sendBackward(); closeContextMenu()">
-          <span class="context-icon">▼</span>
+          <span class="context-icon d-none d-lg-inline-block">▼</span>
           <span class="context-label">Send Backward</span>
           <span class="context-shortcut d-none d-lg-inline-block">{{ shortcuts.sendBackward }}</span>
         </button>
         <button class="context-item" @click="sendToBackSelected(); closeContextMenu()">
-          <span class="context-icon">⇪▼</span>
+          <span class="context-icon d-none d-lg-inline-block">⇪▼</span>
           <span class="context-label">Send to Back</span>
           <span class="context-shortcut d-none d-lg-inline-block">{{ shortcuts.sendToBack }}</span>
         </button>
