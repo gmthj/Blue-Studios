@@ -42,17 +42,17 @@ const {
 
 <template>
   <!-- 2. Subheader Toolbar -->
-  <div class="d-flex align-items-center justify-content-between px-3 py-1 bg-white border-bottom position-relative" style="min-height: 44px; z-index: 100;">
-    <div class="d-flex align-items-center gap-2 small">
-      <router-link to="/studio" class="text-decoration-none text-muted d-flex align-items-center gap-1 me-1 text-nowrap" title="Back to My Studio">
+  <div class="d-flex align-items-center justify-content-between px-2 px-md-3 py-1 bg-white border-bottom position-relative" style="min-height: 44px; z-index: 100;">
+    <div class="d-flex align-items-center gap-1 gap-md-2 small flex-grow-1 me-2" style="min-width: 0;">
+      <router-link to="/studio" class="text-decoration-none text-muted d-flex align-items-center gap-1 me-1 text-nowrap flex-shrink-0" title="Back to My Studio">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="19" y1="12" x2="5" y2="12" />
           <polyline points="12 19 5 12 12 5" />
         </svg>
         <span class="fw-medium">My Studio</span>
       </router-link>
-      <span class="text-muted">/</span>
-      <div class="input-group input-group-sm template-name-group" style="width: auto;">
+      <span class="text-muted flex-shrink-0">/</span>
+      <div class="input-group input-group-sm template-name-group flex-grow-1" style="min-width: 0; max-width: 220px;">
         <span class="input-group-text border-end-0 px-2 py-0" title="Frame Title (Click to edit)">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -62,8 +62,8 @@ const {
         <input
           v-model="templateName"
           type="text"
-          class="form-control form-control-sm border-start-0 template-name-field ps-1"
-          style="width: 185px; font-size: 0.875rem;"
+          class="form-control form-control-sm border-start-0 template-name-field ps-1 text-truncate"
+          style="font-size: 0.875rem;"
           placeholder="my-templates-1"
           title="Frame Title (Click to edit)"
           maxlength="40"
@@ -237,10 +237,10 @@ const {
         </button>
       </div>
 
-      <!-- My Templates Drawer Action Button (Opens saved templates overlay drawer) -->
+      <!-- My Templates Drawer Action Button (Desktop only; dropped on mobile to give space) -->
       <button
         type="button"
-        class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"
+        class="btn btn-sm btn-outline-secondary d-none d-lg-flex align-items-center gap-1"
         title="View all your saved templates"
         @click="openMyTemplatesDrawer"
       >
@@ -252,23 +252,25 @@ const {
       <!-- Save Frame Button (Shows 'Save Frame' if logged in, 'Login to save' if guest) -->
       <button
         v-if="isAccount"
-        class="btn btn-sm btn-primary d-flex align-items-center gap-1 fw-bold shadow-sm"
+        class="btn btn-sm btn-primary d-flex align-items-center gap-1 fw-bold shadow-sm flex-shrink-0"
         :disabled="isSavingFrame"
         @click="saveFrame"
         :title="cloudId ? (isOwner ? `Save Frame to My Studio (${shortcuts.save})` : `Save a Copy to My Studio (${shortcuts.save})`) : `Save Frame to My Studio (${shortcuts.save})`"
       >
         <IconSave :size="14" :stroke-width="2.3" />
-        <span>{{ isSavingFrame ? 'Saving...' : (cloudId ? (isOwner ? 'Save Frame' : 'Save a Copy') : 'Save Frame') }}</span>
+        <span class="d-none d-sm-inline">{{ isSavingFrame ? 'Saving...' : (cloudId ? (isOwner ? 'Save Frame' : 'Save a Copy') : 'Save Frame') }}</span>
+        <span class="d-sm-none">{{ isSavingFrame ? '...' : 'Save' }}</span>
       </button>
 
       <router-link
         v-else
         :to="'/login?redirect=' + encodeURIComponent($route.fullPath)"
-        class="btn btn-sm btn-primary d-flex align-items-center gap-1 fw-bold shadow-sm text-decoration-none"
+        class="btn btn-sm btn-primary d-flex align-items-center gap-1 fw-bold shadow-sm text-decoration-none flex-shrink-0"
         :title="`Log in to save your template to My Studio (${shortcuts.save})`"
       >
         <IconSave :size="14" :stroke-width="2.3" />
-        <span>Login to save</span>
+        <span class="d-none d-sm-inline">Login to save</span>
+        <span class="d-sm-none">Login</span>
       </router-link>
     </div>
   </div>
