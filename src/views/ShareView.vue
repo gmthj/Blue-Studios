@@ -180,7 +180,7 @@ async function saveToStudio() {
   saveMessage.value = ''
   try {
     const blob = await (await fetch(share.value.fileUrl)).blob() // the file is in Storage, so this works on any device
-    await saveStripFile({ title: share.value.title, file: blob, format: share.value.format })
+    await saveStripFile({ title: share.value.title, file: blob, format: share.value.format, shareId: share.value.id })
     saveMessage.value = 'Saved to My Studio!'
   } catch (error) {
     console.error(error)
