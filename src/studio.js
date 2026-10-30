@@ -229,7 +229,8 @@ export async function saveStrip({ title, image }) {
 // Save a finished strip from the Share page to My Studio: a PNG, a GIF or an MP4 (a Blob).
 // Saved like saveStrip above, but the file's ending is its format, and the document says which format it is
 // (so My Studio knows to play an MP4 instead of showing a picture).
-export async function saveStripFile({ title, file, format }) {
+// shareId: the strip's share (see shares.js). The card in My Studio opens its page, /s/{shareId}.
+export async function saveStripFile({ title, file, format, shareId }) {
   const uid = myUid()
   const stripId = newId('strips')
   const imagePath = 'strips/' + uid + '/' + stripId + '.' + format
@@ -241,6 +242,7 @@ export async function saveStripFile({ title, file, format }) {
     title: title,
     imagePath: imagePath,
     format: format,
+    ...(shareId ? { shareId: shareId } : {}),
     createdAt: Date.now(),
   })
   return stripId
