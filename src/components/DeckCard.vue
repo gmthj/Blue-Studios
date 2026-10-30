@@ -97,8 +97,11 @@ const bars = computed(function () {
       <p v-else-if="track" class="small text-muted mb-0">{{ track.artist_name }}</p>
       <p v-else class="small text-muted mb-0">Press {{ simple ? 'Use' : label.slice(-1) }} on a song to load it here.</p>
 
-      <div class="vinyl my-4 mx-auto">
-        <div class="vinyl-label" :style="{ background: color }"></div>
+      <!-- The record spins while this deck is playing (the "spinning" class turns the animation on) -->
+      <div class="vinyl my-4 mx-auto" :class="{ spinning: playing }" aria-hidden="true">
+        <div class="vinyl-label" :style="{ background: color }">
+          <div class="vinyl-hole"></div>
+        </div>
       </div>
 
       <WaveformBars :bars="bars" class="mb-3" />
@@ -135,18 +138,25 @@ const bars = computed(function () {
       <input :value="volume" type="range" class="form-range" min="0" max="100" @input="onVolumeInput" @change="onVolumeChange" />
 
       <div class="d-flex gap-2 mt-2">
-        <!-- Shows ❚❚ (pause) while playing, ▶ (play) when stopped.
-             aria-label: screen readers say "Play Deck A" instead of reading out the ▶ symbol.
+        <!-- Shows a pause icon while playing, a play icon when stopped.
+             aria-label: screen readers say "Play Deck A" instead of describing the icon.
              aria-pressed: tells them whether the deck is playing right now. -->
         <button
-          class="btn rounded-circle text-white"
+          class="btn rounded-circle text-white play-btn"
           :style="{ background: color }"
           :disabled="!track || loading"
           :aria-label="(playing ? 'Pause ' : 'Play ') + label"
           :aria-pressed="playing"
           @click="emit('toggle-play')"
         >
-          {{ playing ? '❚❚' : '▶' }}
+          <!-- Drawn icons, not ▶ ❚❚ characters: Windows shows those as coloured emoji -->
+          <svg v-if="playing" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="3" y="2" width="4" height="12" fill="currentColor" />
+            <rect x="9" y="2" width="4" height="12" fill="currentColor" />
+          </svg>
+          <svg v-else width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <polygon points="4,2 14,8 4,14" fill="currentColor" />
+          </svg>
         </button>
         <button v-if="!simple" class="btn btn-outline-secondary" :disabled="!track || loading" @click="emit('cue')">Cue</button>
       </div>
@@ -155,12 +165,44 @@ const bars = computed(function () {
 </template>
 
 <style scoped>
-/* The black record: a square with border-radius 50% becomes a circle */
+/* The black record: a square with border-radius 50% becomes a circle.
+   Not in syllabus: the gradients draw the grooves (thin rings) and the shine (two light wedges). */
 .vinyl {
   width: 180px;
   height: 180px;
   border-radius: 50%;
-  background: #1e1e2e;
+  background:
+    conic-gradient(from 30deg, transparent 0deg, rgba(255, 255, 255, 0.14) 25deg, transparent 50deg,
+      transparent 180deg, rgba(255, 255, 255, 0.14) 205deg, transparent 230deg),
+    repeating-radial-gradient(circle, #1e1e2e 0px, #1e1e2e 3px, #2b2b3d 4px, #1e1e2e 5px);
+  box-shadow: 0 4px 12px rgba(22, 26, 46, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Spin while playing: one full turn every 2 seconds, forever */
+.vinyl.spinning {
+  animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* People who turned on "reduce motion" on their device: no spinning */
+@media (prefers-reduced-motion: reduce) {
+  .vinyl.spinning {
+    animation: none;
+  }
+}
+
+/* Fixed size, so rounded-circle is always a circle (not an oval). 44px = the minimum comfortable tap size. */
+.play-btn {
+  width: 44px;
+  height: 44px;
+  padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -176,5 +218,17 @@ const bars = computed(function () {
   width: 70px;
   height: 70px;
   border-radius: 50%;
+  border: 3px solid rgba(255, 255, 255, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* The small hole in the middle */
+.vinyl-hole {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: white;
 }
 </style>

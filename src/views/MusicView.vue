@@ -580,7 +580,7 @@ onMounted(loadTracks)
     </div>
     <p class="small text-muted mb-3">
       {{ djMode ? 'Mix two songs together.' : 'Pick a song and the part you like.' }}
-      Everyone in the room shares this. ▶ plays on your own device.
+      Everyone in the room shares this. The play button plays on your own device only.
     </p>
     <div class="row g-4">
     <!-- LEFT: decks, mixer and your mix -->
