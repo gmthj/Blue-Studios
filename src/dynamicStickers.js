@@ -222,9 +222,11 @@ function nearCountry() {
 }
 
 // Look up a place by name ({ query: 'SMU' }) or by position ({ lat, lon }).
-// Returns { results: [{ names, summary, country, lat, lon }] }, best match first. names goes
-// from most specific to widest, e.g. ['SMU', 'Singapore Management University', 'Bras Basah',
+// Returns { results: [{ names, summary, country, lat, lon }], nearby }, best match first. names
+// goes from most specific to widest, e.g. ['SMU', 'Singapore Management University', 'Bras Basah',
 // 'Singapore'], and summary tells matches apart ("Jurong East · Singapore").
+// A position also gets nearby: landmarks within 1 km, closest first, e.g.
+// { name: 'National Museum of Singapore', kind: 'Museum', distance: 154 } (metres).
 export async function findPlace({ query, lat, lon }) {
   const near = nearCountry()
   const search = query
