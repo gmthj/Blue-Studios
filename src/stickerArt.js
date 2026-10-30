@@ -348,6 +348,10 @@ const FONT_GROUPS = [
   },
 ]
 
+// WHY one sample word for every font: the same words in each style make the fonts easy to
+// compare, and new text starts as our name instead of a random phrase.
+export const FONT_SAMPLE = 'Blue Studios'
+
 // WHY the split: "name" is taken from the label's first word, so 'Caveat (Doodle
 // Signature)' becomes 'Caveat' — short enough to store on a layer and to show in a list.
 // "label" stays for the picker, "stack" is the CSS to draw it.
@@ -357,7 +361,7 @@ export const FONT_GROUPS_READY = FONT_GROUPS.map((group) => ({
     name: font.label.split(' (')[0],
     label: font.label,
     stack: font.family,
-    preview: font.preview,
+    preview: FONT_SAMPLE,
   })),
 }))
 
