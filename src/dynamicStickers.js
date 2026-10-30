@@ -176,7 +176,12 @@ export async function fetchWeather({ city, lat, lon }) {
   const cached = weatherCache.get(query)
   if (cached && Date.now() - cached.at < 10 * 60 * 1000) return cached.data
 
-  const response = await fetch('/api/weather?' + query)
+  let response
+  try {
+    response = await fetch('/api/weather?' + query)
+  } catch (error) {
+    throw new Error('No internet connection. Check it and try again.')
+  }
   let data = null
   try {
     data = await response.json()
@@ -184,9 +189,62 @@ export async function fetchWeather({ city, lat, lon }) {
     // Not JSON: usually "npm run dev" instead of "vercel dev", so /api does not exist.
   }
   if (!response.ok || !data || data.error) {
-    throw new Error((data && data.error) || 'Weather is not available right now.')
+    throw new Error((data && data.error) || NO_SERVER('Weather'))
   }
   weatherCache.set(query, { at: Date.now(), data })
+  return data
+}
+
+// No JSON back almost always means "npm run dev", where the /api functions do not exist.
+function NO_SERVER(what) {
+  return what + ' needs the server. On your laptop, run "vercel dev" instead of "npm run dev".'
+}
+
+// The person's country as 2 letters, guessed without asking. Used so "SMU" finds the
+// Singapore one, not the one in Texas.
+// WHY the time zone first: it follows where the phone actually is, while the browser
+// language is often US English (en-US) even in Singapore.
+const ZONE_COUNTRY = {
+  'Asia/Singapore': 'sg', 'Asia/Kuala_Lumpur': 'my', 'Asia/Jakarta': 'id', 'Asia/Bangkok': 'th',
+  'Asia/Manila': 'ph', 'Asia/Ho_Chi_Minh': 'vn', 'Asia/Hong_Kong': 'hk', 'Asia/Taipei': 'tw',
+  'Asia/Tokyo': 'jp', 'Asia/Seoul': 'kr', 'Asia/Shanghai': 'cn', 'Asia/Kolkata': 'in',
+  'Australia/Sydney': 'au', 'Europe/London': 'gb',
+}
+function nearCountry() {
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone || ''
+  if (ZONE_COUNTRY[zone]) return ZONE_COUNTRY[zone]
+  const languages = (typeof navigator !== 'undefined' && navigator.languages) || []
+  for (const tag of languages) {
+    const region = /^[a-z]{2,3}-([A-Z]{2})$/.exec(tag)
+    if (region) return region[1].toLowerCase()
+  }
+  return ''
+}
+
+// Look up a place by name ({ query: 'SMU' }) or by position ({ lat, lon }).
+// Returns { results: [{ names, summary, country, lat, lon }] }, best match first. names goes
+// from most specific to widest, e.g. ['SMU', 'Singapore Management University', 'Bras Basah',
+// 'Singapore'], and summary tells matches apart ("Jurong East · Singapore").
+export async function findPlace({ query, lat, lon }) {
+  const near = nearCountry()
+  const search = query
+    ? 'q=' + encodeURIComponent(query) + (near ? '&near=' + near : '')
+    : 'lat=' + Number(lat).toFixed(4) + '&lon=' + Number(lon).toFixed(4)
+  let response
+  try {
+    response = await fetch('/api/place?' + search)
+  } catch (error) {
+    throw new Error('No internet connection. Check it and try again.')
+  }
+  let data = null
+  try {
+    data = await response.json()
+  } catch (error) {
+    // Not JSON: see NO_SERVER.
+  }
+  if (!response.ok || !data || data.error || !Array.isArray(data.results)) {
+    throw new Error((data && data.error) || NO_SERVER('Finding places'))
+  }
   return data
 }
 
