@@ -321,7 +321,11 @@ function formatDate(time) {
             @click="folderFilter = f.id"
           >{{ f.name }}</button>
         </div>
-        <div v-else class="row g-3">
+        <div v-if="stickers.length > 0 && filteredStickers.length === 0" class="empty-state">
+          <span class="empty-icon"><AppIcon name="sparkle" :size="22" /></span>
+          No stickers in this folder yet.
+        </div>
+        <div v-else-if="stickers.length > 0" class="row g-3">
           <div v-for="sticker in filteredStickers" :key="sticker.id" class="col-6 col-md-3 col-xl-2">
             <div class="card h-100 overflow-hidden">
               <div class="preview sticker-preview"><StorageImage :src="sticker.cardUrl" :path="sticker.imagePath" :alt="sticker.name" /></div>
