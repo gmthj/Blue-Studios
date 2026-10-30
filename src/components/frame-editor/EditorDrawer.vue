@@ -48,6 +48,7 @@ const {
   handleFileUploadDrop,
   incrementBorderWidth,
   isDrawerOpen,
+  isScreenLg,
   isUploading,
   onAssetDragStart,
   onAssetDragEnd,
@@ -89,9 +90,9 @@ const {
 const templatesSubTab = ref('presets') // 'presets' | 'settings'
 const textSubTab = ref('add') // 'add' | 'edit'
 
-// Automatically focus edit sub-tab when user selects text on canvas
+// Automatically focus edit sub-tab when user selects text on canvas on mobile
 watch(activeTextElement, (newEl) => {
-  if (newEl) {
+  if (newEl && !isScreenLg.value) {
     textSubTab.value = 'edit'
   }
 })
@@ -178,8 +179,8 @@ watch(activeTextElement, (newEl) => {
 
         <!-- DRAWER CONTENT: TEMPLATES -->
         <div v-if="activeTool === 'templates'" class="drawer-content p-3 d-flex flex-column gap-3 overflow-y-auto flex-grow-1">
-          <!-- Segmented Sub-Tab Switcher: Presets vs Frame Settings -->
-          <div class="segmented-pills mb-1">
+          <!-- Segmented Sub-Tab Switcher: Presets vs Frame Settings (Mobile Only) -->
+          <div v-if="!isScreenLg" class="segmented-pills mb-1 d-lg-none">
             <button
               type="button"
               class="segmented-pill-btn"
@@ -198,8 +199,8 @@ watch(activeTextElement, (newEl) => {
             </button>
           </div>
 
-          <!-- SUB-TAB 1: STARTER PRESETS -->
-          <div v-if="templatesSubTab === 'presets'">
+          <!-- SUB-TAB 1: STARTER PRESETS (Always visible on desktop; on mobile when presets tab active) -->
+          <div v-if="isScreenLg || templatesSubTab === 'presets'">
             <div class="row row-cols-2 g-2">
               <div
                 v-for="tpl in templatePresets"
@@ -273,8 +274,8 @@ watch(activeTextElement, (newEl) => {
             </div>
           </div>
 
-          <!-- SUB-TAB 2: FRAME SETTINGS -->
-          <div v-else class="d-flex flex-column gap-3">
+          <!-- SUB-TAB 2: FRAME SETTINGS (Mobile Only) -->
+          <div v-else-if="!isScreenLg && templatesSubTab === 'settings'" class="d-flex flex-column gap-3">
             <!-- LAYOUT PRESETS -->
             <div class="d-flex flex-column gap-1">
               <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Layout Presets</label>
@@ -478,8 +479,8 @@ watch(activeTextElement, (newEl) => {
 
         <!-- DRAWER CONTENT: ELEMENTS (Stickers, Washi Tape, Shapes, Vectors) -->
         <div v-if="activeTool === 'elements'" class="drawer-content elements-drawer-content p-3 d-flex flex-column gap-3 overflow-y-auto flex-grow-1">
-          <!-- Selected Graphic/Sticker Quick Actions -->
-          <div v-if="activeSelectedElement && activeSelectedElement.type !== 'text'" class="card border rounded-3 p-2 bg-light mb-1">
+          <!-- Selected Graphic/Sticker Quick Actions (Mobile Only) -->
+          <div v-if="!isScreenLg && activeSelectedElement && activeSelectedElement.type !== 'text'" class="card border rounded-3 p-2 bg-light mb-1 d-lg-none">
             <div class="d-flex align-items-center justify-content-between mb-2">
               <span class="small fw-bold text-dark text-truncate">Edit {{ getElementDisplayName(activeSelectedElement) }}</span>
               <button class="btn btn-xs btn-outline-danger py-0 px-2" style="font-size: 0.72rem;" @click="removeSelectedElements">Delete</button>
@@ -678,8 +679,8 @@ watch(activeTextElement, (newEl) => {
 
         <!-- DRAWER CONTENT: TEXT -->
         <div v-if="activeTool === 'text'" class="drawer-content p-3 d-flex flex-column gap-3 overflow-y-auto flex-grow-1">
-          <!-- Text Sub-Tabs when text element is active -->
-          <div v-if="activeTextElement" class="segmented-pills mb-1">
+          <!-- Text Sub-Tabs when text element is active (Mobile Only) -->
+          <div v-if="!isScreenLg && activeTextElement" class="segmented-pills mb-1 d-lg-none">
             <button
               type="button"
               class="segmented-pill-btn"
@@ -698,8 +699,8 @@ watch(activeTextElement, (newEl) => {
             </button>
           </div>
 
-          <!-- SUB-TAB 1: ADD TEXT PRESETS -->
-          <div v-if="textSubTab === 'add' || !activeTextElement" class="d-flex flex-column gap-2">
+          <!-- SUB-TAB 1: ADD TEXT PRESETS (Always visible on desktop; on mobile when add tab active or no active text) -->
+          <div v-if="isScreenLg || textSubTab === 'add' || !activeTextElement" class="d-flex flex-column gap-2">
             <button
               v-for="preset in textPresets"
               :key="preset.label"
@@ -720,8 +721,8 @@ watch(activeTextElement, (newEl) => {
             </button>
           </div>
 
-          <!-- SUB-TAB 2: FORMAT SELECTED TEXT -->
-          <div v-else-if="activeTextElement" class="d-flex flex-column gap-3">
+          <!-- SUB-TAB 2: FORMAT SELECTED TEXT (Mobile Only) -->
+          <div v-else-if="!isScreenLg && activeTextElement" class="d-flex flex-column gap-3">
             <div class="d-flex flex-column gap-1">
               <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Text Content</label>
               <textarea
