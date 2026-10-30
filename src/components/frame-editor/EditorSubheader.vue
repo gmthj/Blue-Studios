@@ -42,17 +42,18 @@ const {
 
 <template>
   <!-- 2. Subheader Toolbar -->
-  <div class="d-flex align-items-center justify-content-between px-2 px-md-3 py-1 bg-white border-bottom position-relative" style="min-height: 44px; z-index: 100;">
-    <div class="d-flex align-items-center gap-1 gap-md-2 small flex-grow-1 me-2" style="min-width: 0;">
-      <router-link to="/studio" class="text-decoration-none text-muted d-flex align-items-center gap-1 me-1 text-nowrap flex-shrink-0" title="Back to My Studio">
+  <div class="d-flex align-items-center justify-content-between px-3 py-1 bg-white border-bottom position-relative" style="min-height: 44px; z-index: 100;">
+    <!-- Desktop Left: My Studio / Title input -->
+    <div class="d-none d-lg-flex align-items-center gap-2 small">
+      <router-link to="/studio" class="text-decoration-none text-muted d-flex align-items-center gap-1 me-1 text-nowrap" title="Back to My Studio">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="19" y1="12" x2="5" y2="12" />
           <polyline points="12 19 5 12 12 5" />
         </svg>
         <span class="fw-medium">My Studio</span>
       </router-link>
-      <span class="text-muted flex-shrink-0">/</span>
-      <div class="input-group input-group-sm template-name-group flex-grow-1" style="min-width: 0; max-width: 220px;">
+      <span class="text-muted">/</span>
+      <div class="input-group input-group-sm template-name-group" style="width: auto;">
         <span class="input-group-text border-end-0 px-2 py-0" title="Frame Title (Click to edit)">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
@@ -62,8 +63,8 @@ const {
         <input
           v-model="templateName"
           type="text"
-          class="form-control form-control-sm border-start-0 template-name-field ps-1 text-truncate"
-          style="font-size: 0.875rem;"
+          class="form-control form-control-sm border-start-0 template-name-field ps-1"
+          style="width: 185px; font-size: 0.875rem;"
           placeholder="my-templates-1"
           title="Frame Title (Click to edit)"
           maxlength="40"
@@ -71,6 +72,12 @@ const {
       </div>
     </div>
 
+    <!-- Mobile Left: Brand Title 'Frame Editor' -->
+    <div class="d-lg-none d-flex align-items-center">
+      <h1 class="h6 fw-bold text-dark m-0" style="font-size: 1.05rem; letter-spacing: -0.01em;">Frame Editor</h1>
+    </div>
+
+    <!-- Desktop Center: Controls -->
     <div class="d-none d-lg-flex align-items-center gap-2">
       <!-- Undo & Redo -->
       <div class="btn-group btn-group-sm">
@@ -220,24 +227,9 @@ const {
       </button>
     </div>
 
+    <!-- Right: Save Action (Desktop & Mobile) & My Templates (Desktop only) -->
     <div class="d-flex align-items-center gap-2">
-      <!-- Undo & Redo (Mobile only) -->
-      <div class="btn-group btn-group-sm d-lg-none">
-        <button class="btn btn-outline-secondary" :title="`Undo (${shortcuts.undo})`" :disabled="historyIndex <= 0" @click="undo">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 7v6h6" />
-            <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
-          </svg>
-        </button>
-        <button class="btn btn-outline-secondary" :title="`Redo (${shortcuts.redo})`" :disabled="historyIndex >= history.length - 1" @click="redo">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 7v6h-6" />
-            <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7" />
-          </svg>
-        </button>
-      </div>
-
-      <!-- My Templates Drawer Action Button (Desktop only; dropped on mobile to give space) -->
+      <!-- My Templates Drawer Action Button (Desktop only) -->
       <button
         type="button"
         class="btn btn-sm btn-outline-secondary d-none d-lg-flex align-items-center gap-1"
@@ -249,28 +241,28 @@ const {
         <span v-if="allUserTemplatesCount > 0" class="badge rounded-pill bg-primary ms-1">{{ allUserTemplatesCount }}</span>
       </button>
 
-      <!-- Save Frame Button (Shows 'Save Frame' if logged in, 'Login to save' if guest) -->
+      <!-- Save Frame Button -->
       <button
         v-if="isAccount"
-        class="btn btn-sm btn-primary d-flex align-items-center gap-1 fw-bold shadow-sm flex-shrink-0"
+        class="btn btn-sm btn-primary d-flex align-items-center gap-1 fw-bold shadow-sm px-3"
         :disabled="isSavingFrame"
         @click="saveFrame"
         :title="cloudId ? (isOwner ? `Save Frame to My Studio (${shortcuts.save})` : `Save a Copy to My Studio (${shortcuts.save})`) : `Save Frame to My Studio (${shortcuts.save})`"
       >
         <IconSave :size="14" :stroke-width="2.3" />
-        <span class="d-none d-sm-inline">{{ isSavingFrame ? 'Saving...' : (cloudId ? (isOwner ? 'Save Frame' : 'Save a Copy') : 'Save Frame') }}</span>
-        <span class="d-sm-none">{{ isSavingFrame ? '...' : 'Save' }}</span>
+        <span class="d-none d-lg-inline">{{ isSavingFrame ? 'Saving...' : (cloudId ? (isOwner ? 'Save Frame' : 'Save a Copy') : 'Save Frame') }}</span>
+        <span class="d-lg-none">{{ isSavingFrame ? '...' : 'Save' }}</span>
       </button>
 
       <router-link
         v-else
         :to="'/login?redirect=' + encodeURIComponent($route.fullPath)"
-        class="btn btn-sm btn-primary d-flex align-items-center gap-1 fw-bold shadow-sm text-decoration-none flex-shrink-0"
+        class="btn btn-sm btn-primary d-flex align-items-center gap-1 fw-bold shadow-sm text-decoration-none px-3"
         :title="`Log in to save your template to My Studio (${shortcuts.save})`"
       >
         <IconSave :size="14" :stroke-width="2.3" />
-        <span class="d-none d-sm-inline">Login to save</span>
-        <span class="d-sm-none">Login</span>
+        <span class="d-none d-lg-inline">Login to save</span>
+        <span class="d-lg-none">Login</span>
       </router-link>
     </div>
   </div>

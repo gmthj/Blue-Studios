@@ -2164,7 +2164,8 @@ label[for],
 
   .editor-body {
     position: relative;
-    height: calc(100% - 44px);
+    height: calc(100% - 44px - var(--fe-rail-h)) !important;
+    max-height: calc(100% - 44px - var(--fe-rail-h)) !important;
     overflow: hidden;
   }
 
@@ -2218,7 +2219,7 @@ label[for],
   .canvas-workspace {
     width: 100% !important;
     height: 100% !important;
-    padding-bottom: var(--fe-rail-h) !important;
+    padding-bottom: 0 !important;
   }
 
   /* Bottom Sheets: Expandable Canva Drawer & Properties Panel */

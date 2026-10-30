@@ -100,15 +100,16 @@ export function useCanvasViewport() {
 
     const isPhone = wsRect.width < 992
     const rulerOffset = (!isPhone && showRulers.value) ? 24 : 0
-    const paddingH = isPhone ? 44 : (110 + rulerOffset)
-    const paddingV = isPhone ? 72 : (100 + rulerOffset)
+    const paddingH = isPhone ? 48 : (110 + rulerOffset)
+    const paddingV = isPhone ? 88 : (100 + rulerOffset)
 
     const availW = Math.max(100, wsRect.width - paddingH)
     const availH = Math.max(100, wsRect.height - paddingV)
 
     const scaleW = availW / frameW
     const scaleH = availH / frameH
-    const target = Math.max(MIN_SCALE, Math.min(0.95, Math.min(scaleW, scaleH)))
+    const maxTarget = isPhone ? 0.80 : 0.95
+    const target = Math.max(MIN_SCALE, Math.min(maxTarget, Math.min(scaleW, scaleH)))
 
     const roundedScale = Math.round(target * 20) / 20
     scale.value = roundedScale

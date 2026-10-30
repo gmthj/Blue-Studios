@@ -106,6 +106,9 @@ onMounted(() => {
   nextTick(() => {
     if (typeof window !== 'undefined' && window.innerWidth < 992) {
       fitToScreen(canvasWorkspaceRef.value, stripRef.value)
+      setTimeout(() => {
+        fitToScreen(canvasWorkspaceRef.value, stripRef.value)
+      }, 100)
     }
   })
 })
