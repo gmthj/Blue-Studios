@@ -279,6 +279,7 @@ const liveCity = ref('')          // what is typed in the place box
 const livePlace = ref(null)       // { city, country } for the weather, once a place is found
 const liveResults = ref([])       // every match for the search (Jurong East, Jurong West...)
 const liveResultIndex = ref(0)    // which match is in use
+const liveNearby = ref([])        // landmarks around you, closest first: { name, kind, distance }
 const liveNames = ref([])         // names for the place, most specific first: SMU, Bras Basah, Singapore
 const liveLabel = ref('')         // the name the location sticker shows (picked or typed)
 const liveWeather = ref(null)     // the latest answer from /api/weather
@@ -682,7 +683,10 @@ async function copyStickerImage() {
 function addLiveLayer(config, live = null) {
   const { url, ratio } = dynamicDataUrl(config, live)
   const names = { time: 'Live time', date: 'Live date', weather: 'Weather', location: 'Location' }
-  addImageLayer(url, names[config.type], ratio, 56, 'live')
+  // WHY sized by height: a long name ("National Museum of Singapore") makes a much wider
+  // sticker, and at a fixed width its words came out tiny. Every live sticker starts about
+  // 22% of the canvas tall, unless that would be wider than 90% of it.
+  addImageLayer(url, names[config.type], ratio, Math.min(90, 22 / ratio), 'live')
   const layer = selectedLayer.value
   layer.dynamic = config
   layer.liveData = live // the last weather answer, so redrawing does not ask the server again
@@ -713,6 +717,7 @@ async function findCity() {
     const answer = await findPlace({ query })
     liveResults.value = answer.results
     liveResultIndex.value = 0
+    liveNearby.value = [] // the list is for "Use my location"; a typed place replaces it
     await usePlace(answer.results[0])
   } catch (error) {
     liveError.value = weatherMessage(error)
@@ -738,6 +743,11 @@ async function usePlace(place) {
   } catch (error) {
     liveError.value = 'Found the place, but not its weather. ' + weatherMessage(error)
   }
+}
+
+// "154 m" or "1.2 km" for the nearby list.
+function formatDistance(metres) {
+  return metres < 1000 ? Math.max(10, Math.round(metres / 10) * 10) + ' m' : (metres / 1000).toFixed(1) + ' km'
 }
 
 // A search matched several places (Jurong East, Jurong West...): use the one tapped.
@@ -772,10 +782,20 @@ function useMyLocation() {
   navigator.geolocation.getCurrentPosition(
     async (position) => {
       try {
-        const answer = await findPlace({ lat: position.coords.latitude, lon: position.coords.longitude })
-        liveResults.value = answer.results
-        liveResultIndex.value = 0
-        await usePlace(answer.results[0])
+        const { latitude, longitude } = position.coords
+        const answer = await findPlace({ lat: latitude, lon: longitude })
+        liveResults.value = []
+        liveNearby.value = answer.nearby || []
+        // If the area lookup found nothing but landmarks did, the closest landmark stands in.
+        const area = answer.results[0] || {
+          names: [liveNearby.value[0].name],
+          country: '',
+          lat: Number(latitude.toFixed(2)),
+          lon: Number(longitude.toFixed(2)),
+        }
+        await usePlace(area)
+        // Start on the closest landmark when it is close enough to be where you are.
+        if (liveNearby.value[0] && liveNearby.value[0].distance <= 100) liveLabel.value = liveNearby.value[0].name
       } catch (error) {
         liveError.value = weatherMessage(error)
       } finally {
@@ -792,7 +812,9 @@ function useMyLocation() {
         liveError.value = 'Could not find your location. Type a place instead.'
       }
     },
-    { timeout: 15000, maximumAge: 10 * 60 * 1000 },
+    // WHY high accuracy and a fresh fix: without them a phone may answer with a rough guess
+    // from Wi-Fi, or a position up to 10 minutes old, so the nearby list was for the wrong spot.
+    { enableHighAccuracy: true, timeout: 20000, maximumAge: 30 * 1000 },
   )
 }
 
@@ -2361,8 +2383,30 @@ function imageStyle(layer) {
                   </div>
                 </template>
 
-                <p class="sm-label mt-3">Name on the sticker</p>
-                <div v-if="liveNames.length > 1" class="sm-chip-row sm-chip-wrap" role="group" aria-label="Pick a name">
+                <!-- After "Use my location": landmarks around you, closest first -->
+                <template v-if="liveNearby.length > 0">
+                  <p class="sm-label mt-3">
+                    Places near you
+                    <span class="sm-count">{{ liveNearby.length }}</span>
+                  </p>
+                  <div class="sm-nearby" role="group" aria-label="Places near you">
+                    <button
+                      v-for="place in liveNearby"
+                      :key="place.name"
+                      type="button"
+                      class="sm-nearby-row"
+                      :class="{ active: liveLabel === place.name }"
+                      :aria-pressed="liveLabel === place.name"
+                      @click="liveLabel = place.name"
+                    >
+                      <span class="sm-nearby-name">{{ place.name }}</span>
+                      <span class="sm-nearby-meta">{{ place.kind }} · {{ formatDistance(place.distance) }}</span>
+                    </button>
+                  </div>
+                </template>
+
+                <p class="sm-label mt-3">{{ liveNearby.length > 0 ? 'Or the area' : 'Name on the sticker' }}</p>
+                <div v-if="liveNames.length > 1 || liveNearby.length > 0" class="sm-chip-row sm-chip-wrap" role="group" aria-label="Pick a name">
                   <button
                     v-for="name in liveNames"
                     :key="name"
@@ -3544,6 +3588,30 @@ function imageStyle(layer) {
 }
 .sm-result:active { transform: scale(0.98); }
 .sm-result.active { border-color: var(--brand); background: var(--brand-tint); color: var(--brand); font-weight: 600; }
+/* Places near you: scrolls inside itself so the stickers below stay reachable */
+.sm-nearby {
+  display: flex; flex-direction: column; gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  scrollbar-width: thin;
+}
+.sm-nearby-row {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
+  padding: 7px 10px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.sm-nearby-row.active { border-color: var(--brand); background: var(--brand-tint); }
+.sm-nearby-name { font-size: 0.85rem; font-weight: 600; color: var(--ink); }
+.sm-nearby-row.active .sm-nearby-name { color: var(--brand); }
+.sm-nearby-meta { font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
 .sm-live-note {
   display: flex; align-items: center; gap: 6px;
   margin: 0 0 12px;
@@ -3961,6 +4029,7 @@ function imageStyle(layer) {
   .sm-drop:hover { border-color: var(--brand); background: var(--brand-tint); }
   .sm-layer-row:not(.active):hover { background: var(--soft); }
   .sm-result:not(.active):hover { border-color: var(--brand); }
+  .sm-nearby-row:not(.active):hover { background: var(--soft); }
   .sm-row-del:hover { color: var(--danger); background: #FDE4E5; }
   .sm-close:hover { color: var(--ink); background: var(--soft); }
   .sm-mini:hover { color: var(--brand); border-color: var(--brand); }
