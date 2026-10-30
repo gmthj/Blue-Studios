@@ -154,6 +154,16 @@ export async function createScene({ layout, frameStyle, photosById, slotPhotos, 
     }
   }
 
+  // A custom template's artwork, drawn behind the photos (as on screen). If it cannot be loaded, the flat colour is used.
+  let frameArt = null
+  if (frameStyle.thumbnailUrl) {
+    try {
+      frameArt = await loadImage(frameStyle.thumbnailUrl)
+    } catch (error) {
+      console.error('The template artwork could not be loaded, so the plain frame colour is used', error)
+    }
+  }
+
   // The last good picture of each slot with video. While a video has no picture for a moment (right after it was
   // jumped to a time), this is shown instead of the photo or the empty frame, so there is no flash.
   const holds = slots.map(() => null)
@@ -227,6 +237,7 @@ export async function createScene({ layout, frameStyle, photosById, slotPhotos, 
     ctx.clearRect(0, 0, W, H)
     ctx.fillStyle = frameStyle.background
     ctx.fillRect(0, 0, W, H)
+    if (frameArt) ctx.drawImage(frameArt, 0, 0, W, H)
 
     for (let i = 0; i < slots.length; i++) {
       const s = slots[i]
@@ -278,11 +289,19 @@ export async function createScene({ layout, frameStyle, photosById, slotPhotos, 
       ctx.restore()
     }
 
-    // Caption
-    ctx.fillStyle = frameStyle.border
-    ctx.font = 'bold ' + Math.round(W * 0.038) + 'px sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText(frameStyle.caption, W / 2, H - H * 0.03)
+    // The frame's border (PhotoStrip draws a 4px border on a strip about 300px wide)
+    const borderWidth = (W * 4) / 300
+    ctx.strokeStyle = frameStyle.border
+    ctx.lineWidth = borderWidth
+    ctx.strokeRect(borderWidth / 2, borderWidth / 2, W - borderWidth, H - borderWidth)
+
+    // Caption (a template with artwork has its own, so the screen shows none)
+    if (frameStyle.caption && !frameStyle.thumbnailUrl) {
+      ctx.fillStyle = frameStyle.captionColor || frameStyle.border
+      ctx.font = 'bold ' + Math.round(W * 0.038) + 'px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText(frameStyle.caption, W / 2, H - H * 0.03)
+    }
   }
 
   return { aspect: layout.aspect, tick, stop, draw }

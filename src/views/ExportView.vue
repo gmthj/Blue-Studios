@@ -5,7 +5,7 @@ import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import { MAX_EDIT_SECONDS, resolveEditedVideos } from '../clips.js'
 import { createScene, recordScene } from '../stripRender.js'
-import { LAYOUTS, FRAME_STYLES } from '../stripData.js'
+import { roomLayout, roomFrameStyle } from '../stripData.js'
 import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
 
@@ -36,8 +36,8 @@ onBeforeUnmount(() => {
 
 // ---------- THE STRIP (read only here, made on the Pick and Decorate pages) ----------
 
-const layout = computed(() => LAYOUTS.find((l) => l.id === room.value.stripLayoutId) || LAYOUTS[0])
-const frameStyle = computed(() => FRAME_STYLES.find((s) => s.id === room.value.stripStyleId) || FRAME_STYLES[0])
+const layout = computed(() => roomLayout(room.value))         // a custom template brings its own cut and look
+const frameStyle = computed(() => roomFrameStyle(room.value))
 const slotPhotos = computed(() => room.value.stripSlots || {})
 const editedVideos = computed(() => resolveEditedVideos(room.value.editedVideos, clips.value))
 const edits = computed(() => room.value.stripEdits || {})

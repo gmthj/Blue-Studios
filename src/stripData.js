@@ -61,6 +61,38 @@ export const FRAME_STYLES = [
   { id: 'mine-sunny', group: 'mine', background: '#FFE8A3', border: '#E0A100', shape: 'rounded', caption: 'Our day out' },
 ]
 
+// ---------- WHAT THE ROOM HAS CHOSEN ----------
+// The cut and the frame of a room's strip, the same as on the Pick and Decorate pages.
+// A template picked from My Studio or the marketplace is saved as room.stripCustomTemplate: it brings its own slots
+// and look, and takes the place of the built-in layout and style. Without one, the built-in ones are used.
+
+// The cut: { id, name, aspect, slots: [{ x, y, w, h }] }
+export function roomLayout(room) {
+  const custom = room.stripCustomTemplate
+  if (custom?.slots?.length) {
+    return { id: custom.id, name: custom.name, aspect: custom.aspect || (3 / 10), slots: custom.slots }
+  }
+  return LAYOUTS.find((l) => l.id === room.stripLayoutId) || LAYOUTS[0]
+}
+
+// The frame: { background, border, shape, caption, captionColor, thumbnailUrl }
+export function roomFrameStyle(room) {
+  const custom = room.stripCustomTemplate
+  if (custom) {
+    return {
+      id: custom.id,
+      group: 'mine',
+      background: custom.background || '#FFFFFF',
+      border: custom.border || '#1A1A2E',
+      shape: custom.shape || 'square',
+      caption: custom.caption || '',
+      captionColor: custom.captionColor || custom.border,
+      thumbnailUrl: custom.thumbnailUrl || null,
+    }
+  }
+  return FRAME_STYLES.find((s) => s.id === room.stripStyleId) || FRAME_STYLES[0]
+}
+
 // ---------- STICKER TRAY ----------
 // The Decorate page's stickers are in stickerTray.js (Template Editor defaults + the account's own and saved stickers).
 
