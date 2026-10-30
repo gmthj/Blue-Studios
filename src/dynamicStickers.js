@@ -2,15 +2,14 @@
 // Blue Studios Photobooth — live ("dynamic") stickers
 // src/dynamicStickers.js
 // ============================================================
-// WHY this file exists: a dynamic sticker (time, date, weather, location) is not a fixed
-// picture. Firebase stores its SETTINGS (stickers/{id}.config) and each page draws it
-// fresh, so a time sticker shows the time when the strip is made, not when it was saved.
-// The Sticker Maker (Rae), the Template Editor (Joash) and the Decorate tray (Germaine)
-// all draw it with THIS file, so it looks the same everywhere.
+// WHY this file exists: a live sticker (time, date, weather, location) is drawn from a few
+// settings (its config) at the moment it is needed, so a time sticker shows the time when
+// the strip is decorated. The Decorate tray's Live tab (LiveStickerPicker.vue) uses it, and
+// any other page can draw the same stickers with it.
 //
 // HOW to use it (any page):
 //   import { renderDynamicSticker } from '../dynamicStickers.js'
-//   const { url, ratio } = await renderDynamicSticker(sticker.config)
+//   const { url, ratio } = await renderDynamicSticker(config)
 //   <img :src="url">  — a data: URL, so it can also be drawn on an export canvas.
 //
 // The config is small plain data, for example:
@@ -28,11 +27,21 @@ export const DYNAMIC_TYPES = [
   { id: 'location', label: 'Location' },
 ]
 
+// The looks. The first three are badges (a shape with an icon). The rest are just words on a
+// see-through background, so they sit on a photo like handwriting or a date stamp.
 export const DYNAMIC_STYLES = [
   { id: 'pill', label: 'Clean' },
   { id: 'bold', label: 'Bold' },
   { id: 'retro', label: 'Retro' },
+  { id: 'typewriter', label: 'Typewriter', text: true },
+  { id: 'stamp', label: 'Film date', text: true },
+  { id: 'cartoon', label: 'Cartoon', text: true },
+  { id: 'cute', label: 'Cute', text: true },
 ]
+
+export function isTextStyle(style) {
+  return DYNAMIC_STYLES.some((item) => item.id === style && item.text)
+}
 
 // WHY: colours for each style. Written out here (not CSS variables) because the sticker
 // is an SVG picture, which cannot see the page's CSS.
@@ -154,6 +163,147 @@ export function dynamicSvg(config, live = null, now = new Date()) {
     '</svg>'
 }
 
+// ---------- Text looks (typewriter, film date, cartoon, cute) ----------
+// WHY a canvas and not SVG: these need real fonts, and an SVG shown as a picture cannot load
+// web fonts. A canvas can, once the font has loaded, so they are drawn there as a PNG with a
+// see-through background.
+
+const LIVE_FONTS_URL = 'https://fonts.googleapis.com/css2?family=Special+Elite&family=Space+Mono:wght@700&family=Fredoka:wght@700&family=Gochi+Hand&display=swap'
+let liveFontsLoading = null
+
+// Add the fonts to the page once, and wait (at most 3 seconds) for the stylesheet to arrive.
+export function loadLiveFonts() {
+  if (liveFontsLoading) return liveFontsLoading
+  liveFontsLoading = new Promise((resolve) => {
+    if (typeof document === 'undefined') return resolve()
+    const link = document.createElement('link')
+    link.rel = 'stylesheet'
+    link.href = LIVE_FONTS_URL
+    link.onload = resolve
+    link.onerror = resolve // no fonts: the fallbacks below still draw
+    document.head.appendChild(link)
+    setTimeout(resolve, 3000)
+  })
+  return liveFontsLoading
+}
+
+// Each look: the font, sizes in pixels, and how each line is painted.
+//   fill: the letters' colour; outline: a border round each letter; glow / drop: a soft or hard shadow.
+const TEXT_LOOKS = {
+  typewriter: {
+    font: "'Special Elite', 'Courier New', monospace", weight: 400, mainSize: 64, subSize: 26, pad: 12,
+    main: { fill: '#2B2622' }, sub: { fill: '#5C544D' },
+  },
+  // The orange date printed in the corner of a film photo
+  stamp: {
+    font: "'Space Mono', 'Courier New', monospace", weight: 700, mainSize: 58, subSize: 0, pad: 18,
+    main: { fill: '#FF8A1F', glow: 'rgba(255, 120, 20, 0.75)' },
+  },
+  cartoon: {
+    font: "'Fredoka', 'Arial Rounded MT Bold', sans-serif", weight: 700, mainSize: 66, subSize: 32, pad: 16,
+    main: { fill: '#FFD43B', outline: '#14172B', outlineWidth: 9, drop: '#14172B' },
+    sub: { fill: '#FFFFFF', outline: '#14172B', outlineWidth: 5 }, // thinner, or small letters fill in
+  },
+  cute: {
+    font: "'Gochi Hand', 'Comic Sans MS', cursive", weight: 400, mainSize: 66, subSize: 30, pad: 12,
+    main: { fill: '#E8628B' }, sub: { fill: '#8B7FD1' },
+  },
+}
+
+// The words for a text look. They have no icon, so the second line says more: a time also
+// shows the date, like a note on a photo.
+function textLookWords(config, live, now) {
+  const text = dynamicText(config, live, now)
+  const style = config.style
+  if (style === 'stamp') {
+    // A real date stamp: one line, and the date as '26 10 30
+    if (config.type === 'date') {
+      const year = formatParts(now, { year: '2-digit' }, config.timeZone)
+      const month = formatParts(now, { month: '2-digit' }, config.timeZone)
+      const day = formatParts(now, { day: '2-digit' }, config.timeZone)
+      return { main: "'" + year + ' ' + month + ' ' + day, sub: '' }
+    }
+    if (config.type === 'location') return { main: String(config.city).toUpperCase(), sub: '' }
+    return { main: text.main, sub: '' }
+  }
+  let sub = text.sub
+  if (config.type === 'time') sub = formatParts(now, { weekday: 'short', day: 'numeric', month: 'short' }, config.timeZone)
+  if (config.type === 'location' && !config.country) sub = ''
+  if (style === 'typewriter') sub = sub.toLowerCase()
+  const main = style === 'cute' ? text.main + ' ♡' : text.main
+  return { main, sub }
+}
+
+function paintLine(ctx, words, x, y, paint) {
+  if (paint.drop) {
+    // A hard shadow down and to the right, drawn first, like a cartoon caption
+    ctx.lineWidth = paint.outlineWidth
+    ctx.strokeStyle = paint.drop
+    ctx.strokeText(words, x + 4, y + 5)
+    ctx.fillStyle = paint.drop
+    ctx.fillText(words, x + 4, y + 5)
+  }
+  if (paint.outline) {
+    ctx.lineWidth = paint.outlineWidth
+    ctx.strokeStyle = paint.outline
+    ctx.strokeText(words, x, y)
+  }
+  if (paint.glow) {
+    ctx.shadowColor = paint.glow
+    ctx.shadowBlur = 12
+  }
+  ctx.fillStyle = paint.fill
+  ctx.fillText(words, x, y)
+  ctx.shadowColor = 'transparent'
+  ctx.shadowBlur = 0
+}
+
+// A text look as a PNG with a see-through background: { url, ratio }.
+export async function drawTextSticker(config, live = null, now = new Date()) {
+  const look = TEXT_LOOKS[config.style] || TEXT_LOOKS.typewriter
+  await loadLiveFonts()
+  const mainFont = look.weight + ' ' + look.mainSize + 'px ' + look.font
+  const subFont = look.weight + ' ' + look.subSize + 'px ' + look.font
+  if (typeof document !== 'undefined' && document.fonts) {
+    // Ask for the exact font so the canvas does not draw with a stand-in
+    await Promise.race([
+      Promise.all([document.fonts.load(mainFont), look.subSize ? document.fonts.load(subFont) : null]),
+      new Promise((resolve) => setTimeout(resolve, 3000)),
+    ]).catch(() => {})
+  }
+
+  const words = textLookWords(config, live, now)
+  const showSub = Boolean(words.sub && look.subSize)
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+  ctx.font = mainFont
+  const mainWidth = ctx.measureText(words.main).width
+  ctx.font = subFont
+  const subWidth = showSub ? ctx.measureText(words.sub).width : 0
+  const room = look.pad + (look.main.outlineWidth || 0) + (look.main.drop ? 6 : 0) // space for outlines and shadows
+  canvas.width = Math.ceil(Math.max(mainWidth, subWidth) + room * 2)
+  canvas.height = Math.ceil(look.mainSize * 1.2 + (showSub ? look.subSize * 1.35 : 0) + room * 2)
+
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'alphabetic'
+  ctx.lineJoin = 'round'
+  const x = canvas.width / 2
+  const mainY = room + look.mainSize * 0.95
+  ctx.font = mainFont
+  paintLine(ctx, words.main, x, mainY, look.main)
+  if (showSub) {
+    ctx.font = subFont
+    paintLine(ctx, words.sub, x, mainY + look.subSize * 1.4, look.sub)
+  }
+  return { url: canvas.toDataURL('image/png'), ratio: canvas.height / canvas.width }
+}
+
+// Any look, as a picture: { url, ratio }. Badges come back as SVG straight away; text looks
+// are drawn on a canvas, which can take a moment while their font loads.
+export async function liveStickerImage(config, live = null, now = new Date()) {
+  return isTextStyle(config.style) ? drawTextSticker(config, live, now) : dynamicDataUrl(config, live, now)
+}
+
 // SVG -> a data: URL an <img> can show and a canvas can draw without being "tainted".
 export function dynamicDataUrl(config, live = null, now = new Date()) {
   const svg = dynamicSvg(config, live, now)
@@ -261,7 +411,7 @@ export async function renderDynamicSticker(config, now = new Date()) {
       live = null
     }
   }
-  return dynamicDataUrl(config, live, now)
+  return liveStickerImage(config, live, now)
 }
 
 // How often a page showing this sticker should redraw it (0 = never).
