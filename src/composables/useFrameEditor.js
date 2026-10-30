@@ -2430,6 +2430,17 @@ function triggerFileUpload() {
   }
 }
 
+const ALLOWED_UPLOAD_EXTS = ['.png', '.jpg', '.jpeg', '.svg']
+const ALLOWED_UPLOAD_MIMES = ['image/png', 'image/jpeg', 'image/svg+xml']
+
+function isAllowedUploadFile(file) {
+  if (!file) return false
+  const name = (file.name || '').toLowerCase()
+  const matchesExt = ALLOWED_UPLOAD_EXTS.some(ext => name.endsWith(ext))
+  const matchesMime = ALLOWED_UPLOAD_MIMES.includes(file.type)
+  return matchesExt || matchesMime
+}
+
 async function handleFileUpload(event) {
   const files = event?.target?.files
   if (!files || files.length === 0) return
@@ -2445,9 +2456,19 @@ async function handleFileUploadDrop(event) {
 }
 
 async function processUploadedFiles(files) {
+  if (!files || files.length === 0) return
+
+  const validFiles = files.filter(isAllowedUploadFile)
+  const rejectedCount = files.length - validFiles.length
+
+  if (validFiles.length === 0) {
+    notify('Only PNG, JPG, and SVG files are supported.')
+    return
+  }
+
   isUploading.value = true
-  for (const file of files) {
-    const isSvg = file.type === 'image/svg+xml' || file.name.endsWith('.svg')
+  for (const file of validFiles) {
+    const isSvg = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg')
     const reader = new FileReader()
 
     await new Promise(resolve => {
@@ -2491,7 +2512,11 @@ async function processUploadedFiles(files) {
     })
   }
   isUploading.value = false
-  notify(`Uploaded ${files.length} file${files.length > 1 ? 's' : ''}!`)
+  if (rejectedCount > 0) {
+    notify(`Uploaded ${validFiles.length} file${validFiles.length > 1 ? 's' : ''} (${rejectedCount} unsupported skipped — PNG, JPG & SVG only)`)
+  } else {
+    notify(`Uploaded ${validFiles.length} file${validFiles.length > 1 ? 's' : ''}!`)
+  }
 }
 
 async function deleteUpload(id, event) {

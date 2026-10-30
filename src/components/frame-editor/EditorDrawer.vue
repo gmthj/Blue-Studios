@@ -298,7 +298,7 @@ const {
             ref="uploadInputRef"
             type="file"
             multiple
-            accept="image/png, image/jpeg, image/webp, image/svg+xml"
+            accept=".png,.jpg,.jpeg,.svg,image/png,image/jpeg,image/svg+xml"
             class="d-none"
             @change="handleFileUpload"
           />
@@ -320,7 +320,7 @@ const {
             </div>
             <span class="fw-bold small text-dark d-block">{{ isUploading ? 'Processing assets...' : 'Upload files' }}</span>
             <span class="small text-muted d-block">Drag & drop or click to browse</span>
-            <span class="badge bg-secondary-subtle text-secondary align-self-center mt-2" style="font-size: 0.65rem;">PNG, JPG, WEBP, or SVG</span>
+            <span class="badge bg-secondary-subtle text-secondary align-self-center mt-2" style="font-size: 0.65rem;">PNG, JPG, or SVG</span>
           </div>
 
           <!-- Uploaded Media Grid -->
