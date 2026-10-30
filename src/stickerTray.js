@@ -1,29 +1,32 @@
-import { ELEMENT_CATEGORIES } from './constants/templateEditorData.js'
+import { STICKERS, SHAPES, TAPES, EMOJI } from './stickerArt.js'
+import { dynamicDataUrl, isTextStyle, drawTextSticker } from './dynamicStickers.js'
 import { listMyItems, getFileUrl } from './studio.js'
 import { listMySaved } from './marketplace.js'
 
-// The stickers for the Decorate page's sticker tray, in 3 tabs. Each tray item is { id, tab, name, src, saved }.
-//   'default' - the stickers from Joash's Template Editor (constants/templateEditorData.js), for everyone
-//   'mine'    - still stickers this account made in Rae's Sticker Maker or saved from the marketplace
-//   'giphy'   - GIF (animated) stickers this account made in the Sticker Maker or saved from the marketplace
+// The stickers for the Decorate page's sticker tray, in 3 tabs. Each tray item is
+// { id, tab, section, name, src, saved }.
+//   'default' - the same stickers as Rae's Sticker Maker (stickerArt.js), for everyone
+//   'live'    - time, date, weather, location: chosen in LiveStickerPicker.vue, drawn by liveStickerPng
+//   'mine'    - still stickers this account made in the Sticker Maker or saved from the marketplace
+//   'giphy'   - GIF (animated) stickers this account made or saved (shown under Mine, "My GIFs")
 
-const TRAY_SIZE = 160 // pixels: plenty for a strip, and small, because a placed sticker's picture is saved in the room
+const TRAY_SIZE = 160 // pixels on the longest side: plenty for a strip, and small, because a placed sticker's picture is saved in the room
 
-// ---------- DEFAULT (Joash's Template Editor stickers) ----------
+// ---------- DEFAULT (the shared library, stickerArt.js) ----------
 
-// Draw something on a square canvas and return it as a PNG picture (a data: URL).
-// The room only stores PNG/JPEG/GIF pictures, so the editor's SVG drawings and emojis are turned into PNGs here.
-function canvasPng(draw) {
+// Draw something on a canvas and return it as a PNG picture (a data: URL).
+// The room only stores PNG/JPEG/GIF pictures, so the library's SVG drawings and emojis are turned into PNGs here.
+function canvasPng(width, height, draw) {
   const canvas = document.createElement('canvas')
-  canvas.width = TRAY_SIZE
-  canvas.height = TRAY_SIZE
+  canvas.width = width
+  canvas.height = height
   draw(canvas.getContext('2d'))
   return canvas.toDataURL('image/png')
 }
 
 // An emoji as a PNG, the same on every device
 function emojiPng(emoji) {
-  return canvasPng((ctx) => {
+  return canvasPng(TRAY_SIZE, TRAY_SIZE, (ctx) => {
     ctx.font = Math.round(TRAY_SIZE * 0.74) + 'px "Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji",sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
@@ -31,44 +34,58 @@ function emojiPng(emoji) {
   })
 }
 
-// One of the editor's SVG drawings as a PNG, keeping its shape (fitted inside the square)
-function svgPng(svgRaw, width, height) {
+// An SVG picture (a data: URL) as a PNG of its own shape, longest side `longest` pixels.
+// WHY its own shape and not a square: a washi tape is long and thin, and in a square its
+// selection box on the strip would be far bigger than the tape.
+function svgPng(url, ratio, longest = TRAY_SIZE) {
   return new Promise((resolve, reject) => {
     const img = new Image()
-    img.onload = () => {
-      resolve(canvasPng((ctx) => {
-        const scale = Math.min(TRAY_SIZE / width, TRAY_SIZE / height) * 0.92 // a little space around it
-        const w = width * scale
-        const h = height * scale
-        ctx.drawImage(img, (TRAY_SIZE - w) / 2, (TRAY_SIZE - h) / 2, w, h)
-      }))
+    img.onload = async () => {
+      if (img.decode) await img.decode().catch(() => {}) // Safari can draw an SVG blank before this
+      const width = ratio <= 1 ? longest : Math.round(longest / ratio)
+      const height = ratio <= 1 ? Math.round(longest * ratio) : longest
+      resolve(canvasPng(width, height, (ctx) => ctx.drawImage(img, 0, 0, width, height)))
     }
     img.onerror = reject
-    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svgRaw)
+    img.src = url
   })
 }
 
-// Every sticker in the Template Editor's element list (SVG drawings and emojis).
-// Shapes and washi tapes are drawn by the editor itself, so they are not in the tray.
-// Made once, then kept, because drawing them takes a moment.
+// The tray's Default tab: every sticker, shape, washi tape and emoji in the library, in the
+// same sections as the Sticker Maker. Made once, then kept, because drawing them takes a moment.
+export const DEFAULT_SECTIONS = [
+  { id: 'stickers', title: 'Stickers', items: STICKERS },
+  { id: 'shapes', title: 'Cute shapes', items: SHAPES },
+  { id: 'tapes', title: 'Washi tape', items: TAPES },
+  { id: 'emoji', title: 'Emoji', items: EMOJI },
+]
 let defaultCache = null
 
 export async function loadDefaultStickers() {
   if (defaultCache) return defaultCache
   const items = []
-  for (const category of ELEMENT_CATEGORIES) {
-    for (const element of category.items) {
-      if (element.type !== 'sticker') continue
+  for (const section of DEFAULT_SECTIONS) {
+    for (const art of section.items) {
       try {
-        const src = element.isSvg ? await svgPng(element.svgRaw, element.width || 44, element.height || 44) : emojiPng(element.content)
-        items.push({ id: 'default-' + items.length, tab: 'default', name: element.name, src: src })
+        const src = art.kind === 'emoji' ? emojiPng(art.content) : await svgPng(art.url, art.ratio)
+        items.push({ id: 'default-' + art.id, tab: 'default', section: section.id, name: art.name, src: src })
       } catch (err) {
-        console.warn('Could not draw the sticker "' + element.name + '":', err)
+        console.warn('Could not draw the sticker "' + art.name + '":', err)
       }
     }
   }
   defaultCache = items
   return items
+}
+
+// ---------- LIVE (time, date, weather, location) ----------
+// A live sticker placed on a strip is a picture of that moment: the time when it was added,
+// the weather then. WHY bigger than the others: it is mostly words, which blur when small.
+export async function liveStickerPng(config, live) {
+  // The text looks (typewriter, film date...) are already drawn as a PNG, in their own font
+  if (isTextStyle(config.style)) return (await drawTextSticker(config, live)).url
+  const { url, ratio } = dynamicDataUrl(config, live)
+  return svgPng(url, ratio, TRAY_SIZE * 2)
 }
 
 // ---------- MY STICKERS and MY GIPHY (Rae's Sticker Maker) ----------
