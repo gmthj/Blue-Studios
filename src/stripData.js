@@ -93,6 +93,13 @@ export function roomFrameStyle(room) {
   return FRAME_STYLES.find((s) => s.id === room.stripStyleId) || FRAME_STYLES[0]
 }
 
+// Sticker pictures can be set by anyone in the room, so only these places are allowed in a finished export (see Germaine's guide)
+const TRUSTED_STICKER_SOURCES = ['https://firebasestorage.googleapis.com/', 'data:image/', 'https://media.giphy.com/']
+
+export function isTrustedStickerSrc(src) {
+  return TRUSTED_STICKER_SOURCES.some((prefix) => src.startsWith(prefix))
+}
+
 // ---------- STICKER TRAY ----------
 // The Decorate page's stickers are in stickerTray.js (Template Editor defaults + the account's own and saved stickers).
 
