@@ -101,7 +101,7 @@ export function isTrustedStickerSrc(src) {
 }
 
 // ---------- STICKER TRAY ----------
-// The Decorate page's stickers are in stickerTray.js (Template Editor defaults + the account's own and saved stickers).
+// The Decorate page's stickers are in stickerTray.js (the Sticker Maker's library, live stickers, and the account's own and saved stickers).
 
 // ---------- FILTERS (Decorate page) ----------
 // Each filter is a CSS "filter" value. The same text also works on a canvas (ctx.filter) for the download.
