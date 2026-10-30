@@ -59,9 +59,6 @@ const APP_FONT = 'Plus Jakarta Sans'
 // so the two can never disagree.
 const fontStack = (name) => (FONTS.find((f) => f.name === name) || FONTS[0]).stack
 
-// "Caveat (Doodle Signature)" -> "Doodle Signature": the hint shown under each font name.
-const fontHint = (font) => font.label.slice(font.name.length).replace(/[()]/g, '').trim()
-
 // WHY: the browser only makes a web font available to <canvas> after it has loaded.
 // Without this the first export after a page load draws the text in a fallback font.
 // Only the fonts actually used on a layer are loaded, not all 29.
@@ -102,13 +99,12 @@ const artSections = computed(() => [
   { id: 'emoji', title: 'Emoji', items: byTag(EMOJI) },
 ].filter((section) => section.items.length > 0))
 
-// Sizes are percentages of the canvas width, so a heading stays a heading at any size.
-const TEXT_STYLES = [
-  { name: 'Heading', size: 12, weight: 700 },
-  { name: 'Subheading', size: 9, weight: 600 },
-  { name: 'Body', size: 6, weight: 400 },
-  { name: 'Caption', size: 4, weight: 400 },
-]
+// The text bar's alignment button steps through these.
+const ALIGNS = ['left', 'center', 'right']
+
+// WHY check first: the screen colour picker (EyeDropper) only exists in Chrome and Edge on
+// computers. Elsewhere its button is simply not shown.
+const canPickFromScreen = typeof window !== 'undefined' && 'EyeDropper' in window
 
 // WHY: most icons come from the app's AppIcon component (design.md). AppIcon has no
 // "text", "sticker", "grip" or "sliders" icon, so those four stay as local paths here
@@ -120,6 +116,10 @@ const LOCAL_ICONS = {
   grip: 'M4 8h16 M4 16h16',
   clock: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18 M12 7v5l3 2',
   stop: 'M7 7h10v10H7z',
+  alignLeft: 'M4 6h16 M4 12h10 M4 18h14',
+  alignCenter: 'M4 6h16 M7 12h10 M5 18h14',
+  alignRight: 'M4 6h16 M10 12h10 M6 18h14',
+  pipette: 'M19 5a2.1 2.1 0 0 0-3 0l-2 2 3 3 2-2a2.1 2.1 0 0 0 0-3z M14 7l-9 9v3h3l9-9',
 }
 
 // icon: an AppIcon name; local: a LOCAL_ICONS name.
@@ -154,6 +154,7 @@ const stageWidth = ref(400)      // the canvas width in px, so text size scales 
 const mode = ref('sticker')      // 'sticker' | 'gif' — controls the frame strip and the save kind
 const tool = ref('stickers')     // which drawer is open: stickers | text | draw | upload
 const mobilePanel = ref(null)    // 'drawer' | 'props' | null, only used on small screens
+const drawerFolded = ref(false)  // laptop only: the tool panel is folded away to give the canvas room
 
 // A GIF is a list of frames and each frame has its own layers. A still sticker is
 // simply one frame, so the same editor serves both.
@@ -179,7 +180,10 @@ const gifSpeed = ref(6)          // frames per second
 // One source of truth means the rail highlight and the overlay can never disagree.
 const drawing = computed(() => tool.value === 'draw')
 
-const currentColor = ref('#101828')
+const currentColor = ref('#101828')   // the drawing colour
+// WHY a separate text colour: with one shared colour, picking red to draw also turned the
+// next text box red. Now each tool remembers its own.
+const textColor = ref('#101828')
 const brush = ref('pen')         // 'pen' | 'highlighter'
 const brushSize = ref(1.2)       // percent of the canvas width
 const drawLayerId = ref(null)    // the drawing layer new strokes are added to
@@ -421,16 +425,75 @@ const selectedKind = computed(() => {
   return 'Drawing'
 })
 
+// The text box the text tools act on (not an emoji, which is text too but has no font).
+const selectedText = computed(() => {
+  const layer = selectedLayer.value
+  return layer && layer.type === 'text' && !layer.emoji ? layer : null
+})
+
 // Clicking a font: restyle the selected text box, or start a new one in that font.
 function pickFont(font) {
-  const layer = selectedLayer.value
-  if (layer && layer.type === 'text' && !layer.emoji) {
+  if (selectedText.value) {
     snapshot()
-    layer.font = font.name
+    selectedText.value.font = font.name
+    // On a phone the sheet hides the canvas, so it closes to show the new font.
+    closeSheetOnPhone()
     return
   }
-  addText(null, font)
+  addText(font)
 }
+
+// ----
+// Text style: bold, italic, underline, alignment and colour (the bar above the canvas)
+// ----
+
+function toggleTextStyle(key) {
+  const layer = selectedText.value
+  if (!layer) return
+  snapshot()
+  if (key === 'bold') layer.weight = layer.weight >= 600 ? 400 : 700
+  else layer[key] = !layer[key] // 'italic' or 'underline'
+}
+
+function cycleAlign() {
+  const layer = selectedText.value
+  if (!layer) return
+  snapshot()
+  layer.align = ALIGNS[(ALIGNS.indexOf(layer.align) + 1) % ALIGNS.length]
+}
+
+function pickTextColor(color) {
+  textColor.value = color // new text boxes start in it too
+  if (selectedText.value) {
+    snapshot()
+    selectedText.value.color = color
+  }
+}
+
+// Pick any colour on the screen (Chrome and Edge on computers). Pressing Escape cancels,
+// which the browser reports as an error, so that is ignored on purpose.
+async function pickFromScreen(apply) {
+  try {
+    const result = await new window.EyeDropper().open()
+    apply(result.sRGBHex)
+  } catch (error) {
+    // cancelled
+  }
+}
+
+// Open the Text tool to choose a font for the selected text (the "Aa" on the text bar).
+function openFonts() {
+  tool.value = 'text'
+  if (isPhone()) mobilePanel.value = 'drawer'
+  else drawerFolded.value = false
+}
+
+// WHY: every text setting lives under the Text tool, so selecting a text box switches the
+// side panel there (on a laptop you see its fonts straight away). On a phone this only
+// moves the highlight in the tool bar; no sheet pops up over your text.
+watch(selectedText, (layer) => {
+  if (layer && tool.value !== 'text' && !drawing.value) tool.value = 'text'
+})
 
 // Every slider edit goes through here, so undo works the same for all of them.
 function setProp(key, value) {
@@ -475,6 +538,15 @@ function pickTool(id) {
     mobilePanel.value = null
     return
   }
+  // On a laptop, clicking the open tool again folds its panel away, so the canvas and the
+  // GIF frame strip get the width. Clicking any tool opens it again.
+  if (!isPhone()) {
+    if (tool.value === id && !drawerFolded.value) {
+      drawerFolded.value = true
+      return
+    }
+    drawerFolded.value = false
+  }
   tool.value = id
   editingId.value = null
   // Keep a selected text box selected when opening Text, so tapping a font restyles it.
@@ -490,9 +562,55 @@ function toggleEditSheet() {
   mobilePanel.value = mobilePanel.value === 'props' ? null : 'props'
 }
 
+// ----
+// GIF tips: three small pop-ups the first time someone opens GIF mode
+// WHY: frames are new to most people. Each tip points at the button it explains, and the
+// "?" on the frame strip shows them again. Remembered per browser (localStorage), so they
+// do not come back every visit; if storage is blocked they just show again, which is fine.
+// ----
+const GIF_TIPS = [
+  { target: 'add', title: 'Frames', text: 'A GIF is a few pictures shown one after another. Each square here is one picture, called a frame. Tap + to add the next one.' },
+  { target: 'duplicate', title: 'Duplicate', text: 'Duplicate copies the frame you are on. Then move or change a little, like a flip book, so it moves smoothly.' },
+  { target: 'play', title: 'Play and speed', text: 'Press Play to watch it move. Drag Speed to make it faster or slower.' },
+]
+const GIF_TIPS_KEY = 'sm-gif-tips-seen'
+const gifTipIndex = ref(-1)
+const gifTip = computed(() => GIF_TIPS[gifTipIndex.value] || null)
+
+function showGifTips() {
+  gifTipIndex.value = 0
+}
+
+function nextGifTip() {
+  if (gifTipIndex.value < GIF_TIPS.length - 1) gifTipIndex.value++
+  else closeGifTips()
+}
+
+function closeGifTips() {
+  gifTipIndex.value = -1
+  try {
+    localStorage.setItem(GIF_TIPS_KEY, '1')
+  } catch (error) {
+    // storage blocked: the tips will show again next time
+  }
+}
+
+function seenGifTips() {
+  try {
+    return localStorage.getItem(GIF_TIPS_KEY) === '1'
+  } catch (error) {
+    return false
+  }
+}
+
 function setMode(next) {
   mode.value = next
-  if (next === 'sticker') stopPlaying()
+  if (next === 'sticker') {
+    stopPlaying()
+    gifTipIndex.value = -1
+  } else if (!seenGifTips()) {
+    showGifTips()
+  }
   // The frame strip only exists in GIF mode, so the download format follows it.
   if (next === 'sticker' && dlFormat.value === 'gif') dlFormat.value = 'photo'
 }
@@ -637,7 +755,7 @@ async function onPaste(event) {
     layers.value.push({
       id, type: 'text', text: text.trim().slice(0, 200),
       x: 50, y: 50, width: 70, size: 8, font: APP_FONT, weight: 600,
-      align: 'center', color: currentColor.value, rotation: 0,
+      align: 'center', color: textColor.value, rotation: 0,
     })
     selectedId.value = id
   }
@@ -912,10 +1030,10 @@ function addImageLayer(url, name, ratio, width, source = 'photo') {
   editingId.value = null
 }
 
-// style: one of TEXT_STYLES (or null). font: a font from the library, so clicking a font
-// in the Text drawer starts a box already set in that font, with its sample word.
+// font: a font from the library, so clicking a font in the Text drawer starts a box already
+// set in that font, with its sample word.
 // at: where to put it ({ x, y } in percent), for a double-click on the canvas.
-async function addText(style, font = null, at = null) {
+async function addText(font = null, at = null) {
   snapshot()
   const id = newId()
   layers.value.push({
@@ -925,11 +1043,13 @@ async function addText(style, font = null, at = null) {
     x: at ? at.x : 50,
     y: at ? at.y : 50,
     width: 70,             // percent of the canvas: the box the text wraps inside
-    size: style ? style.size : 10,
+    size: 10,              // bigger or smaller with the handles or the Size slider
     font: font ? font.name : APP_FONT,
-    weight: style ? style.weight : font ? 400 : 600,
+    weight: 400,           // normal, so the B on the text bar starts off and bolds it
+    italic: false,
+    underline: false,
     align: 'center',
-    color: currentColor.value,
+    color: textColor.value,
     rotation: 0,
   })
   selectedId.value = id
@@ -953,7 +1073,7 @@ function onCanvasPointerDown(event) {
     lastCanvasTap = null
     event.preventDefault()
     const [x, y] = pointInStage(event)
-    addText(null, null, { x, y })
+    addText(null, { x, y })
     return
   }
   // A single tap on empty canvas: finish typing and deselect.
@@ -1185,13 +1305,9 @@ function endRowDrag() {
 // Colours
 // ----
 
+// The drawing colour. Text has its own (pickTextColor), so drawing never recolours text.
 function pickColor(color) {
   currentColor.value = color
-  // If a text layer is selected, recolour it straight away.
-  if (selectedId.value) {
-    const layer = layers.value.find((item) => item.id === selectedId.value)
-    if (layer && layer.type === 'text') layer.color = color
-  }
 }
 
 // ----
@@ -1459,7 +1575,7 @@ async function renderFrameCanvas(frame, size = EXPORT_SIZE, background = 'transp
       const maxWidth = (layer.width || 70) * k
       ctx.translate(layer.x * k, layer.y * k)
       ctx.rotate((layer.rotation * Math.PI) / 180)
-      ctx.font = (layer.weight || 400) + ' ' + fontSize + 'px ' + fontStack(layer.font)
+      ctx.font = (layer.italic ? 'italic ' : '') + (layer.weight || 400) + ' ' + fontSize + 'px ' + fontStack(layer.font)
       ctx.fillStyle = layer.color
       ctx.textAlign = layer.align || 'center'   // matches text-align in the preview
       ctx.textBaseline = 'middle'
@@ -1473,6 +1589,16 @@ async function renderFrameCanvas(frame, size = EXPORT_SIZE, background = 'transp
       // Left-aligned text starts at the left edge of its box, right-aligned at the right.
       const startX = layer.align === 'left' ? -maxWidth / 2 : layer.align === 'right' ? maxWidth / 2 : 0
       lines.forEach((line, index) => ctx.fillText(line, startX, startY + index * lineHeight))
+      // A canvas cannot underline text, so draw the line under each row by hand, where the
+      // browser draws it on screen (just below the letters, about 1/16 of the size thick).
+      if (layer.underline) {
+        lines.forEach((line, index) => {
+          const lineWidth = ctx.measureText(line).width
+          const left = layer.align === 'left' ? startX : layer.align === 'right' ? startX - lineWidth : startX - lineWidth / 2
+          const thickness = Math.max(1, fontSize / 16)
+          ctx.fillRect(left, startY + index * lineHeight + fontSize * 0.42, lineWidth, thickness)
+        })
+      }
     } else if (layer.type === 'draw') {
       for (const stroke of layer.strokes) {
         ctx.save()
@@ -2065,14 +2191,14 @@ let resizeObserver = null
 
 // WHY: the canvas is square, so it must fit the smaller of the two sides of the grey
 // area. The spare pixels leave room for the corner labels and a little breathing space.
-// While drawing there is a toolbar along the top and the stroke size down the sides, so
-// the canvas steps in a little to keep them off it.
+// The top always keeps room for the text and drawing bars, so selecting text does not
+// make the canvas jump. While drawing, the sides also keep room for the stroke triangle.
 function measureStage() {
   const el = stageEl.value
   if (!el) return
   const box = el.getBoundingClientRect()
   const spareWidth = drawing.value ? 104 : 56
-  const spareHeight = drawing.value ? 128 : 64
+  const spareHeight = 128
   stageWidth.value = Math.max(180, Math.floor(Math.min(box.width - spareWidth, box.height - spareHeight)))
 }
 watch(drawing, () => nextTick(measureStage))
@@ -2125,6 +2251,8 @@ function textStyle(layer) {
     fontSize: (layer.size / 100) * stageWidth.value + 'px',
     fontFamily: fontStack(layer.font),
     fontWeight: layer.weight,
+    fontStyle: layer.italic ? 'italic' : 'normal',
+    textDecoration: layer.underline ? 'underline' : 'none',
     textAlign: layer.align,
     color: layer.color,
     transform: 'translate(-50%, -50%) rotate(' + layer.rotation + 'deg)',
@@ -2220,7 +2348,8 @@ function imageStyle(layer) {
           :key="item.id"
           type="button"
           class="sm-rail-btn"
-          :class="{ active: tool === item.id && mobilePanel !== 'props' }"
+          :class="{ active: tool === item.id && mobilePanel !== 'props', folded: tool === item.id && drawerFolded }"
+          :title="tool === item.id && !drawerFolded ? 'Hide this panel' : item.label"
           :aria-pressed="tool === item.id"
           @click="pickTool(item.id)"
         >
@@ -2245,10 +2374,11 @@ function imageStyle(layer) {
       </nav>
 
       <!-- Drawer: the contents of the open tool -->
-      <aside class="sm-panel sm-drawer sm-card" :class="{ 'is-open': mobilePanel === 'drawer' }">
+      <aside class="sm-panel sm-drawer sm-card" :class="{ 'is-open': mobilePanel === 'drawer', 'is-folded': drawerFolded }">
         <div class="sm-panel-head">
           <h2 class="sm-panel-title">{{ currentToolLabel }}</h2>
-          <button type="button" class="sm-close sm-mobile-only" aria-label="Close" @click="mobilePanel = null">
+          <!-- Closes the sheet on a phone, folds the panel away on a laptop -->
+          <button type="button" class="sm-close" aria-label="Hide this panel" title="Hide this panel" @click="isPhone() ? (mobilePanel = null) : (drawerFolded = true)">
             <AppIcon name="close" :size="16" />
           </button>
         </div>
@@ -2352,29 +2482,13 @@ function imageStyle(layer) {
 
           <!-- ---------- TEXT ---------- -->
           <template v-else-if="tool === 'text'">
-            <button type="button" class="btn btn-primary w-100 sm-action" @click="addText(null)">
+            <button type="button" class="btn btn-primary w-100 sm-action" @click="addText()">
               <AppIcon name="plus" :size="16" />
               <span>Add a text box</span>
             </button>
             <p class="sm-hint">
-              Or double-tap anywhere on the canvas. To change a font, select the text, then tap a font below.
+              {{ selectedText ? 'Tap a font to change the selected text.' : 'Or double-tap anywhere on the canvas.' }}
             </p>
-
-            <div class="sm-section">
-              <p class="sm-label">Text styles</p>
-              <div class="sm-grid sm-grid-2">
-                <button
-                  v-for="style in TEXT_STYLES"
-                  :key="style.name"
-                  type="button"
-                  class="sm-cell sm-cell-style"
-                  @click="addText(style)"
-                >
-                  <span class="sm-style-sample" :style="{ fontWeight: style.weight }">Aa</span>
-                  <span class="sm-cell-caption">{{ style.name }}</span>
-                </button>
-              </div>
-            </div>
 
             <!-- The fun fonts from the shared library. Each card is set in its own face. -->
             <div v-for="group in FONT_GROUPS_READY" :key="group.group" class="sm-section">
@@ -2388,8 +2502,8 @@ function imageStyle(layer) {
                   :key="font.name"
                   type="button"
                   class="sm-font-card"
-                  :class="{ active: selectedLayer && selectedLayer.type === 'text' && selectedLayer.font === font.name }"
-                  :title="selectedLayer && selectedLayer.type === 'text' && !selectedLayer.emoji ? 'Change to ' + font.name : 'Add text in ' + font.name"
+                  :class="{ active: selectedText && selectedText.font === font.name }"
+                  :title="selectedText ? 'Change to ' + font.name : 'Add text in ' + font.name"
                   @pointerdown.prevent
                   @click="pickFont(font)"
                 >
@@ -2566,15 +2680,25 @@ function imageStyle(layer) {
                 :aria-pressed="currentColor === color"
                 @click="pickDrawColor(color)"
               ></button>
-              <label class="sm-swatch sm-swatch-custom" title="Custom colour">
+              <label class="sm-swatch sm-swatch-custom" title="Any colour">
                 <input
                   type="color"
                   :value="currentColor"
-                  aria-label="Custom colour"
+                  aria-label="Any colour"
                   @change="pickDrawColor($event.target.value)"
                 />
                 <AppIcon name="plus" :size="14" />
               </label>
+              <button
+                v-if="canPickFromScreen"
+                type="button"
+                class="sm-swatch sm-pipette"
+                title="Pick a colour from the screen"
+                aria-label="Pick a colour from the screen"
+                @click="pickFromScreen(pickDrawColor)"
+              >
+                <svg viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true"><path :d="LOCAL_ICONS.pipette" /></svg>
+              </button>
             </div>
 
             <div class="sm-section sm-btn-row">
@@ -2585,10 +2709,6 @@ function imageStyle(layer) {
                 <AppIcon name="eraser" :size="14" /> Clear all
               </button>
             </div>
-            <p class="sm-hint">
-              Draw straight on the canvas. Switch pen or highlighter and change colours along the
-              top, and drag the triangle at the side for a thicker or thinner line.
-            </p>
           </template>
 
           <!-- ---------- UPLOAD ---------- -->
@@ -2616,7 +2736,88 @@ function imageStyle(layer) {
       <!-- ---------- CANVAS + FRAMES ---------- -->
       <main class="sm-main">
         <div ref="stageEl" class="sm-stage">
-          <template v-if="!drawing">
+          <!-- Text bar: shows while a text box is selected. pointerdown.prevent on the buttons
+               keeps you typing in the box while you press Bold or pick a colour. -->
+          <div v-if="selectedText && !drawing && !playing" class="sm-drawbar" role="toolbar" aria-label="Text style">
+            <button type="button" class="sm-drawbar-btn sm-textbar-font" title="Font" aria-label="Choose a font" @pointerdown.prevent @click="openFonts">
+              <span :style="{ fontFamily: fontStack(selectedText.font) }">Aa</span>
+            </button>
+            <span class="sm-drawbar-line" aria-hidden="true"></span>
+            <button
+              type="button"
+              class="sm-drawbar-btn sm-textbar-letter"
+              :class="{ active: selectedText.weight >= 600 }"
+              :aria-pressed="selectedText.weight >= 600"
+              aria-label="Bold"
+              title="Bold"
+              @pointerdown.prevent
+              @click="toggleTextStyle('bold')"
+            ><b>B</b></button>
+            <button
+              type="button"
+              class="sm-drawbar-btn sm-textbar-letter"
+              :class="{ active: selectedText.italic }"
+              :aria-pressed="!!selectedText.italic"
+              aria-label="Italic"
+              title="Italic"
+              @pointerdown.prevent
+              @click="toggleTextStyle('italic')"
+            ><i>I</i></button>
+            <button
+              type="button"
+              class="sm-drawbar-btn sm-textbar-letter"
+              :class="{ active: selectedText.underline }"
+              :aria-pressed="!!selectedText.underline"
+              aria-label="Underline"
+              title="Underline"
+              @pointerdown.prevent
+              @click="toggleTextStyle('underline')"
+            ><u>U</u></button>
+            <button
+              type="button"
+              class="sm-drawbar-btn"
+              :aria-label="'Align: ' + selectedText.align"
+              :title="'Align ' + selectedText.align + ' (tap to change)'"
+              @pointerdown.prevent
+              @click="cycleAlign"
+            >
+              <svg viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true">
+                <path :d="LOCAL_ICONS[selectedText.align === 'left' ? 'alignLeft' : selectedText.align === 'right' ? 'alignRight' : 'alignCenter']" />
+              </svg>
+            </button>
+            <span class="sm-drawbar-line" aria-hidden="true"></span>
+            <div class="sm-drawbar-colors">
+              <button
+                v-for="color in [...SOLID_COLORS, ...PASTEL_COLORS]"
+                :key="color"
+                type="button"
+                class="sm-drawbar-swatch"
+                :class="{ active: selectedText.color === color }"
+                :style="{ background: color }"
+                :aria-label="'Text colour ' + color"
+                :aria-pressed="selectedText.color === color"
+                @pointerdown.prevent
+                @click="pickTextColor(color)"
+              ></button>
+              <label class="sm-drawbar-swatch sm-swatch-custom" title="Any colour">
+                <input type="color" :value="selectedText.color" aria-label="Any text colour" @change="pickTextColor($event.target.value)" />
+                <AppIcon name="plus" :size="12" />
+              </label>
+              <button
+                v-if="canPickFromScreen"
+                type="button"
+                class="sm-drawbar-swatch sm-pipette"
+                title="Pick a colour from the screen"
+                aria-label="Pick a colour from the screen"
+                @pointerdown.prevent
+                @click="pickFromScreen(pickTextColor)"
+              >
+                <svg viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true"><path :d="LOCAL_ICONS.pipette" /></svg>
+              </button>
+            </div>
+          </div>
+
+          <template v-if="!drawing && !selectedText">
             <span class="sm-stage-pill sm-stage-tag">{{ EXPORT_SIZE }} × {{ EXPORT_SIZE }}</span>
             <span v-if="playing" class="sm-stage-pill sm-stage-zoom sm-stage-playing">Playing · tap to stop</span>
             <span v-else class="sm-stage-pill sm-stage-zoom">{{ zoomPercent }}%</span>
@@ -2637,8 +2838,9 @@ function imageStyle(layer) {
             >
               <AppIcon :name="item.icon" :size="18" />
             </button>
-            <span class="sm-drawbar-line" aria-hidden="true"></span>
-            <div class="sm-drawbar-colors">
+            <!-- Colours here on phones only: on a laptop they are already in the Draw panel -->
+            <span class="sm-drawbar-line sm-mobile-only" aria-hidden="true"></span>
+            <div class="sm-drawbar-colors sm-mobile-only">
               <button
                 v-for="color in [...SOLID_COLORS, ...PASTEL_COLORS]"
                 :key="color"
@@ -2650,10 +2852,20 @@ function imageStyle(layer) {
                 :aria-pressed="currentColor === color"
                 @click="pickColor(color)"
               ></button>
-              <label class="sm-drawbar-swatch sm-swatch-custom" title="Custom colour">
-                <input type="color" :value="currentColor" aria-label="Custom colour" @input="pickColor($event.target.value)" />
+              <label class="sm-drawbar-swatch sm-swatch-custom" title="Any colour">
+                <input type="color" :value="currentColor" aria-label="Any colour" @input="pickColor($event.target.value)" />
                 <AppIcon name="plus" :size="12" />
               </label>
+              <button
+                v-if="canPickFromScreen"
+                type="button"
+                class="sm-drawbar-swatch sm-pipette"
+                title="Pick a colour from the screen"
+                aria-label="Pick a colour from the screen"
+                @click="pickFromScreen(pickColor)"
+              >
+                <svg viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true"><path :d="LOCAL_ICONS.pipette" /></svg>
+              </button>
             </div>
             <span class="sm-drawbar-line" aria-hidden="true"></span>
             <button type="button" class="sm-drawbar-btn" aria-label="Undo last stroke" title="Undo last stroke" @click="undoStroke">
@@ -2798,6 +3010,21 @@ function imageStyle(layer) {
 
         <!-- Frame strip: the order here is the order the GIF plays in -->
         <div v-if="mode === 'gif'" class="sm-frames sm-card">
+          <!-- First-time tips: a small card above the strip, pointing at the button it explains -->
+          <div v-if="gifTip" class="sm-tip" :class="'sm-tip-' + gifTip.target" role="dialog" aria-live="polite" :aria-label="gifTip.title">
+            <div class="sm-tip-head">
+              <span class="sm-tip-title">{{ gifTip.title }}</span>
+              <span class="sm-tip-step">{{ gifTipIndex + 1 }} of {{ GIF_TIPS.length }}</span>
+            </div>
+            <p class="sm-tip-text">{{ gifTip.text }}</p>
+            <div class="sm-tip-actions">
+              <button type="button" class="sm-tip-skip" @click="closeGifTips">Skip</button>
+              <button type="button" class="btn btn-primary btn-sm" @click="nextGifTip">
+                {{ gifTipIndex === GIF_TIPS.length - 1 ? 'Got it' : 'Next' }}
+              </button>
+            </div>
+          </div>
+
           <div class="sm-frame-list">
             <div
               v-for="(frame, index) in frames"
@@ -2823,13 +3050,25 @@ function imageStyle(layer) {
               </div>
             </div>
 
-            <button type="button" class="sm-frame sm-frame-add" title="Add frame" aria-label="Add frame" @click="addFrame">
+            <button
+              type="button"
+              class="sm-frame sm-frame-add"
+              :class="{ 'sm-tip-target': gifTip && gifTip.target === 'add' }"
+              title="Add frame"
+              aria-label="Add frame"
+              @click="addFrame"
+            >
               <AppIcon name="plus" :size="18" />
             </button>
           </div>
 
           <div class="sm-frame-actions">
-            <button type="button" class="btn btn-outline-secondary btn-sm" @click="duplicateFrame">
+            <button
+              type="button"
+              class="btn btn-outline-secondary btn-sm"
+              :class="{ 'sm-tip-target': gifTip && gifTip.target === 'duplicate' }"
+              @click="duplicateFrame"
+            >
               <AppIcon name="duplicate" :size="14" /> Duplicate
             </button>
             <button
@@ -2846,7 +3085,7 @@ function imageStyle(layer) {
             <button
               type="button"
               class="btn btn-sm sm-play-btn"
-              :class="playing ? 'btn-primary' : 'btn-outline-primary'"
+              :class="[playing ? 'btn-primary' : 'btn-outline-primary', { 'sm-tip-target': gifTip && gifTip.target === 'play' }]"
               :disabled="frames.length < 2"
               :title="frames.length < 2 ? 'Add a second frame to see it move' : ''"
               :aria-pressed="playing"
@@ -2868,6 +3107,7 @@ function imageStyle(layer) {
               aria-label="GIF speed"
             />
             <span class="sm-frame-fps">{{ gifSpeed }} fps</span>
+            <button type="button" class="sm-tip-help" title="How to make a GIF" aria-label="How to make a GIF" @click="showGifTips">?</button>
           </div>
         </div>
       </main>
@@ -2894,40 +3134,10 @@ function imageStyle(layer) {
 
           <!-- Something selected -->
           <template v-else>
-            <!-- TEXT properties (emoji only get size + rotation) -->
+            <!-- TEXT: only size here. Font, bold, italic, colour and alignment are all under the
+                 Text tool and on the bar above the canvas, so there is one place for them. -->
             <template v-if="selectedLayer.type === 'text'">
-              <template v-if="!selectedLayer.emoji">
-                <button type="button" class="btn btn-outline-secondary btn-sm w-100 sm-action" @click="closeSheetOnPhone(); startEditing(selectedLayer)">
-                  <AppIcon name="edit" :size="14" /> Edit the words on the canvas
-                </button>
-
-                <div class="sm-section">
-                  <p class="sm-label">
-                    Font
-                    <span class="sm-count">{{ FONTS.length }}</span>
-                  </p>
-                  <!-- Every name is set in its own face, grouped like the Template Editor -->
-                  <div class="sm-font-list">
-                    <template v-for="group in FONT_GROUPS_READY" :key="group.group">
-                      <p class="sm-font-group">{{ group.group }}</p>
-                      <button
-                        v-for="font in group.fonts"
-                        :key="font.name"
-                        type="button"
-                        class="sm-font-item"
-                        :class="{ active: selectedLayer.font === font.name }"
-                        :aria-pressed="selectedLayer.font === font.name"
-                        @click="pickFont(font)"
-                      >
-                        <span class="sm-font-item-name" :style="{ fontFamily: font.stack }">{{ font.name }}</span>
-                        <span class="sm-font-item-hint">{{ fontHint(font) }}</span>
-                      </button>
-                    </template>
-                  </div>
-                </div>
-              </template>
-
-              <div class="sm-section">
+              <div class="sm-section mt-0">
                 <p class="sm-label">
                   Size
                   <span class="sm-count">{{ Math.round(selectedLayer.size) }}</span>
@@ -2945,65 +3155,6 @@ function imageStyle(layer) {
                   @input="setProp('size', +$event.target.value)"
                 />
               </div>
-
-              <template v-if="!selectedLayer.emoji">
-                <div class="sm-section">
-                  <p class="sm-label">Weight</p>
-                  <div class="seg-tabs sm-seg-block" role="group" aria-label="Weight">
-                    <button
-                      v-for="weight in [400, 500, 700]"
-                      :key="weight"
-                      type="button"
-                      class="seg-tab"
-                      :class="{ active: selectedLayer.weight === weight }"
-                      :aria-pressed="selectedLayer.weight === weight"
-                      :style="{ fontWeight: weight }"
-                      @click="snapshot(); setProp('weight', weight)"
-                    >{{ weight === 400 ? 'Regular' : weight === 500 ? 'Medium' : 'Bold' }}</button>
-                  </div>
-                </div>
-
-                <div class="sm-section">
-                  <p class="sm-label">Align</p>
-                  <div class="seg-tabs sm-seg-block" role="group" aria-label="Align">
-                    <button
-                      v-for="align in ['left', 'center', 'right']"
-                      :key="align"
-                      type="button"
-                      class="seg-tab"
-                      :class="{ active: selectedLayer.align === align }"
-                      :aria-pressed="selectedLayer.align === align"
-                      @click="snapshot(); setProp('align', align)"
-                    >{{ align === 'center' ? 'Centre' : align.charAt(0).toUpperCase() + align.slice(1) }}</button>
-                  </div>
-                </div>
-
-                <div class="sm-section">
-                  <p class="sm-label">Colour</p>
-                  <div class="sm-swatches">
-                    <button
-                      v-for="color in [...SOLID_COLORS, ...PASTEL_COLORS]"
-                      :key="color"
-                      type="button"
-                      class="sm-swatch"
-                      :class="{ active: selectedLayer.color === color }"
-                      :style="{ background: color }"
-                      :aria-label="'Colour ' + color"
-                      :aria-pressed="selectedLayer.color === color"
-                      @click="snapshot(); pickColor(color)"
-                    ></button>
-                    <label class="sm-swatch sm-swatch-custom" title="Custom colour">
-                      <input
-                        type="color"
-                        :value="selectedLayer.color"
-                        aria-label="Custom colour"
-                        @input="pickColor($event.target.value)"
-                      />
-                      <AppIcon name="plus" :size="14" />
-                    </label>
-                  </div>
-                </div>
-              </template>
             </template>
 
             <!-- PHOTO / STICKER properties -->
@@ -3525,6 +3676,14 @@ function imageStyle(layer) {
 }
 .sm-mobile-only { display: none; }
 
+/* Laptop: the tool panel folded away (click the open tool again, or its ×). Only above the
+   phone size, so a phone's sheet is never hidden by it. The tool's icon loses its blue tile,
+   so it is clear the panel is closed. */
+@media (min-width: 992px) {
+  .sm-drawer.is-folded { display: none; }
+  .sm-rail-btn.folded .sm-rail-tile { background: transparent; transform: none; }
+}
+
 .sm-panel {
   flex: 0 0 auto;
   width: 272px;
@@ -3574,9 +3733,12 @@ function imageStyle(layer) {
 .sm-chip-add { display: inline-flex; align-items: center; gap: 4px; color: var(--brand); border-style: dashed; }
 
 /* ---------- sticker grid ---------- */
-.sm-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
-.sm-grid-3 { grid-template-columns: repeat(3, 1fr); }
-.sm-grid-2 { grid-template-columns: repeat(2, 1fr); }
+/* WHY minmax(0, 1fr): a plain 1fr column never gets narrower than what is inside it, and the
+   sticker and tape pictures carry their own width (90-100px). On a phone that pushed them past
+   the edge of the screen while the emoji, which are just text, fitted. */
+.sm-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.sm-grid-3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.sm-grid-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .sm-cell {
   aspect-ratio: 1 / 1;
   display: flex; align-items: center; justify-content: center;
@@ -3589,11 +3751,9 @@ function imageStyle(layer) {
 }
 .sm-cell:active { transform: scale(0.94); }
 .sm-cell-wide { aspect-ratio: 2.2 / 1; }
-.sm-thumb { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.sm-thumb { width: 100%; height: 100%; min-width: 0; object-fit: contain; pointer-events: none; }
 .sm-emoji { font-size: 26px; line-height: 1; }
 .sm-cell-skeleton { aspect-ratio: 1 / 1; }
-.sm-cell-style { flex-direction: column; gap: 2px; aspect-ratio: auto; padding: 12px 8px; }
-.sm-style-sample { font-size: 1.3rem; line-height: 1.1; color: var(--ink); }
 .sm-cell-caption { font-size: 0.78rem; font-weight: 600; color: var(--muted); }
 
 .sm-empty-state { padding: 18px 14px; font-size: 0.85rem; }
@@ -3700,6 +3860,68 @@ function imageStyle(layer) {
   pointer-events: none;
 }
 .sm-stroke:focus-visible { outline: 2px solid var(--brand); outline-offset: 4px; }
+/* Phone-only parts of a bar (the drawing colours): hidden on a laptop, where the Draw
+   panel already shows them. Shown again in the phone section below. */
+.sm-drawbar .sm-mobile-only { display: none; }
+
+/* Text bar: "Aa" in the text's own font, and B / I / U set in their own style */
+.sm-textbar-font { width: auto; padding: 0 10px; font-size: 1.05rem; color: var(--ink); }
+.sm-textbar-letter { font-size: 1rem; color: var(--ink); font-family: Georgia, 'Times New Roman', serif; }
+.sm-textbar-letter.active { color: var(--brand); }
+/* The screen colour picker: a pipette in a white circle, next to the colours */
+.sm-pipette {
+  display: flex; align-items: center; justify-content: center;
+  background: #ffffff;
+  color: var(--muted);
+}
+.sm-pipette .sm-local-icon { width: 14px; height: 14px; }
+.sm-swatches .sm-pipette .sm-local-icon { width: 16px; height: 16px; }
+
+/* ---------- GIF tips ---------- */
+.sm-frames { position: relative; }
+.sm-tip {
+  position: absolute; left: 8px; bottom: calc(100% + 12px); z-index: 40;
+  width: min(300px, calc(100% - 16px));
+  padding: 14px 14px 12px;
+  border-radius: 16px;
+  background: var(--ink);
+  color: #ffffff;
+  box-shadow: 0 16px 40px rgba(20, 23, 43, 0.25);
+  animation: sm-pop 300ms var(--ease-out);
+}
+/* The little arrow under the card, roughly above the button it explains */
+.sm-tip::after {
+  content: '';
+  position: absolute; bottom: -6px; left: 28px;
+  width: 12px; height: 12px;
+  background: var(--ink);
+  transform: rotate(45deg);
+}
+.sm-tip-duplicate::after { left: 50%; }
+.sm-tip-play::after { left: auto; right: 40px; }
+.sm-tip-play { left: auto; right: 8px; }
+.sm-tip-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.sm-tip-title { font-size: 0.95rem; font-weight: 700; }
+.sm-tip-step { font-size: 0.75rem; color: #B9BECC; font-variant-numeric: tabular-nums; }
+.sm-tip-text { margin: 6px 0 10px; font-size: 0.85rem; line-height: 1.5; color: #E3E6EE; text-wrap: pretty; }
+.sm-tip-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.sm-tip-skip { padding: 4px 8px; border: 0; background: transparent; color: #B9BECC; font-size: 0.85rem; font-weight: 600; }
+/* The button a tip is about gets a soft pulsing ring */
+.sm-tip-target { position: relative; z-index: 1; animation: sm-tip-pulse 1.6s ease-out infinite; }
+@keyframes sm-tip-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(47, 91, 234, 0.45); }
+  100% { box-shadow: 0 0 0 10px rgba(47, 91, 234, 0); }
+}
+.sm-tip-help {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 0.85rem; font-weight: 700;
+}
 
 /* Round swatches with a ring when picked */
 .sm-swatches { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
@@ -4028,37 +4250,6 @@ function imageStyle(layer) {
 .sm-row span:first-child { color: var(--muted); }
 .sm-row span:last-child { font-weight: 600; font-variant-numeric: tabular-nums; }
 
-.sm-font-list {
-  max-height: 232px;
-  overflow-y: auto;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  scrollbar-width: thin;
-}
-.sm-font-group {
-  margin: 8px 8px 4px;
-  font-size: 0.72rem; font-weight: 700;
-  letter-spacing: 0.04em; text-transform: uppercase;
-  color: var(--muted);
-}
-.sm-font-group:first-child { margin-top: 4px; }
-.sm-font-item {
-  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
-  width: 100%;
-  padding: 7px 10px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--ink);
-  text-align: left;
-  transition: background-color 150ms ease, color 150ms ease;
-}
-.sm-font-item-name { font-size: 1.05rem; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sm-font-item-hint { font-size: 0.7rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 1; }
-.sm-font-item.active { color: var(--brand); background: var(--brand-tint); }
-.sm-font-item.active .sm-font-item-hint { color: var(--brand); }
-
 .sm-layers { margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--line); }
 .sm-layer-list { display: flex; flex-direction: column; gap: 4px; }
 .sm-layer-row {
@@ -4228,7 +4419,6 @@ function imageStyle(layer) {
 .sm-rail-btn:focus-visible,
 .sm-cell:focus-visible,
 .sm-font-card:focus-visible,
-.sm-font-item:focus-visible,
 .sm-drawbar-btn:focus-visible,
 .sm-drawbar-swatch:focus-visible,
 .sm-drawbar-done:focus-visible,
@@ -4249,7 +4439,6 @@ function imageStyle(layer) {
   .sm-rail-btn:not(.active):hover .sm-rail-tile { background: var(--soft); }
   .sm-cell:hover { border-color: var(--brand); background: var(--brand-tint); }
   .sm-font-card:hover { border-color: var(--brand); background: var(--brand-tint); }
-  .sm-font-item:not(.active):hover { background: var(--soft); }
   .sm-drawbar-btn:not(.active):hover { color: var(--ink); background: var(--soft); }
   .sm-grip-handle:hover { color: var(--ink); background: var(--soft); }
   .sm-drop:hover { border-color: var(--brand); background: var(--brand-tint); }
@@ -4292,7 +4481,8 @@ function imageStyle(layer) {
 
   .sm-body { flex-direction: column; gap: 8px; }
   .sm-mobile-only,
-  .sm-close.sm-mobile-only { display: flex; }
+  .sm-close.sm-mobile-only,
+  .sm-drawbar .sm-mobile-only { display: flex; }
 
   /* Tools: a bar pinned to the bottom of the screen, above the sheets */
   .sm-rail {
@@ -4328,8 +4518,8 @@ function imageStyle(layer) {
   .sm-sheet-backdrop { position: fixed; inset: 0; z-index: 1030; background: rgba(20, 23, 43, 0.12); }
 
   /* Smaller sticker tiles: six in a row instead of four */
-  .sm-art-grid { grid-template-columns: repeat(6, 1fr); gap: 6px; }
-  .sm-art-grid.sm-grid-2 { grid-template-columns: repeat(4, 1fr); } /* the 4 washi tapes in one tidy row */
+  .sm-art-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 6px; }
+  .sm-art-grid.sm-grid-2 { grid-template-columns: repeat(4, minmax(0, 1fr)); } /* the 4 washi tapes in one tidy row */
   .sm-art-grid .sm-cell { padding: 5px; border-radius: 10px; }
   .sm-art-grid .sm-emoji { font-size: 22px; }
   .sm-font-cards { grid-template-columns: 1fr 1fr; }
@@ -4367,6 +4557,7 @@ function imageStyle(layer) {
 
 /* ---------- reduced motion: no movement, colour changes stay ---------- */
 @media (prefers-reduced-motion: reduce) {
+  .sm-tip-target { animation: none; box-shadow: 0 0 0 3px rgba(47, 91, 234, 0.45); }
   .sm-rail-tile,
   .sm-cell,
   .sm-font-card,
