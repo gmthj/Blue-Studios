@@ -1,38 +1,23 @@
 <script setup>
 // ref: a value Vue watches. computed: a value worked out from other values (kept up to date by itself)
-import { ref, computed, onBeforeUnmount } from 'vue'
+// watch: run code when a value changes
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
-import { MAX_EDIT_SECONDS, resolveEditedVideos } from '../clips.js'
-import { createScene, recordScene } from '../stripRender.js'
+import { resolveEditedVideos } from '../clips.js'
 import { roomLayout, roomFrameStyle } from '../stripData.js'
+import { FORMATS, exportOptions, stripContents, hasGifSticker } from '../exportRules.js'
 import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
 
-// The "Export" page (a child of RoomLayout.vue): make an MP4 of a strip that has video in it.
-// A strip with only photos is downloaded from the Decorate page (JPG), so it is not exported here.
-// The MP4 is always MAX_EDIT_SECONDS long (15 seconds): videos that are shorter repeat until it ends.
-// "Make MP4" works in two steps: the page plays the strip on a hidden canvas and records it (stripRender.js),
-// then FFmpeg.wasm turns the recording into an MP4 (ffmpeg.js). FFmpeg is about 30 MB, so it is only downloaded
-// when the button is pressed. The MP4 has no sound yet (the Music Mixer is not part of the strip yet).
+// The "Export" page (a child of RoomLayout.vue): the room chooses HOW to export the strip and what to call it.
+// Nothing is made here. "Share and download" moves everyone to the Share page, where the file is made.
+// What is chosen is saved on the room, so everyone sees the same choice, live:
+//   room.exportFormat  'png' | 'gif' | 'mp4'
+//   room.exportName    the strip's name (shown on the Share page and in My Studio)
+// Which formats can be chosen is decided by exportRules.js (e.g. no PNG if the strip has a video).
 
-// room: the room document (live). photos / clips: everything taken in the room. roomRef(): the room's Firestore reference.
-const { code, room, photos, clips, roomRef } = useRoom()
-
-const VIDEO_WIDTH = 480 // the MP4 is this many pixels wide (the height follows the strip's shape)
-const FPS = 15          // frames per second
-
-const busy = ref(false)     // true while the MP4 is being made
-const status = ref('')      // what is happening now, e.g. "Recording..."
-const progress = ref(0)     // 0 to 1, for the progress bar
-const errorMessage = ref('')
-const result = ref(null)    // the finished MP4: { blob, url, filename }
-
-let leftPage = false // true once this page is closed, so a recording that is still running stops
-onBeforeUnmount(() => {
-  leftPage = true
-  if (result.value) URL.revokeObjectURL(result.value.url) // free the memory of the MP4
-})
+const { code, room, photos, clips, roomRef, goToStage } = useRoom()
 
 // ---------- THE STRIP (read only here, made on the Pick and Decorate pages) ----------
 
@@ -53,94 +38,90 @@ const photosById = computed(() => {
   return map
 })
 
-// The slots that have a video, in slot order: [ { slot, label, seconds } ]
-// A slot holds the id of a photo, a clip, or a saved edit (see StripView.vue), so look the id up in each.
-const videoSlots = computed(() => {
-  const list = []
-  for (let i = 0; i < layout.value.slots.length; i++) {
-    const id = slotPhotos.value[i]
-    const edit = editedVideos.value[id]
-    const clip = clips.value.find((c) => c.id === id)
-    if (edit && edit.entries.length > 0) {
-      list.push({ slot: i + 1, label: '✂ ' + edit.name, seconds: edit.seconds })
-    } else if (clip) {
-      list.push({ slot: i + 1, label: 'Video by ' + clip.name, seconds: null })
+// ---------- WHICH FORMATS CAN BE CHOSEN ----------
+
+const contents = computed(() =>
+  stripContents({ layout: layout.value, slotPhotos: slotPhotos.value, photosById: photosById.value, clips: clips.value, editedVideos: editedVideos.value })
+)
+const hasMusic = computed(() => Boolean(room.value.music && room.value.music.audioPath)) // the mix saved on the Music page
+
+// Looking at the stickers takes a moment (each one is checked to see if it is a GIF), so the cards wait for it
+const gifSticker = ref(false)
+const checking = ref(true)
+watch(
+  stickers,
+  async (list) => {
+    checking.value = true
+    const found = await hasGifSticker(list)
+    if (list === stickers.value) { // (the stickers may have changed again while we looked)
+      gifSticker.value = found
+      checking.value = false
     }
-  }
-  return list
+  },
+  { immediate: true }
+)
+
+const options = computed(() =>
+  exportOptions({ complete: contents.value.complete, hasVideo: contents.value.hasVideo, hasMusic: hasMusic.value, hasGifSticker: gifSticker.value })
+)
+
+const FORMAT_INFO = {
+  png: { name: 'PNG', blurb: 'A still picture of your strip' },
+  gif: { name: 'GIF', blurb: 'A looping animation, no sound' },
+  mp4: { name: 'MP4', blurb: 'A video with your music' },
+}
+
+// The chosen format: what the room saved, if it can still be used. If not (or nothing was chosen yet), the best one
+// that can be: MP4, then GIF, then PNG. null if nothing can be chosen (the strip is not finished).
+const chosenFormat = computed(() => {
+  const saved = room.value.exportFormat
+  if (saved && options.value[saved] && options.value[saved].available) return saved
+  return ['mp4', 'gif', 'png'].find((format) => options.value[format].available) || null
 })
 
-// ---------- MAKING THE MP4 ----------
-
-// Save a Blob (a file made in the browser) to the user's device: a temporary link is made and clicked
-function downloadBlob(blob, filename) {
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+async function chooseFormat(format) {
+  if (checking.value || !options.value[format].available) return
+  await updateDoc(roomRef(), { exportFormat: format })
 }
 
-async function makeMp4() {
-  busy.value = true
-  errorMessage.value = ''
-  progress.value = 0
-  if (result.value) { // a new MP4 replaces the old one
-    URL.revokeObjectURL(result.value.url)
-    result.value = null
+// ---------- THE NAME ----------
+
+const today = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })
+const suggestedName = computed(() => 'Room ' + code.value + ' · ' + today)
+
+// What is in the box. It follows the room (so everyone sees the same name), except while this person is typing in it.
+const nameDraft = ref(room.value.exportName ?? suggestedName.value)
+const typing = ref(false)
+watch(
+  () => room.value.exportName,
+  (saved) => {
+    if (!typing.value && saved !== undefined) nameDraft.value = saved
   }
+)
 
+// Save the name a moment after typing stops, not on every key
+let saveTimer = 0
+function onNameInput() {
+  typing.value = true
+  clearTimeout(saveTimer)
+  saveTimer = setTimeout(saveName, 400)
+}
+async function saveName() {
+  typing.value = false
   try {
-    // 1. Download the photos, stickers and videos, so every frame can be drawn quickly
-    status.value = 'Getting the videos ready...'
-    const scene = await createScene({
-      layout: layout.value,
-      frameStyle: frameStyle.value,
-      photosById: photosById.value,
-      slotPhotos: slotPhotos.value,
-      edits: edits.value,
-      crops: crops.value,
-      stickers: stickers.value,
-      clips: clips.value,
-      editedVideos: editedVideos.value,
-    })
-
-    // 2. Play the strip and record it (takes as long as the video: MAX_EDIT_SECONDS)
-    status.value = 'Recording the strip... keep this page open'
-    const recording = await recordScene(scene, {
-      width: VIDEO_WIDTH,
-      fps: FPS,
-      seconds: MAX_EDIT_SECONDS,
-      onProgress: (p) => (progress.value = p),
-      isCancelled: () => leftPage,
-    })
-    if (!recording) return // the page was closed
-
-    // 3. Turn it into an MP4. Safari already records an MP4, so it needs no converting (and no 30 MB download).
-    let blob = recording
-    if (!recording.type.includes('mp4')) {
-      progress.value = 0
-      status.value = 'Loading the converter... (the first time takes a while)'
-      const { toMp4 } = await import('../ffmpeg.js') // only downloaded now
-      status.value = 'Making the MP4...'
-      blob = await toMp4(recording, FPS, (p) => (progress.value = p))
-    }
-
-    if (leftPage) return
-    result.value = { blob: blob, url: URL.createObjectURL(blob), filename: 'photostrip-' + code.value + '.mp4' }
+    await updateDoc(roomRef(), { exportName: nameDraft.value.trim() })
   } catch (error) {
     console.error(error)
-    errorMessage.value = 'Could not make the MP4: ' + (error.message || 'please try again.')
   }
-  status.value = ''
-  busy.value = false
 }
+onBeforeUnmount(() => {
+  clearTimeout(saveTimer)
+  if (typing.value) saveName() // do not lose the last letters
+})
 
-// Everyone moves to another page together (RoomLayout.vue follows the room's "stage")
-async function goToStage(stage) {
-  await updateDoc(roomRef(), { stage: stage })
-}
+// ---------- NEXT ----------
+
+// "Share and download" will be clickable once the Share page exists (the next step): a format is chosen and the strip has a name
 </script>
 
 <template>
@@ -148,15 +129,12 @@ async function goToStage(stage) {
   <StageBar current="export" />
 
   <div class="row g-3">
-    <!-- LEFT: the strip, with its videos playing -->
-    <div class="col-12 col-md-6 col-lg-5 order-2 order-md-1">
+    <!-- LEFT: the final strip, with its videos playing -->
+    <div class="col-12 col-lg-4 order-2 order-lg-1">
       <div class="panel">
         <h2 class="h5 fw-bold">Your strip</h2>
         <!-- mode="view": only shows the strip (no dragging or editing). The videos play and repeat in their slots. -->
-        <!-- While recording, the preview is hidden: the page has enough to do, especially on a phone -->
-        <p v-if="busy" class="small text-muted">The strip is being recorded...</p>
         <PhotoStrip
-          v-else
           mode="view"
           :layout="layout"
           :frame-style="frameStyle"
@@ -171,55 +149,68 @@ async function goToStage(stage) {
       </div>
     </div>
 
-    <!-- RIGHT: what will be exported -->
-    <div class="col-12 col-md-6 col-lg-7 order-1 order-md-2">
+    <!-- MIDDLE: the format -->
+    <div class="col-12 col-lg-4 order-1 order-lg-2">
       <div class="panel">
-        <h2 class="h5 fw-bold">Export video</h2>
+        <h2 class="h5 fw-bold">Export</h2>
+        <p class="small text-muted mb-2">Format</p>
 
-        <!-- A strip with video: say what is in it and how long the MP4 will be -->
-        <template v-if="videoSlots.length > 0">
-          <p class="small text-muted">
-            Your video will be <strong>{{ MAX_EDIT_SECONDS }} seconds</strong> long. Videos that are shorter repeat until it ends.
-          </p>
-          <ul class="list-unstyled small">
-            <li v-for="v in videoSlots" :key="v.slot">
-              <span class="badge text-bg-light">Slot {{ v.slot }}</span>
-              {{ v.label }}<span v-if="v.seconds !== null"> · {{ v.seconds.toFixed(1) }}s</span>
-            </li>
-          </ul>
-          <p class="small text-muted">
-            It takes about {{ MAX_EDIT_SECONDS }} seconds to record, then a little longer to make the MP4. There is no sound yet.
-          </p>
-          <button class="btn btn-primary" :disabled="busy" @click="makeMp4">
-            {{ result ? 'Make it again' : 'Make MP4' }}
-          </button>
-
-          <!-- Progress while it works -->
-          <div v-if="busy" class="mt-3">
-            <p class="small mb-1"><span class="spinner-border spinner-border-sm me-2"></span>{{ status }}</p>
-            <div class="progress" style="height: 8px">
-              <div class="progress-bar" :style="{ width: Math.round(progress * 100) + '%' }"></div>
+        <!-- One card per format. A card that cannot be chosen is blurred, with the reason on top of it. -->
+        <div class="d-grid gap-2">
+          <div v-for="format in FORMATS" :key="format" class="format-wrap">
+            <div
+              class="format-card"
+              :class="{ selected: chosenFormat === format, locked: checking || !options[format].available }"
+              role="radio"
+              :aria-checked="chosenFormat === format"
+              :aria-disabled="checking || !options[format].available"
+              :tabindex="checking || !options[format].available ? -1 : 0"
+              @click="chooseFormat(format)"
+              @keydown.enter="chooseFormat(format)"
+              @keydown.space.prevent="chooseFormat(format)"
+            >
+              <div>
+                <div class="fw-bold">{{ FORMAT_INFO[format].name }}</div>
+                <div class="small text-muted">{{ FORMAT_INFO[format].blurb }}</div>
+              </div>
+              <span class="radio-dot"></span>
             </div>
+            <span v-if="!checking && !options[format].available" class="lock-reason">{{ options[format].reason }}</span>
           </div>
-          <p v-if="errorMessage" class="small text-danger mt-3 mb-0">{{ errorMessage }}</p>
+        </div>
 
-          <!-- The finished MP4: a preview and the download button -->
-          <div v-if="result" class="mt-3">
-            <video :src="result.url" class="result-video" controls loop playsinline></video>
-            <p class="small text-muted mb-1">{{ (result.blob.size / 1024 / 1024).toFixed(1) }} MB</p>
-            <button class="btn btn-success" @click="downloadBlob(result.blob, result.filename)">Download {{ result.filename }}</button>
-          </div>
-        </template>
+        <!-- PNG and GIF cannot carry the music: say so, and point to MP4 if it can be chosen -->
+        <p v-if="chosenFormat && options[chosenFormat].musicLost" class="small text-warning-emphasis bg-warning-subtle rounded p-2 mt-3 mb-0">
+          Your music won't be included in a {{ FORMAT_INFO[chosenFormat].name }}.
+          <template v-if="options.mp4.available">Choose MP4 to keep it.</template>
+        </p>
+      </div>
+    </div>
 
-        <!-- A strip with only photos: nothing to export here -->
-        <template v-else>
-          <p class="small text-muted">
-            This strip has no video, so there is nothing to export as an MP4. Photo strips are downloaded from the Decorate page.
-          </p>
-        </template>
+    <!-- RIGHT: the name, and on to the Share page -->
+    <div class="col-12 col-lg-4 order-3">
+      <div class="panel">
+        <h2 class="h5 fw-bold">Name your photostrip</h2>
+        <label for="strip-name" class="small text-muted mb-1">Everyone in the room sees this as you type</label>
+        <input
+          id="strip-name"
+          v-model="nameDraft"
+          type="text"
+          class="form-control"
+          maxlength="60"
+          :placeholder="suggestedName"
+          @input="onNameInput"
+          @blur="typing && saveName()"
+        />
+        <p class="small text-muted mt-2">It is the title on the Share page, and in My Studio if you save it there.</p>
+
+        <button class="btn btn-primary w-100 mt-2" disabled>
+          Share and download
+        </button>
+        <p class="small text-muted text-center mt-1 mb-0">The Share page is coming in the next step.</p>
 
         <hr />
-        <button class="btn btn-outline-secondary btn-sm" :disabled="busy" @click="goToStage('decorate')">&larr; Decorate</button>
+        <button class="btn btn-outline-secondary btn-sm" @click="goToStage('music')">&larr; Music</button>
       </div>
     </div>
   </div>
@@ -234,13 +225,66 @@ async function goToStage(stage) {
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
 }
 
-/* The finished MP4's preview: not taller than the screen */
-.result-video {
-  display: block;
-  max-width: 100%;
-  max-height: 60vh;
-  border-radius: 8px;
-  background: #000;
-  margin-bottom: 4px;
+/* wraps a format card, so the reason can sit on top of it without being blurred too */
+.format-wrap {
+  position: relative;
+}
+
+.format-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 2px solid #e3e6ef;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.format-card:hover:not(.locked) {
+  border-color: #b9c6f7;
+}
+
+.format-card.selected {
+  border-color: #2f5bea;
+  background: #f1f4ff;
+}
+
+/* Cannot be chosen: blurred and faded */
+.format-card.locked {
+  filter: blur(2.5px);
+  opacity: 0.55;
+  cursor: not-allowed;
+  user-select: none;
+}
+
+/* The round button on the right of a card: filled when chosen */
+.radio-dot {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border: 2px solid #b8bdd0;
+  border-radius: 50%;
+}
+
+.selected .radio-dot {
+  border-color: #2f5bea;
+  background: radial-gradient(#2f5bea 45%, transparent 50%);
+}
+
+/* The reason a card is blurred, in the middle of it, sharp. Lets taps through to the card. */
+.lock-reason {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 14px;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #1a1a2e;
+  pointer-events: none;
 }
 </style>
