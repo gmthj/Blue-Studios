@@ -310,7 +310,12 @@ function formatDate(time) {
             @click="folderFilter = f.id"
           >{{ f.name }}</button>
         </div>
-        <div v-else class="row g-3">
+        <!-- WHY v-if and not v-else: a v-else pairs with the element right before it, which is
+             the filter row above, so the grid only appeared when there were NO stickers. -->
+        <p v-if="stickers.length > 0 && filteredStickers.length === 0" class="text-muted small">
+          No stickers in this folder yet. Add some when you save in the Sticker Maker.
+        </p>
+        <div v-if="filteredStickers.length > 0" class="row g-3">
           <div v-for="sticker in filteredStickers" :key="sticker.id" class="col-6 col-md-3 col-xl-2">
             <div class="card h-100 overflow-hidden">
               <div class="preview sticker-preview"><StorageImage :path="sticker.imagePath" :alt="sticker.name" /></div>

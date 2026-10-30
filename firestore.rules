@@ -100,6 +100,19 @@ service cloud.firestore {
         && value.toSet().size() == value.size();
     }
 
+    // Live sticker settings (the same fields as cleanDynamicConfig in src/dynamicStickers.js).
+    // Only a city name is kept for weather/location, never coordinates.
+    function isDynamicConfig(c) {
+      return c is map
+        && c.keys().hasOnly(['type', 'style', 'hour12', 'timeZone', 'city', 'country'])
+        && c.type in ['time', 'date', 'weather', 'location']
+        && c.style in ['pill', 'bold', 'retro']
+        && (!('hour12' in c) || c.hour12 is bool)
+        && (!('timeZone' in c) || (c.timeZone is string && c.timeZone.size() <= 40))
+        && (!('city' in c) || (c.city is string && c.city.size() >= 1 && c.city.size() <= 60))
+        && (!('country' in c) || (c.country is string && c.country.size() <= 2));
+    }
+
     function itemPath(type, itemId) {
       return /databases/$(database)/documents/$(type)/$(itemId);
     }
@@ -371,18 +384,21 @@ service cloud.firestore {
     }
 
     // ---------- Stickers (made in the sticker maker) ----------
-    // stickers/{id}  { ownerId, ownerName, name, kind, categories, visibility, status, saveCount, imagePath, createdAt, updatedAt }
+    // stickers/{id}  { ownerId, ownerName, name, kind, categories, visibility, status, saveCount, imagePath, createdAt, updatedAt, config? }
     // The image is in Firebase Storage: stickers/{uid}/{id}/image
+    // config is only on 'dynamic' (live) stickers: the settings each page uses to redraw it.
 
     match /stickers/{itemId} {
       allow read: if canSeeItem();
 
       allow create: if isCreator()
-        && request.resource.data.keys().hasOnly(['ownerId', 'ownerName', 'name', 'kind', 'categories', 'visibility', 'status', 'saveCount', 'imagePath', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['ownerId', 'ownerName', 'name', 'kind', 'categories', 'visibility', 'status', 'saveCount', 'imagePath', 'createdAt', 'updatedAt', 'config'])
         && request.resource.data.ownerId == request.auth.uid
         && isMyName(request.resource.data.ownerName)
         && isTitle(request.resource.data.name)
         && request.resource.data.kind in ['static', 'animated', 'dynamic']
+        && (!('config' in request.resource.data)
+            || (request.resource.data.kind == 'dynamic' && isDynamicConfig(request.resource.data.config)))
         && isCategories(request.resource.data.categories)
         && canUseVisibility(request.resource.data.visibility)
         && request.resource.data.status == 'active'
@@ -393,12 +409,14 @@ service cloud.firestore {
 
       allow update: if isCreator()
         && resource.data.ownerId == request.auth.uid
-        && onlyChanged(['ownerName', 'name', 'categories', 'visibility', 'updatedAt'])
+        && onlyChanged(['ownerName', 'name', 'categories', 'visibility', 'updatedAt', 'config'])
         && isMyName(request.resource.data.ownerName)
         && isTitle(request.resource.data.name)
         && isCategories(request.resource.data.categories)
         && canUseVisibility(request.resource.data.visibility)
-        && request.resource.data.updatedAt is int;
+        && request.resource.data.updatedAt is int
+        && (!('config' in request.resource.data)
+            || (resource.data.kind == 'dynamic' && isDynamicConfig(request.resource.data.config)));
 
       allow update: if isAccount() && isSaveCounterChange('stickers', itemId);
 
