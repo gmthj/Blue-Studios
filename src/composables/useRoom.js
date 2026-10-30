@@ -50,6 +50,7 @@ export const ROOM_STAGES = [
   { id: 'decorate', label: 'Decorate', hasPage: true }, // /room/4821/decorate (DecorateView)
   { id: 'music', label: 'Music', hasPage: true },       // /room/4821/music    (MusicView)
   { id: 'export', label: 'Export', hasPage: true },     // /room/4821/export   (ExportView)
+  { id: 'share', label: 'Share', hasPage: true },       // /room/4821/share    (ShareView)
 ]
 
 // Position of a stage in ROOM_STAGES (0 = shoot). A missing stage counts as shoot.
@@ -65,8 +66,9 @@ const furthestIndex = computed(() => {
 })
 
 // Move everyone to another stage (RoomLayout.vue follows room.stage, on every device)
-async function goToStage(stageId) {
-  const changes = { stage: stageId }
+// extraFields: other room fields to save in the same write, e.g. goToStage('share', { exportJob: { ... } })
+async function goToStage(stageId, extraFields = {}) {
+  const changes = { ...extraFields, stage: stageId }
   if (stageIndex(stageId) > furthestIndex.value) {
     changes.furthestStage = stageId
   }

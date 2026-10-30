@@ -2,8 +2,9 @@
 // ref: a value Vue watches. computed: a value worked out from other values (kept up to date by itself)
 // watch: run code when a value changes
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import { updateDoc } from 'firebase/firestore'
-import { useRoom } from '../composables/useRoom.js'
+import { runTransaction, updateDoc } from 'firebase/firestore'
+import { db } from '../firebase.js'
+import { useRoom, stageIndex } from '../composables/useRoom.js'
 import { resolveEditedVideos } from '../clips.js'
 import { roomLayout, roomFrameStyle } from '../stripData.js'
 import { FORMATS, exportOptions, stripContents, hasGifSticker } from '../exportRules.js'
@@ -18,6 +19,7 @@ import PhotoStrip from '../components/PhotoStrip.vue'
 // Which formats can be chosen is decided by exportRules.js (e.g. no PNG if the strip has a video).
 
 const { code, room, photos, clips, roomRef, goToStage } = useRoom()
+// (the room's saved format and name are used by the Share page too, see ShareView.vue)
 
 // ---------- THE STRIP (read only here, made on the Pick and Decorate pages) ----------
 
@@ -121,7 +123,35 @@ onBeforeUnmount(() => {
 
 // ---------- NEXT ----------
 
-// "Share and download" will be clickable once the Share page exists (the next step): a format is chosen and the strip has a name
+const sharing = ref(false)
+const canShare = computed(() => !checking.value && !sharing.value && chosenFormat.value !== null && nameDraft.value.trim() !== '')
+
+// Move everyone to the Share page, where the file is made. The job (format and name) is saved on the room in the same write.
+// If two people press it at the same moment, the first one wins and the second just joins it: the transaction
+// checks the room again, and does nothing if the room has already moved on.
+async function shareAndDownload() {
+  sharing.value = true
+  const format = chosenFormat.value
+  const name = nameDraft.value.trim()
+  try {
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(roomRef())
+      const data = snap.data()
+      if (data.stage === 'share') return // someone was first: we follow them (RoomLayout moves us)
+      const changes = {
+        stage: 'share',
+        exportFormat: format,
+        exportName: name,
+        exportJob: { status: 'pending', format: format, name: name, progress: 0, updatedAt: Date.now() },
+      }
+      if (stageIndex('share') > stageIndex(data.furthestStage)) changes.furthestStage = 'share'
+      tx.update(roomRef(), changes)
+    })
+  } catch (error) {
+    console.error(error)
+  }
+  sharing.value = false
+}
 </script>
 
 <template>
@@ -197,17 +227,17 @@ onBeforeUnmount(() => {
           v-model="nameDraft"
           type="text"
           class="form-control"
-          maxlength="60"
+          maxlength="40"
           :placeholder="suggestedName"
           @input="onNameInput"
           @blur="typing && saveName()"
         />
         <p class="small text-muted mt-2">It is the title on the Share page, and in My Studio if you save it there.</p>
 
-        <button class="btn btn-primary w-100 mt-2" disabled>
-          Share and download
+        <button class="btn btn-primary w-100 mt-2" :disabled="!canShare" @click="shareAndDownload">
+          {{ sharing ? 'Opening...' : 'Share and download' }}
         </button>
-        <p class="small text-muted text-center mt-1 mb-0">The Share page is coming in the next step.</p>
+        <p v-if="!chosenFormat && !checking" class="small text-muted text-center mt-1 mb-0">Finish the strip first: every slot needs a photo or video.</p>
 
         <hr />
         <button class="btn btn-outline-secondary btn-sm" @click="goToStage('music')">&larr; Music</button>

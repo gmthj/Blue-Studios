@@ -101,6 +101,23 @@ service firebase.storage {
       allow delete: if isOwner(uid) || isAdmin();
     }
 
+    // ---------- Shares (a finished strip opened by its link) ----------
+    // shares/{uid}/{shareId}.png | .gif | .mp4
+    // Guests can make one too. The page opened by the link uses the file's own link (it has a long secret in it),
+    // so it needs no rule to read. Signed in people can also read it here.
+
+    match /shares/{uid}/{fileName} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.auth.uid == uid
+        && (
+          (fileName.matches('[A-Za-z0-9]+[.]png') && request.resource.size < 10 * 1024 * 1024 && request.resource.contentType == 'image/png')
+          || (fileName.matches('[A-Za-z0-9]+[.]gif') && request.resource.size < 50 * 1024 * 1024 && request.resource.contentType == 'image/gif')
+          || (fileName.matches('[A-Za-z0-9]+[.]mp4') && request.resource.size < 50 * 1024 * 1024 && request.resource.contentType == 'video/mp4')
+        );
+      allow update: if false;
+      allow delete: if (signedIn() && request.auth.uid == uid) || isAdmin();
+    }
+
     // ---------- Profile pictures ----------
     // avatars/{uid}/avatar.jpg   (made 256 x 256 in the browser before uploading, see useAuth.js)
     // Anyone signed in can see them: they are shown next to names everywhere.

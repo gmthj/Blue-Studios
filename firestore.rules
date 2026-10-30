@@ -459,6 +459,31 @@ service cloud.firestore {
       allow delete: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
     }
 
+    // ---------- Shares (a finished strip from the Export page, opened by its link and QR code) ----------
+    // shares/{id}  { ownerId, title, format, filePath, fileUrl, size, roomCode, createdAt }
+    // The file is in Firebase Storage: shares/{uid}/{id}.png | .gif | .mp4
+    // Guests can make one too. Anyone signed in (guests too) can open one if they know its id (a long random text),
+    // but nobody can list them. A share is never changed. Only its maker (or an admin) can delete it.
+
+    match /shares/{shareId} {
+      allow get: if signedIn();
+      allow list: if isAdmin();
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['ownerId', 'title', 'format', 'filePath', 'fileUrl', 'size', 'roomCode', 'createdAt'])
+        && request.resource.data.ownerId == request.auth.uid
+        && isTitle(request.resource.data.title)
+        && request.resource.data.format in ['png', 'gif', 'mp4']
+        && request.resource.data.filePath == 'shares/' + request.auth.uid + '/' + shareId + '.' + request.resource.data.format
+        && request.resource.data.fileUrl is string
+        && request.resource.data.size is int
+        && request.resource.data.roomCode is string
+        && request.resource.data.createdAt is int;
+
+      allow update: if false;
+      allow delete: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
     // ---------- Reports (an account flags a marketplace item for the admins) ----------
     // reports/{itemId_reporterUid}  { type, itemId, ownerId, reporterId, reason, details, status, createdAt }
     // The id is the item id + my uid, so each person can report each item only once.
@@ -521,7 +546,7 @@ service cloud.firestore {
 
     match /{collectionName}/{docId=**} {
       allow read, write: if signedIn()
-        && !(collectionName in ['rooms', 'users', 'templates', 'stickers', 'strips', 'reports', 'adminLog']);
+        && !(collectionName in ['rooms', 'users', 'templates', 'stickers', 'strips', 'shares', 'reports', 'adminLog']);
     }
   }
 }
