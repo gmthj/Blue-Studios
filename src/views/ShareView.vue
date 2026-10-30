@@ -240,16 +240,13 @@ async function saveToStudio() {
           <button class="btn btn-outline-secondary" @click="goToStage('export')">&larr; Export</button>
         </template>
         <template v-else>
-          <h2 class="h5 fw-bold">
-            <template v-if="job.status === 'working' && !building">{{ job.byName }} is making your {{ job.format.toUpperCase() }}</template>
-            <template v-else>Making your {{ job.format.toUpperCase() }}</template>
-          </h2>
+          <!-- The same words on every device: which device is making the file is whichever took the job first, so it is not said -->
+          <h2 class="h5 fw-bold">Making your {{ job.format.toUpperCase() }}</h2>
           <p class="small mb-1"><span class="spinner-border spinner-border-sm me-2"></span>{{ shownLabel || 'Starting...' }}</p>
           <div class="progress" style="height: 8px">
             <div class="progress-bar" :style="{ width: Math.round(shownProgress * 100) + '%' }"></div>
           </div>
-          <p v-if="building" class="small text-muted mt-3 mb-0">Keep this page open and visible until it is done. Everyone in the room is waiting for it.</p>
-          <p v-else class="small text-muted mt-3 mb-0">It is being made on {{ job.byName || 'another device' }}'s screen. It appears here when it is done.</p>
+          <p class="small text-muted mt-3 mb-0">Keep this page open until it is done. It appears here for everyone in the room.</p>
         </template>
       </div>
     </div>
