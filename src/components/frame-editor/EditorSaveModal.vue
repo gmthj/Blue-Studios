@@ -7,7 +7,6 @@ const {
   CATEGORIES,
   MAX_CATEGORIES,
   activeLayout,
-  alsoDownloadPng,
   chosenCategories,
   cloudErrorMessage,
   cloudId,
@@ -139,14 +138,6 @@ const {
                   {{ c.label }}
                 </button>
               </div>
-            </div>
-
-            <!-- Also download PNG checkbox -->
-            <div class="form-check">
-              <input id="modal-download-png" v-model="alsoDownloadPng" class="form-check-input" type="checkbox" />
-              <label class="form-check-label small text-secondary" for="modal-download-png">
-                Export a copy to desktop
-              </label>
             </div>
 
             <div v-if="cloudErrorMessage" class="alert alert-danger small py-2 mb-0">

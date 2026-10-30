@@ -120,7 +120,6 @@ const isSaveModalOpen = ref(false)
 const isSavingFrame = ref(false)
 const isSaveSuccess = ref(false)
 const cloudErrorMessage = ref('')
-const alsoDownloadPng = ref(true)
 
 // --- My Saved Templates Drawer & Template Switching State ---
 const isMyTemplatesDrawerOpen = ref(false)
@@ -631,10 +630,32 @@ function applySnapshot(state) {
 // =============================================================================
 // 6. Template Presets & Layout Operations
 // =============================================================================
+const isMobileEditSheetOpen = ref(false)
+
+function openMobileEditSheet() {
+  isDrawerOpen.value = false
+  isMobileEditSheetOpen.value = true
+}
+
+function toggleMobileEditSheet() {
+  if (isMobileEditSheetOpen.value) {
+    isMobileEditSheetOpen.value = false
+  } else {
+    isDrawerOpen.value = false
+    isMobileEditSheetOpen.value = true
+  }
+}
+
+function closeMobileSheets() {
+  isDrawerOpen.value = false
+  isMobileEditSheetOpen.value = false
+}
+
 function toggleDrawer(toolName) {
   if (activeTool.value === toolName && isDrawerOpen.value) {
     closeDrawer()
   } else {
+    isMobileEditSheetOpen.value = false
     activeTool.value = toolName
     isDrawerOpen.value = true
   }
@@ -1138,7 +1159,7 @@ function selectElement(el, event) {
 
   if (editingTextId.value === el.id) return
 
-  if (event.type === 'mousedown') {
+  if (event.type === 'mousedown' || event.type === 'touchstart') {
     startDrag(el, event)
   }
 }
@@ -1155,8 +1176,9 @@ function onElementDblClick(el) {
 }
 
 function startDrag(el, event) {
-  if (event.button !== 0) return
-  event.preventDefault()
+  const isTouch = Boolean(event.touches && event.touches.length > 0)
+  if (!isTouch && event.button !== 0) return
+  if (event.cancelable) event.preventDefault()
 
   if (event.altKey) {
     duplicateSelectedElements()
@@ -1168,10 +1190,13 @@ function startDrag(el, event) {
   const frameW = stripRef.value?.offsetWidth || 280
   const frameH = stripRef.value?.offsetHeight || 556
 
+  const clientX = isTouch ? event.touches[0].clientX : event.clientX
+  const clientY = isTouch ? event.touches[0].clientY : event.clientY
+
   const selectedItems = canvasElements.value.filter(item => selectedElementIds.value.includes(item.id))
   dragData.value = {
-    startX: event.clientX,
-    startY: event.clientY,
+    startX: clientX,
+    startY: clientY,
     startElX: el.x || 0,
     startElY: el.y || 0,
     elementsInitial: selectedItems.map(item => ({
@@ -1192,6 +1217,21 @@ function startDrag(el, event) {
 
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('mouseup', onMouseUp)
+  window.addEventListener('touchmove', onTouchMove, { passive: false })
+  window.addEventListener('touchend', onTouchEnd)
+}
+
+function onTouchMove(event) {
+  if (!event.touches || event.touches.length === 0) return
+  if (event.cancelable) event.preventDefault()
+  onMouseMove({
+    clientX: event.touches[0].clientX,
+    clientY: event.touches[0].clientY
+  })
+}
+
+function onTouchEnd() {
+  onMouseUp()
 }
 
 function onMouseMove(event) {
@@ -1240,6 +1280,8 @@ function onMouseUp() {
   }
   window.removeEventListener('mousemove', onMouseMove)
   window.removeEventListener('mouseup', onMouseUp)
+  window.removeEventListener('touchmove', onTouchMove)
+  window.removeEventListener('touchend', onTouchEnd)
 }
 
 // =============================================================================
@@ -2881,7 +2923,7 @@ async function executeSave({ asCopy = false, redirectOnSuccess = true } = {}) {
       console.warn('Local IndexedDB backup skipped/failed:', idbErr)
     }
 
-    if (alsoDownloadPng.value || !isAccount.value) {
+    if (!isAccount.value) {
       const filename = `${sanitizeFilename(safeName)}.png`
       triggerFileDownload(blob, filename)
     }
@@ -3825,7 +3867,6 @@ onBeforeUnmount(() => {
     chosenCategories,
     isSaveModalOpen,
     cloudErrorMessage,
-    alsoDownloadPng,
     isOwner,
     showNotification,
     notificationMessage,
@@ -3871,6 +3912,10 @@ onBeforeUnmount(() => {
     slotShape,
     activeTool,
     isDrawerOpen,
+    isMobileEditSheetOpen,
+    openMobileEditSheet,
+    toggleMobileEditSheet,
+    closeMobileSheets,
     showCutouts,
     cutoutsLayerPosition,
     activeBgTab,

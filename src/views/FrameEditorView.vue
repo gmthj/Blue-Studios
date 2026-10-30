@@ -20,16 +20,20 @@ if (typeof document !== 'undefined') {
 
 const editor = provideFrameEditor()
 const {
-  isSavedFramesModalOpen,
-  savedFramesList,
+  closeMobileSheets,
   currentSavedFrameId,
-  openSavedFrame,
   deleteFrame,
   downloadSavedFrame,
   importFrameFromFile,
-  showNotification,
-  notificationMessage,
+  isDrawerOpen,
+  isMobileEditSheetOpen,
+  isSavedFramesModalOpen,
+  isScreenLg,
   isWorkspaceLoading,
+  notificationMessage,
+  openSavedFrame,
+  savedFramesList,
+  showNotification,
   workspaceLoadingMessage
 } = editor
 </script>
@@ -53,6 +57,13 @@ const {
       <!-- Right Properties Panel -->
       <EditorPropertiesPanel />
     </div>
+
+    <!-- Mobile Bottom-Sheet Backdrop Overlay -->
+    <div
+      v-if="!isScreenLg && (isDrawerOpen || isMobileEditSheetOpen)"
+      class="mobile-sheet-backdrop"
+      @click="closeMobileSheets"
+    ></div>
 
     <!-- Custom Canva-Style Right-Click Context Menu -->
     <EditorContextMenu />

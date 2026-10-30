@@ -2135,6 +2135,185 @@ label[for],
   opacity: 0;
 }
 
+/* ============================================================
+   MOBILE RESPONSIVENESS & BOTTOM WORKSPACE DRAWER (< 992px)
+   Matches Sticker Maker mobile workspace ergonomics
+   ============================================================ */
+@media (max-width: 991.98px) {
+  :root,
+  .canva-editor {
+    --fe-rail-h: calc(58px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .canva-editor.app-page {
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .fe-subheader {
+    min-height: 44px;
+    height: 44px;
+    padding-left: 8px !important;
+    padding-right: 8px !important;
+    flex-shrink: 0;
+  }
+
+  .template-name-group {
+    max-width: 140px;
+  }
+
+  .template-name-field {
+    width: 100% !important;
+    font-size: 0.8rem !important;
+  }
+
+  .editor-body {
+    position: relative;
+    height: calc(100% - 44px);
+    overflow: hidden;
+  }
+
+  /* Fixed Bottom Tool Rail */
+  .left-rail {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    height: var(--fe-rail-h) !important;
+    z-index: 1045 !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-around !important;
+    padding: 4px 6px calc(4px + env(safe-area-inset-bottom, 0px)) !important;
+    border-width: 1px 0 0 0 !important;
+    border-radius: 0 !important;
+    background: #ffffff !important;
+    box-shadow: 0 -4px 16px rgba(20, 23, 43, 0.08) !important;
+  }
+
+  .left-rail .btn {
+    flex: 1 1 0 !important;
+    max-width: 60px;
+    padding: 3px 2px !important;
+    border-radius: 10px !important;
+    font-size: 0.65rem !important;
+    gap: 1px !important;
+  }
+
+  .left-rail .btn svg {
+    width: 18px !important;
+    height: 18px !important;
+  }
+
+  /* Center Canvas Workspace */
+  .canvas-workspace {
+    width: 100% !important;
+    height: 100% !important;
+    padding-bottom: var(--fe-rail-h) !important;
+  }
+
+  /* Bottom Sheets: Expandable Canva Drawer & Properties Panel */
+  .canva-drawer,
+  .properties-panel {
+    position: fixed !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: var(--fe-rail-h) !important;
+    z-index: 1040 !important;
+    width: 100% !important;
+    max-width: 100vw !important;
+    max-height: 52vh !important;
+    max-height: 52dvh !important;
+    border-radius: 20px 20px 0 0 !important;
+    border-width: 1px 1px 0 1px !important;
+    box-shadow: 0 -12px 32px rgba(20, 23, 43, 0.16) !important;
+    background: #ffffff !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .canva-drawer {
+    display: flex !important;
+    animation: feSlideUpSheet 260ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .properties-panel {
+    display: none !important;
+    transform: translateY(calc(100% + var(--fe-rail-h)));
+    transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .properties-panel.is-mobile-open {
+    display: flex !important;
+    transform: translateY(0) !important;
+  }
+
+  /* Sheet grabber handle */
+  .mobile-sheet-grabber {
+    width: 38px;
+    height: 4px;
+    background: #cbd5e1;
+    border-radius: 999px;
+    margin: 8px auto 4px;
+    flex-shrink: 0;
+  }
+
+  /* Dimmed Backdrop behind bottom sheet */
+  .mobile-sheet-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 1035;
+    background: rgba(15, 23, 42, 0.28);
+    backdrop-filter: blur(2px);
+    -webkit-backdrop-filter: blur(2px);
+    animation: feBackdropFade 200ms ease;
+  }
+
+  /* Animation Overrides */
+  .drawer-enter-active,
+  .drawer-leave-active {
+    transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1), opacity 180ms ease !important;
+  }
+
+  .drawer-enter-from,
+  .drawer-leave-to {
+    width: 100% !important;
+    transform: translateY(calc(100% + var(--fe-rail-h))) !important;
+    opacity: 0 !important;
+  }
+
+  /* Templates & elements grid in mobile drawer */
+  .template-presets-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px !important;
+  }
+}
+
+@keyframes feSlideUpSheet {
+  from {
+    transform: translateY(calc(100% + var(--fe-rail-h, 60px)));
+    opacity: 0.8;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes feBackdropFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (max-width: 420px) {
+  .template-name-group {
+    max-width: 110px;
+  }
+}
+
 /* Accessibility: Honor reduced motion preference */
 @media (prefers-reduced-motion: reduce) {
   *,

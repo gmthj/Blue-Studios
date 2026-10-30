@@ -21,7 +21,7 @@ export function useCanvasViewport() {
   const ZOOM_PRESETS = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0, 4.0, 5.0]
 
   // --- Rulers & Guides State ---
-  const showRulers = ref(true)
+  const showRulers = ref(typeof window !== 'undefined' ? window.innerWidth >= 992 : true)
   // Custom user-dropped guides: Array of { id, type: 'horizontal' | 'vertical', pos: number }
   const customGuides = ref([])
   const activeHoverGuideId = ref(null)
@@ -98,9 +98,10 @@ export function useCanvasViewport() {
     const frameW = frame.offsetWidth || 280
     const frameH = frame.offsetHeight || 556
 
-    const rulerOffset = showRulers.value ? 24 : 0
-    const paddingH = 70 + rulerOffset
-    const paddingV = 60 + rulerOffset
+    const isPhone = wsRect.width < 992
+    const rulerOffset = (!isPhone && showRulers.value) ? 24 : 0
+    const paddingH = isPhone ? 28 : (70 + rulerOffset)
+    const paddingV = isPhone ? 50 : (60 + rulerOffset)
 
     const availW = Math.max(100, wsRect.width - paddingH)
     const availH = Math.max(100, wsRect.height - paddingV)

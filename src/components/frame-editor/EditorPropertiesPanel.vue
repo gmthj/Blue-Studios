@@ -36,6 +36,7 @@ const {
   getVectorBarTitle,
   getVectorSwatches,
   incrementBorderWidth,
+  isMobileEditSheetOpen,
   lockAllElements,
   onBorderWidthChange,
   removeGradientStop,
@@ -74,8 +75,36 @@ const {
 </script>
 
 <template>
-      <!-- Right Properties Panel (Bootstrap 5 - Shown on lg+ screens) -->
-      <aside class="properties-panel d-none d-lg-flex bg-white border-start p-3 flex-column gap-3 overflow-y-auto flex-shrink-0" style="width: 320px;">
+      <!-- Right Properties Panel (Desktop: side panel; Mobile: slide-up bottom sheet) -->
+      <aside
+        class="properties-panel bg-white border-start p-3 flex-column gap-3 overflow-y-auto flex-shrink-0"
+        :class="{ 'is-mobile-open': isMobileEditSheetOpen }"
+      >
+        <!-- Mobile Bottom Sheet Grabber & Header -->
+        <div class="mobile-sheet-header d-lg-none d-flex flex-column pt-1 pb-2 border-bottom mb-2 flex-shrink-0">
+          <div class="mobile-sheet-grabber mx-auto mb-2"></div>
+          <div class="d-flex align-items-center justify-content-between px-1">
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 text-uppercase" style="font-size: 0.7rem;">
+                {{ activeSelectedElement ? activeSelectedElement.type : (activeTool === 'templates' ? 'Layout' : 'Properties') }}
+              </span>
+              <h6 class="fw-bold text-dark m-0 fs-6">
+                {{ activeSelectedElement ? (getElementDisplayName(activeSelectedElement) + ' Properties') : 'Properties' }}
+              </h6>
+            </div>
+            <button
+              type="button"
+              class="btn btn-sm btn-light border-0 rounded-circle d-flex align-items-center justify-content-center p-1 text-secondary"
+              style="width: 28px; height: 28px;"
+              aria-label="Close Properties Sheet"
+              @click="isMobileEditSheetOpen = false"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        </div>
         <!-- ================================================================= -->
         <!-- 1. TEMPLATES TAB: Frame Properties (Only when templates is active) -->
         <!-- ================================================================= -->

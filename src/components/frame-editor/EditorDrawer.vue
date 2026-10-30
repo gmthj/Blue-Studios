@@ -67,7 +67,8 @@ const {
       <!-- Expandable Flyout Drawer (Bootstrap 5) -->
       <Transition name="drawer" @after-enter="triggerFitToScreen" @after-leave="triggerFitToScreen">
         <div v-if="isDrawerOpen" class="canva-drawer bg-white border-end d-flex flex-column flex-shrink-0 shadow-sm overflow-hidden" style="width: 310px; z-index: 15;">
-        <div class="p-3 border-bottom d-flex align-items-center justify-content-between gap-2">
+          <div class="mobile-sheet-grabber d-lg-none mt-2 mb-0"></div>
+          <div class="p-3 border-bottom d-flex align-items-center justify-content-between gap-2">
           <div class="d-flex align-items-center gap-2 flex-grow-1 px-1">
             <div class="p-1 rounded-2 bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center" style="width: 28px; height: 28px;">
               <svg v-if="activeTool === 'templates'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">

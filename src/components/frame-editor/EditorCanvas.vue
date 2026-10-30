@@ -1,4 +1,5 @@
 <script setup>
+import { onMounted, nextTick } from 'vue'
 import { useFrameEditorContext } from "../../composables/useFrameEditor.js"
 import CanvasRulerOverlay from "../CanvasRulerOverlay.vue"
 
@@ -33,6 +34,7 @@ const {
   exportConfig,
   finishEditingCaption,
   finishEditingText,
+  fitToScreen,
   frameBg,
   getCurvedPathD,
   getCurvedSvgHeight,
@@ -54,6 +56,7 @@ const {
   isPanning,
   isPositionPopoverOpen,
   isRotating,
+  isScreenLg,
   isSpacePressed,
   marqueeBoxStyle,
   onCanvasClick,
@@ -95,15 +98,24 @@ const {
   togglePositionPopover,
   toggleRulers,
   transformStyle,
-  ungroupSelectedElements
+  ungroupSelectedElements,
+  zoomPercentage
 } = editor
+
+onMounted(() => {
+  nextTick(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 992) {
+      fitToScreen(canvasWorkspaceRef.value, stripRef.value)
+    }
+  })
+})
 </script>
 
 <template>
       <!-- Center Canvas Workspace -->
       <main
         ref="canvasWorkspaceRef"
-        class="canvas-workspace"
+        class="canvas-workspace position-relative"
         :class="{
           'is-hand-mode': isSpacePressed || isHandToolActive,
           'is-panning': isPanning,
@@ -116,6 +128,27 @@ const {
         @wheel.prevent="onWorkspaceWheel"
         @click="onCanvasClick"
       >
+        <!-- Mobile Floating Stage Pills (Layout Name & Zoom/Fit Badge) -->
+        <div class="canvas-stage-pills d-lg-none position-absolute top-0 start-0 end-0 d-flex justify-content-between p-2 pointer-events-none" style="z-index: 100;">
+          <div class="badge bg-white text-dark shadow-sm border px-2 py-1 fw-medium pointer-events-auto d-flex align-items-center gap-1" style="font-size: 0.72rem;">
+            <span>{{ currentLayoutDef.name }}</span>
+            <span class="text-muted" style="font-size: 0.65rem;">({{ currentSlots.length }} slots)</span>
+          </div>
+
+          <button
+            type="button"
+            class="badge bg-white text-primary shadow-sm border px-2 py-1 fw-bold pointer-events-auto d-flex align-items-center gap-1 btn btn-sm p-0 border-0"
+            style="font-size: 0.72rem;"
+            title="Reset Zoom & Fit to Screen"
+            @click.stop="fitToScreen(canvasWorkspaceRef, stripRef)"
+          >
+            <span>{{ zoomPercentage }}</span>
+            <span class="text-secondary fw-normal">· Fit</span>
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
+            </svg>
+          </button>
+        </div>
         <!-- Canvas Marquee / Rubberband Selection Box -->
         <div
           v-if="isMarqueeActive && marqueeBoxStyle"
@@ -257,6 +290,7 @@ const {
                 display: el.isHidden ? 'none' : 'block'
               }"
               @mousedown.stop="selectElement(el, $event)"
+              @touchstart.stop="selectElement(el, $event)"
               @click.stop
               @dblclick.stop="onElementDblClick(el)"
               @contextmenu="openContextMenu($event, el)"
