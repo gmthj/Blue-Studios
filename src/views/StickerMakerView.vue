@@ -24,7 +24,7 @@ import AppIcon from '../components/AppIcon.vue'
 // Live stickers (time, date, weather, location). Shared with Joash and Germaine, so a
 // sticker saved here is drawn the same way on their pages.
 import {
-  DYNAMIC_STYLES, dynamicDataUrl, fetchWeather, cleanDynamicConfig, isDynamicConfig,
+  DYNAMIC_STYLES, dynamicDataUrl, fetchWeather, findPlace, cleanDynamicConfig, isDynamicConfig,
 } from '../dynamicStickers.js'
 // Only for writing a live sticker's settings next to it (see saveLiveConfig).
 import { doc, updateDoc } from 'firebase/firestore'
@@ -275,8 +275,12 @@ const liveStyle = ref('pill')
 const liveHour12 = ref(true)
 const liveLockZone = ref(false)   // true: always show MY time zone, not the viewer's
 const myTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || ''
-const liveCity = ref('')          // what is typed in the city box
-const livePlace = ref(null)       // { city, country } once a city or location is found
+const liveCity = ref('')          // what is typed in the place box
+const livePlace = ref(null)       // { city, country } for the weather, once a place is found
+const liveResults = ref([])       // every match for the search (Jurong East, Jurong West...)
+const liveResultIndex = ref(0)    // which match is in use
+const liveNames = ref([])         // names for the place, most specific first: SMU, Bras Basah, Singapore
+const liveLabel = ref('')         // the name the location sticker shows (picked or typed)
 const liveWeather = ref(null)     // the latest answer from /api/weather
 const liveBusy = ref('')          // 'city' | 'gps' while a request is running
 const liveError = ref('')
@@ -497,8 +501,9 @@ function addArt(item) {
     addEmoji(item)
     return
   }
-  // Tape is long and thin, so it starts wider than a square sticker.
-  const width = item.kind === 'tape' ? 44 : 30
+  // Tape is long and thin (90 x 20), so it starts a little narrower than a sticker is wide.
+  // At the same width it looked far bigger than the stickers next to it.
+  const width = item.kind === 'tape' ? 24 : 30
   addImageLayer(item.url, item.name, item.ratio, width, 'sticker')
 }
 
@@ -697,18 +702,18 @@ function weatherMessage(error) {
 }
 
 async function findCity() {
-  const city = liveCity.value.trim()
-  if (!city) {
-    liveError.value = 'Type a city first, like Singapore.'
+  const query = liveCity.value.trim()
+  if (!query) {
+    liveError.value = 'Type a place first, like SMU, Jurong or Tokyo.'
     return
   }
   liveError.value = ''
   liveBusy.value = 'city'
   try {
-    const answer = await fetchWeather({ city })
-    liveWeather.value = answer
-    livePlace.value = { city: answer.city, country: answer.country }
-    liveCity.value = answer.city
+    const answer = await findPlace({ query })
+    liveResults.value = answer.results
+    liveResultIndex.value = 0
+    await usePlace(answer.results[0])
   } catch (error) {
     liveError.value = weatherMessage(error)
   } finally {
@@ -716,23 +721,61 @@ async function findCity() {
   }
 }
 
-// WHY the browser's location only finds the CITY: the coordinates go to our server once,
-// to look up the city name, and are never saved. A public sticker must not reveal where
-// someone lives.
+// WHY two lookups: OpenStreetMap names the spot (SMU, Jurong West), but only OpenWeatherMap
+// has the weather, and it only knows cities. So the location sticker shows the name you
+// pick, and the weather sticker uses the city OpenWeatherMap gives for the same spot.
+async function usePlace(place) {
+  liveError.value = ''
+  liveNames.value = place.names
+  liveLabel.value = place.names[0]
+  // Until the weather answers, the widest name (usually the city) stands in.
+  livePlace.value = { city: place.names[place.names.length - 1], country: place.country }
+  liveWeather.value = null
+  try {
+    const weather = await fetchWeather({ lat: place.lat, lon: place.lon })
+    liveWeather.value = weather
+    livePlace.value = { city: weather.city, country: weather.country || place.country }
+  } catch (error) {
+    liveError.value = 'Found the place, but not its weather. ' + weatherMessage(error)
+  }
+}
+
+// A search matched several places (Jurong East, Jurong West...): use the one tapped.
+async function pickResult(index) {
+  if (index === liveResultIndex.value || liveBusy.value) return
+  liveResultIndex.value = index
+  liveBusy.value = 'city'
+  try {
+    await usePlace(liveResults.value[index])
+  } finally {
+    liveBusy.value = ''
+  }
+}
+
+// WHY the coordinates are never saved: they go to our server once, to look up the place
+// name, and only the name you pick goes on the sticker. A public sticker must not reveal
+// exactly where someone was standing.
 function useMyLocation() {
   liveError.value = ''
   if (!navigator.geolocation) {
-    liveError.value = 'This browser cannot share your location. Type a city instead.'
+    liveError.value = 'This browser cannot share your location. Type a place instead.'
+    return
+  }
+  // WHY check this first: phones only share location with https:// sites. On the laptop's
+  // http:// address (npm run dev or vercel dev opened from a phone) the browser says no
+  // without ever asking, which looked like "blocked" with no way to allow it.
+  if (!window.isSecureContext) {
+    liveError.value = 'Location only works on a secure (https://) link. Open the Vercel link on your phone, or type a place.'
     return
   }
   liveBusy.value = 'gps'
   navigator.geolocation.getCurrentPosition(
     async (position) => {
       try {
-        const answer = await fetchWeather({ lat: position.coords.latitude, lon: position.coords.longitude })
-        liveWeather.value = answer
-        livePlace.value = { city: answer.city, country: answer.country }
-        liveCity.value = answer.city
+        const answer = await findPlace({ lat: position.coords.latitude, lon: position.coords.longitude })
+        liveResults.value = answer.results
+        liveResultIndex.value = 0
+        await usePlace(answer.results[0])
       } catch (error) {
         liveError.value = weatherMessage(error)
       } finally {
@@ -741,21 +784,27 @@ function useMyLocation() {
     },
     (error) => {
       liveBusy.value = ''
-      liveError.value = error.code === 1
-        ? 'Location is blocked. Allow it in the address bar, or type a city.'
-        : 'Could not find your location. Type a city instead.'
+      if (error.code === 1) {
+        liveError.value = 'Location is turned off for this site. Allow it in your browser settings (on iPhone: Settings > Privacy > Location Services), or type a place.'
+      } else if (error.code === 3) {
+        liveError.value = 'Finding your location took too long. Try again, or type a place.'
+      } else {
+        liveError.value = 'Could not find your location. Type a place instead.'
+      }
     },
-    { timeout: 10000, maximumAge: 10 * 60 * 1000 },
+    { timeout: 15000, maximumAge: 10 * 60 * 1000 },
   )
 }
 
 function addPlaceSticker(type) {
   if (!livePlace.value) {
-    liveError.value = 'Find a city or use your location first.'
+    liveError.value = 'Find a place or use your location first.'
     return
   }
+  // The location sticker shows the picked name; the weather sticker needs the city.
+  const city = type === 'location' ? (liveLabel.value.trim() || livePlace.value.city).slice(0, 40) : livePlace.value.city
   addLiveLayer(
-    { type, style: liveStyle.value, city: livePlace.value.city, country: livePlace.value.country },
+    { type, style: liveStyle.value, city, country: livePlace.value.country },
     type === 'weather' ? liveWeather.value : null,
   )
 }
@@ -2275,9 +2324,9 @@ function imageStyle(layer) {
                   v-model="liveCity"
                   type="text"
                   class="form-control sm-city"
-                  maxlength="60"
-                  placeholder="City, e.g. Singapore"
-                  aria-label="City"
+                  maxlength="80"
+                  placeholder="SMU, Jurong, Tokyo…"
+                  aria-label="Place"
                 />
                 <button type="submit" class="btn btn-outline-secondary" :disabled="liveBusy !== ''">
                   {{ liveBusy === 'city' ? 'Finding…' : 'Find' }}
@@ -2294,17 +2343,56 @@ function imageStyle(layer) {
               </button>
               <p v-if="liveError" class="sm-error" role="alert">{{ liveError }}</p>
 
-              <div v-if="livePlace" class="sm-grid sm-grid-2 mt-3">
-                <button type="button" class="sm-cell sm-cell-live" @click="addPlaceSticker('weather')">
-                  <img :src="dynamicDataUrl({ type: 'weather', style: liveStyle, city: livePlace.city, country: livePlace.country }, liveWeather).url" alt="" class="sm-thumb" />
-                  <span class="sm-cell-caption">Weather</span>
-                </button>
-                <button type="button" class="sm-cell sm-cell-live" @click="addPlaceSticker('location')">
-                  <img :src="dynamicDataUrl({ type: 'location', style: liveStyle, city: livePlace.city, country: livePlace.country }).url" alt="" class="sm-thumb" />
-                  <span class="sm-cell-caption">Location</span>
-                </button>
-              </div>
-              <p class="sm-hint">Only the city name is saved, never your exact location.</p>
+              <!-- How specific the location sticker is: a landmark, the area, or the city -->
+              <template v-if="livePlace">
+                <!-- More than one match: pick the right one -->
+                <template v-if="liveResults.length > 1">
+                  <p class="sm-label mt-3">Which one?</p>
+                  <div class="sm-result-list" role="group" aria-label="Matching places">
+                    <button
+                      v-for="(result, index) in liveResults"
+                      :key="index"
+                      type="button"
+                      class="sm-result"
+                      :class="{ active: liveResultIndex === index }"
+                      :aria-pressed="liveResultIndex === index"
+                      @click="pickResult(index)"
+                    >{{ result.summary }}</button>
+                  </div>
+                </template>
+
+                <p class="sm-label mt-3">Name on the sticker</p>
+                <div v-if="liveNames.length > 1" class="sm-chip-row sm-chip-wrap" role="group" aria-label="Pick a name">
+                  <button
+                    v-for="name in liveNames"
+                    :key="name"
+                    type="button"
+                    class="chip chip-sm"
+                    :class="{ active: liveLabel === name }"
+                    :aria-pressed="liveLabel === name"
+                    @click="liveLabel = name"
+                  >{{ name }}</button>
+                </div>
+                <input
+                  v-model="liveLabel"
+                  type="text"
+                  class="form-control sm-city mt-2"
+                  maxlength="40"
+                  aria-label="Name on the location sticker"
+                />
+
+                <div class="sm-grid sm-grid-2 mt-3">
+                  <button type="button" class="sm-cell sm-cell-live" @click="addPlaceSticker('weather')">
+                    <img :src="dynamicDataUrl({ type: 'weather', style: liveStyle, city: livePlace.city, country: livePlace.country }, liveWeather).url" alt="" class="sm-thumb" />
+                    <span class="sm-cell-caption">Weather</span>
+                  </button>
+                  <button type="button" class="sm-cell sm-cell-live" @click="addPlaceSticker('location')">
+                    <img :src="dynamicDataUrl({ type: 'location', style: liveStyle, city: liveLabel.trim() || livePlace.city, country: livePlace.country }).url" alt="" class="sm-thumb" />
+                    <span class="sm-cell-caption">Location</span>
+                  </button>
+                </div>
+              </template>
+              <p class="sm-hint">Only the name you pick is saved, never your exact location.</p>
             </div>
           </template>
 
@@ -3441,6 +3529,21 @@ function imageStyle(layer) {
 .sm-toggles { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; font-size: 0.85rem; }
 .sm-toggles .form-check { margin: 0; }
 .sm-city { font-size: 16px; } /* 16px so iPhones do not zoom in */
+/* Search matches: a short list, the one in use tinted blue like a selected layer */
+.sm-result-list { display: flex; flex-direction: column; gap: 4px; }
+.sm-result {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #ffffff;
+  font-size: 0.82rem;
+  text-align: left;
+  color: var(--ink);
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 150ms ease, background-color 150ms ease, transform 160ms var(--ease-out);
+}
+.sm-result:active { transform: scale(0.98); }
+.sm-result.active { border-color: var(--brand); background: var(--brand-tint); color: var(--brand); font-weight: 600; }
 .sm-live-note {
   display: flex; align-items: center; gap: 6px;
   margin: 0 0 12px;
@@ -3857,6 +3960,7 @@ function imageStyle(layer) {
   .sm-brush:not(.active):hover { color: var(--ink); background: var(--soft); }
   .sm-drop:hover { border-color: var(--brand); background: var(--brand-tint); }
   .sm-layer-row:not(.active):hover { background: var(--soft); }
+  .sm-result:not(.active):hover { border-color: var(--brand); }
   .sm-row-del:hover { color: var(--danger); background: #FDE4E5; }
   .sm-close:hover { color: var(--ink); background: var(--soft); }
   .sm-mini:hover { color: var(--brand); border-color: var(--brand); }
