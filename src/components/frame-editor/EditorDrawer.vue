@@ -75,9 +75,9 @@ const {
                 <path d="M3 9h18M9 21V9" />
               </svg>
               <svg v-else-if="activeTool === 'elements'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="8" cy="8" r="4" />
-                <rect x="13" y="4" width="7" height="7" rx="1.5" />
-                <polygon points="12 14 16 21 8 21" />
+                <path d="M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3.16a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1H8.3z" />
+                <rect x="3" y="14" width="7" height="7" rx="1" />
+                <circle cx="17.5" cy="17.5" r="3.5" />
               </svg>
               <svg v-else-if="activeTool === 'text'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="4 7 4 4 20 4 20 7" />

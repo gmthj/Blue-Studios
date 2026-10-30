@@ -299,9 +299,9 @@ const {
           <div v-if="!activeSelectedElement" class="card border-dashed p-4 text-center my-auto bg-light rounded-3">
             <div class="d-inline-flex align-items-center justify-content-center p-3 rounded-circle bg-white border text-secondary mx-auto mb-2" style="width: 52px; height: 52px;">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="8" cy="8" r="4" />
-                <rect x="13" y="4" width="7" height="7" rx="1.5" />
-                <polygon points="12 14 16 21 8 21" />
+                <path d="M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3.16a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1H8.3z" />
+                <rect x="3" y="14" width="7" height="7" rx="1" />
+                <circle cx="17.5" cy="17.5" r="3.5" />
               </svg>
             </div>
             <h6 class="fw-bold text-dark mb-1">Select an Element</h6>
@@ -325,9 +325,9 @@ const {
                     <line x1="18" y1="7" x2="18" y2="17"/>
                   </svg>
                   <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="8" cy="8" r="4" />
-                    <rect x="13" y="4" width="7" height="7" rx="1.5" />
-                    <polygon points="12 14 16 21 8 21" />
+                    <path d="M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3.16a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1H8.3z" />
+                    <rect x="3" y="14" width="7" height="7" rx="1" />
+                    <circle cx="17.5" cy="17.5" r="3.5" />
                   </svg>
                 </div>
                 <div class="text-truncate">
