@@ -433,6 +433,7 @@ service cloud.firestore {
     // strips/{id}  { ownerId, title, imagePath, createdAt }   always private to the owner
     // The image is in Firebase Storage: strips/{uid}/{id}.jpg
     // A strip saved from the Share page also has format: 'png' | 'gif' | 'mp4', and imagePath ends with it: strips/{uid}/{id}.mp4
+    // and shareId (the id of its share, which My Studio opens as /s/{shareId}). shareId is optional.
 
     match /strips/{stripId} {
       allow read: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
@@ -446,7 +447,8 @@ service cloud.firestore {
           (request.resource.data.keys().hasOnly(['ownerId', 'title', 'imagePath', 'createdAt'])
             && request.resource.data.imagePath == 'strips/' + request.auth.uid + '/' + stripId + '.jpg')
           // a PNG, GIF or MP4, from the Share page
-          || (request.resource.data.keys().hasOnly(['ownerId', 'title', 'imagePath', 'format', 'createdAt'])
+          || (request.resource.data.keys().hasOnly(['ownerId', 'title', 'imagePath', 'format', 'shareId', 'createdAt'])
+            && (!request.resource.data.keys().hasAny(['shareId']) || (request.resource.data.shareId is string && request.resource.data.shareId.size() <= 40))
             && request.resource.data.format in ['png', 'gif', 'mp4']
             && request.resource.data.imagePath == 'strips/' + request.auth.uid + '/' + stripId + '.' + request.resource.data.format)
         );

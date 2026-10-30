@@ -472,6 +472,27 @@ test('stickers follow the same rules (create, kind, visibility)', async () => {
   await assertFails(getDoc(doc(dbAsAccount('bob'), 'stickers/s1')))
 })
 
+test('a strip saved from the Share page can be a PNG, GIF or MP4, and remember its share', async () => {
+  await seedAlice()
+  const alice = dbAsAccount('alice')
+  const strip = { ownerId: 'alice', title: 'Room 1234', imagePath: 'strips/alice/s1.mp4', format: 'mp4', createdAt: 1 }
+  await assertSucceeds(setDoc(doc(alice, 'strips/s1'), strip))
+  await assertSucceeds(setDoc(doc(alice, 'strips/s2'), { ...strip, imagePath: 'strips/alice/s2.gif', format: 'gif', shareId: 'k3j9x0q7m2ab' }))
+  await assertSucceeds(setDoc(doc(alice, 'strips/s3'), { ...strip, imagePath: 'strips/alice/s3.png', format: 'png' }))
+  // the file ending must be the format, and the path must be mine
+  await assertFails(setDoc(doc(alice, 'strips/s4'), { ...strip, imagePath: 'strips/alice/s4.gif' }))
+  await assertFails(setDoc(doc(alice, 'strips/s5'), { ...strip, imagePath: 'strips/bob/s5.mp4' }))
+  // only png, gif, mp4
+  await assertFails(setDoc(doc(alice, 'strips/s6'), { ...strip, imagePath: 'strips/alice/s6.exe', format: 'exe' }))
+  // shareId is text, and not a long one; other extra fields are not allowed
+  await assertFails(setDoc(doc(alice, 'strips/s7'), { ...strip, imagePath: 'strips/alice/s7.mp4', shareId: 123 }))
+  await assertFails(setDoc(doc(alice, 'strips/s8'), { ...strip, imagePath: 'strips/alice/s8.mp4', shareId: 'x'.repeat(41) }))
+  await assertFails(setDoc(doc(alice, 'strips/s9'), { ...strip, imagePath: 'strips/alice/s9.mp4', extra: true }))
+  // guests cannot save, and nobody else can read it
+  await assertFails(setDoc(doc(dbAsGuest('g1'), 'strips/s10'), { ...strip, ownerId: 'g1', imagePath: 'strips/g1/s10.mp4' }))
+  await assertFails(getDoc(doc(dbAsAccount('bob'), 'strips/s2')))
+})
+
 test('strips are private to the owner', async () => {
   await seedAlice()
   const strip = { ownerId: 'alice', title: 'Room 1234', imagePath: 'strips/alice/st1.jpg', createdAt: 1 }
