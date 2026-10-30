@@ -140,16 +140,12 @@ onMounted(() => {
 
           <button
             type="button"
-            class="badge bg-white text-primary shadow-sm border px-2 py-1 fw-bold pointer-events-auto d-flex align-items-center gap-1 btn btn-sm p-0 border-0"
+            class="badge bg-white text-secondary shadow-sm border px-2 py-1 fw-medium pointer-events-auto btn btn-sm border-0"
             style="font-size: 0.72rem;"
             title="Reset Zoom & Fit to Screen"
             @click.stop="fitToScreen(canvasWorkspaceRef, stripRef)"
           >
-            <span>{{ zoomPercentage }}</span>
-            <span class="text-secondary fw-normal">· Fit</span>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3" />
-            </svg>
+            {{ zoomPercentage }}
           </button>
         </div>
         <!-- Canvas Marquee / Rubberband Selection Box -->
