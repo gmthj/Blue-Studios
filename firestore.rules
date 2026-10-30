@@ -432,16 +432,24 @@ service cloud.firestore {
     // ---------- Strips (finished photostrips saved to My Studio) ----------
     // strips/{id}  { ownerId, title, imagePath, createdAt }   always private to the owner
     // The image is in Firebase Storage: strips/{uid}/{id}.jpg
+    // A strip saved from the Share page also has format: 'png' | 'gif' | 'mp4', and imagePath ends with it: strips/{uid}/{id}.mp4
 
     match /strips/{stripId} {
       allow read: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
 
       allow create: if isCreator()
-        && request.resource.data.keys().hasOnly(['ownerId', 'title', 'imagePath', 'createdAt'])
         && request.resource.data.ownerId == request.auth.uid
         && isTitle(request.resource.data.title)
-        && request.resource.data.imagePath == 'strips/' + request.auth.uid + '/' + stripId + '.jpg'
-        && request.resource.data.createdAt is int;
+        && request.resource.data.createdAt is int
+        && (
+          // a JPG, from the Decorate page
+          (request.resource.data.keys().hasOnly(['ownerId', 'title', 'imagePath', 'createdAt'])
+            && request.resource.data.imagePath == 'strips/' + request.auth.uid + '/' + stripId + '.jpg')
+          // a PNG, GIF or MP4, from the Share page
+          || (request.resource.data.keys().hasOnly(['ownerId', 'title', 'imagePath', 'format', 'createdAt'])
+            && request.resource.data.format in ['png', 'gif', 'mp4']
+            && request.resource.data.imagePath == 'strips/' + request.auth.uid + '/' + stripId + '.' + request.resource.data.format)
+        );
 
       allow update: if isCreator()
         && resource.data.ownerId == request.auth.uid

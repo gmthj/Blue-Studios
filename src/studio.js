@@ -226,6 +226,26 @@ export async function saveStrip({ title, image }) {
   return stripId
 }
 
+// Save a finished strip from the Share page to My Studio: a PNG, a GIF or an MP4 (a Blob).
+// Saved like saveStrip above, but the file's ending is its format, and the document says which format it is
+// (so My Studio knows to play an MP4 instead of showing a picture).
+export async function saveStripFile({ title, file, format }) {
+  const uid = myUid()
+  const stripId = newId('strips')
+  const imagePath = 'strips/' + uid + '/' + stripId + '.' + format
+  const contentTypes = { png: 'image/png', gif: 'image/gif', mp4: 'video/mp4' }
+
+  await uploadBytes(ref(storage, imagePath), file, { contentType: contentTypes[format], cacheControl: NEVER_CHANGES })
+  await setDoc(doc(db, 'strips', stripId), {
+    ownerId: uid,
+    title: title,
+    imagePath: imagePath,
+    format: format,
+    createdAt: Date.now(),
+  })
+  return stripId
+}
+
 // ---------- Loading ----------
 
 // Everything of one type that belongs to me, newest first.

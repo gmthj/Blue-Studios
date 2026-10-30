@@ -230,7 +230,7 @@ function formatDate(time) {
         <div v-else class="row g-3">
           <div v-for="strip in strips" :key="strip.id" class="col-6 col-md-3 col-xl-2">
             <div class="card h-100 overflow-hidden">
-              <div class="preview strip-preview"><StorageImage :path="strip.imagePath" :alt="strip.title" /></div>
+              <div class="preview strip-preview"><StorageImage :path="strip.imagePath" :alt="strip.title" :video="strip.format === 'mp4'" /></div>
               <div class="card-body item-body">
                 <p class="item-name text-truncate" :title="strip.title">{{ strip.title }}</p>
                 <p class="item-meta mb-2">{{ formatDate(strip.createdAt) }}</p>

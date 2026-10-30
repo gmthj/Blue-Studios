@@ -79,14 +79,25 @@ service firebase.storage {
     }
 
     // ---------- Strips (always private) ----------
-    // strips/{uid}/{stripId}.jpg
+    // strips/{uid}/{stripId}.jpg   (a PNG, GIF or MP4 from the Share page ends with its own format)
 
     match /strips/{uid}/{fileName} {
       allow read: if signedIn() && (request.auth.uid == uid || isAdmin());
       allow create, update: if isOwner(uid)
-        && fileName.matches('[A-Za-z0-9]+[.]jpg')
-        && request.resource.size < 5 * 1024 * 1024
-        && request.resource.contentType == 'image/jpeg';
+        && (
+          (fileName.matches('[A-Za-z0-9]+[.]jpg')
+            && request.resource.size < 5 * 1024 * 1024
+            && request.resource.contentType == 'image/jpeg')
+          || (fileName.matches('[A-Za-z0-9]+[.]png')
+            && request.resource.size < 10 * 1024 * 1024
+            && request.resource.contentType == 'image/png')
+          || (fileName.matches('[A-Za-z0-9]+[.]gif')
+            && request.resource.size < 50 * 1024 * 1024
+            && request.resource.contentType == 'image/gif')
+          || (fileName.matches('[A-Za-z0-9]+[.]mp4')
+            && request.resource.size < 50 * 1024 * 1024
+            && request.resource.contentType == 'video/mp4')
+        );
       allow delete: if isOwner(uid) || isAdmin();
     }
 
