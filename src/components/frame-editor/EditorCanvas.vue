@@ -517,22 +517,22 @@ onMounted(() => {
                         <button class="popover-item" @click="bringForward(el.id)">
                           <span class="item-icon">▲</span>
                           <span class="item-label">Bring Forward</span>
-                          <span class="item-shortcut">{{ shortcuts.bringForward }}</span>
+                          <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.bringForward }}</span>
                         </button>
                         <button class="popover-item" @click="bringToFront(el.id)">
                           <span class="item-icon">⇪▲</span>
                           <span class="item-label">Bring to Front</span>
-                          <span class="item-shortcut">{{ shortcuts.bringToFront }}</span>
+                          <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.bringToFront }}</span>
                         </button>
                         <button class="popover-item" @click="sendBackward(el.id)">
                           <span class="item-icon">▼</span>
                           <span class="item-label">Send Backward</span>
-                          <span class="item-shortcut">{{ shortcuts.sendBackward }}</span>
+                          <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.sendBackward }}</span>
                         </button>
                         <button class="popover-item" @click="sendToBack(el.id)">
                           <span class="item-icon">⇪▼</span>
                           <span class="item-label">Send to Back</span>
-                          <span class="item-shortcut">{{ shortcuts.sendToBack }}</span>
+                          <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.sendToBack }}</span>
                         </button>
                       </div>
                     </div>
@@ -653,7 +653,7 @@ onMounted(() => {
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                   </svg>
                   <span>Ungroup</span>
-                  <span class="shortcut-tag">{{ shortcuts.ungroup }}</span>
+                  <span class="shortcut-tag d-none d-lg-inline-block">{{ shortcuts.ungroup }}</span>
                 </button>
                 <button
                   v-else
@@ -668,7 +668,7 @@ onMounted(() => {
                     <rect x="3" y="14" width="7" height="7" />
                   </svg>
                   <span>Group</span>
-                  <span class="shortcut-tag">{{ shortcuts.group }}</span>
+                  <span class="shortcut-tag d-none d-lg-inline-block">{{ shortcuts.group }}</span>
                 </button>
 
                 <div class="floating-divider"></div>
@@ -706,12 +706,12 @@ onMounted(() => {
                     <button class="popover-item" @click="bringToFrontSelected">
                       <span class="item-icon">⇪▲</span>
                       <span class="item-label">Bring to Front</span>
-                      <span class="item-shortcut">{{ shortcuts.bringToFront }}</span>
+                      <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.bringToFront }}</span>
                     </button>
                     <button class="popover-item" @click="sendToBackSelected">
                       <span class="item-icon">⇪▼</span>
                       <span class="item-label">Send to Back</span>
-                      <span class="item-shortcut">{{ shortcuts.sendToBack }}</span>
+                      <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.sendToBack }}</span>
                     </button>
                   </div>
                 </div>

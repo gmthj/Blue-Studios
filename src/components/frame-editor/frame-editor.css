@@ -2353,6 +2353,18 @@ label[for],
     width: 14px !important;
     height: 14px !important;
   }
+
+  /* Hide keyboard hotkey tags on mobile screens */
+  .item-shortcut,
+  .shortcut-tag,
+  .context-shortcut {
+    display: none !important;
+  }
+
+  /* Compact Position Popover on mobile */
+  .position-popover {
+    min-width: 135px !important;
+  }
 }
 
 @keyframes feSlideUpSheet {
