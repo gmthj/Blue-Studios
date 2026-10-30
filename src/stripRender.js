@@ -366,3 +366,46 @@ export async function recordScene(scene, { width, fps, seconds, onProgress, isCa
   if (cancelled) return null
   return new Blob(chunks, { type: recorder.mimeType || 'video/webm' })
 }
+
+// Play the scene on a hidden canvas in real time, and call onFrame(canvas) once for every 1 / fps seconds of it.
+// Used for the GIF: onFrame gets the finished picture of that moment (the same drawing the MP4 is recorded from).
+// The page must stay open and visible while it runs, as with recordScene. Gives back false if it was cancelled.
+export async function sampleScene(scene, { width, fps, seconds, onFrame, onProgress, isCancelled }) {
+  const W = width
+  const H = Math.round(W / scene.aspect)
+  const canvas = document.createElement('canvas')
+  canvas.width = W
+  canvas.height = H
+  const ctx = canvas.getContext('2d')
+  const total = Math.floor(seconds * fps) // how many pictures the GIF has
+  let sent = 0
+
+  const startedAt = performance.now()
+  let cancelled = false
+  await new Promise((resolve) => {
+    function frame() {
+      const t = (performance.now() - startedAt) / 1000
+      if (isCancelled && isCancelled()) {
+        cancelled = true
+        resolve()
+        return
+      }
+      scene.tick(t)
+      scene.draw(ctx, W, H, t)
+      // One picture for every 1 / fps seconds that went by (if the screen was slow, the same picture is used twice)
+      while (sent < total && t >= sent / fps) {
+        onFrame(canvas)
+        sent++
+      }
+      if (onProgress) onProgress(Math.min(1, sent / total))
+      if (sent >= total) {
+        resolve()
+      } else {
+        requestAnimationFrame(frame)
+      }
+    }
+    frame()
+  })
+  scene.stop()
+  return !cancelled
+}
