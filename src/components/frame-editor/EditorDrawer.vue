@@ -112,16 +112,34 @@ const {
               }}
             </span>
           </div>
-          <button class="btn btn-sm btn-light text-muted p-1 rounded d-flex align-items-center justify-content-center" style="width: 30px; height: 30px;" title="Collapse drawer" @click="closeDrawer">
-            <!-- Desktop: Chevron pointing left (collapses leftwards into rail) -->
-            <svg class="d-none d-lg-block" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="15 18 9 12 15 6" />
-            </svg>
-            <!-- Mobile: Chevron pointing down (bottom sheet slides down) -->
-            <svg class="d-lg-none" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </button>
+          <div class="d-flex align-items-center gap-1">
+            <!-- Reset Background to White Icon Button -->
+            <button
+              v-if="activeTool === 'background'"
+              type="button"
+              class="btn btn-sm btn-light text-muted p-1 rounded d-flex align-items-center justify-content-center"
+              style="width: 30px; height: 30px;"
+              title="Reset background to clean white"
+              @click="resetFrameBackground"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                <path d="M3 3v5h5" />
+              </svg>
+            </button>
+
+            <!-- Collapse Drawer Button -->
+            <button class="btn btn-sm btn-light text-muted p-1 rounded d-flex align-items-center justify-content-center" style="width: 30px; height: 30px;" title="Collapse drawer" @click="closeDrawer">
+              <!-- Desktop: Chevron pointing left (collapses leftwards into rail) -->
+              <svg class="d-none d-lg-block" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+              <!-- Mobile: Chevron pointing down (bottom sheet slides down) -->
+              <svg class="d-lg-none" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+          </div>
         </div>
 
         <!-- DRAWER CONTENT: TEMPLATES -->
@@ -413,18 +431,6 @@ const {
 
         <!-- DRAWER CONTENT: BACKGROUND (Colors, Gradients, Textures & Patterns) -->
         <div v-if="activeTool === 'background'" class="drawer-content p-3 d-flex flex-column gap-3 overflow-y-auto flex-grow-1">
-          <div class="d-flex align-items-center justify-content-end mb-1">
-            <button
-              type="button"
-              class="btn btn-sm btn-outline-secondary py-0 px-2 flex-shrink-0"
-              style="font-size: 0.75rem; height: 26px; line-height: 24px;"
-              title="Reset to clean white background"
-              @click="resetFrameBackground"
-            >
-              Reset to White
-            </button>
-          </div>
-
           <!-- Segmented Navigation Tabs (Single Row 3-Tab Segmented Control) -->
           <div class="btn-group btn-group-sm w-100 mb-2 p-1 bg-light border rounded-3" role="group">
             <button
