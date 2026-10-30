@@ -21,14 +21,6 @@ import { removeBackground } from '../removeBackground.js'
 import { askConfirm } from '../composables/useDialog.js'
 // The app's shared line icons, so this page matches every other page.
 import AppIcon from '../components/AppIcon.vue'
-// Live stickers (time, date, weather, location). Shared with Joash and Germaine, so a
-// sticker saved here is drawn the same way on their pages.
-import {
-  DYNAMIC_STYLES, dynamicDataUrl, fetchWeather, findPlace, cleanDynamicConfig, isDynamicConfig,
-} from '../dynamicStickers.js'
-// Only for writing a live sticker's settings next to it (see saveLiveConfig).
-import { doc, updateDoc } from 'firebase/firestore'
-import { db } from '../firebase.js'
 
 const { isAccount } = useAuth()
 
@@ -114,7 +106,6 @@ const LOCAL_ICONS = {
   text: 'M5 6h14 M12 6v13 M8.5 19h7',
   sliders: 'M4 7h10 M18 7h2 M4 17h4 M12 17h8 M14 5v4 M8 15v4',
   grip: 'M4 8h16 M4 16h16',
-  clock: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18 M12 7v5l3 2',
   stop: 'M7 7h10v10H7z',
   alignLeft: 'M4 6h16 M4 12h10 M4 18h14',
   alignCenter: 'M4 6h16 M7 12h10 M5 18h14',
@@ -126,7 +117,6 @@ const LOCAL_ICONS = {
 const TOOLS = [
   { id: 'stickers', label: 'Stickers', local: 'sticker' },
   { id: 'text', label: 'Text', local: 'text' },
-  { id: 'live', label: 'Live', local: 'clock' },
   { id: 'draw', label: 'Draw', icon: 'pen' },
   { id: 'upload', label: 'Upload', icon: 'upload' },
 ]
@@ -197,11 +187,11 @@ const activeFolder = ref('all')  // 'all' or a folder id
 // our server function so the remove.bg key stays secret, then swaps the layer's
 // picture for the cut-out one.
 // Remove background works on uploaded photos and on still stickers saved in My Studio.
-// Not on the built-in stickers (already see-through drawings that remove.bg cannot read),
-// live stickers, or anything already cut out.
+// Not on the built-in stickers (already see-through drawings that remove.bg cannot read)
+// or on anything already cut out.
 const canCutOut = computed(() => {
   const layer = selectedLayer.value
-  return !!layer && layer.type === 'image' && !layer.dynamic && !layer.cutOut
+  return !!layer && layer.type === 'image' && !layer.cutOut
     && (layer.source === 'photo' || layer.source === 'saved')
 })
 
@@ -273,21 +263,6 @@ watch(errorMessage, (message) => {
 
 const removingBg = ref(false)
 
-// Live drawer
-const liveStyle = ref('pill')
-const liveHour12 = ref(true)
-const liveLockZone = ref(false)   // true: always show MY time zone, not the viewer's
-const myTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || ''
-const liveCity = ref('')          // what is typed in the place box
-const livePlace = ref(null)       // { city, country } for the weather, once a place is found
-const liveResults = ref([])       // every match for the search (Jurong East, Jurong West...)
-const liveResultIndex = ref(0)    // which match is in use
-const liveNearby = ref([])        // landmarks around you, closest first: { name, kind, distance }
-const liveNames = ref([])         // names for the place, most specific first: SMU, Bras Basah, Singapore
-const liveLabel = ref('')         // the name the location sticker shows (picked or typed)
-const liveWeather = ref(null)     // the latest answer from /api/weather
-const liveBusy = ref('')          // 'city' | 'gps' while a request is running
-const liveError = ref('')
 
 // Copy and paste
 // WHY our own clipboard for layers: the system clipboard only holds text and pictures,
@@ -421,7 +396,7 @@ const selectedKind = computed(() => {
   const layer = selectedLayer.value
   if (!layer) return ''
   if (layer.type === 'text') return layer.emoji ? 'Emoji' : 'Text'
-  if (layer.type === 'image') return layer.dynamic ? 'Live sticker' : layer.source === 'photo' ? 'Photo' : 'Sticker'
+  if (layer.type === 'image') return layer.source === 'photo' ? 'Photo' : 'Sticker'
   return 'Drawing'
 })
 
@@ -801,211 +776,6 @@ async function copyStickerImage() {
     errorMessage.value = 'Could not copy the picture. Use Download instead.'
   }
 }
-
-// ----
-// Live stickers: time, date, weather, location
-// WHY a layer remembers its config: the picture on the canvas is redrawn from it every
-// 30 seconds (so the clock ticks), and Save stores it so other pages can draw it live too.
-// ----
-
-function addLiveLayer(config, live = null) {
-  const { url, ratio } = dynamicDataUrl(config, live)
-  const names = { time: 'Live time', date: 'Live date', weather: 'Weather', location: 'Location' }
-  // WHY sized by height: a long name ("National Museum of Singapore") makes a much wider
-  // sticker, and at a fixed width its words came out tiny. Every live sticker starts about
-  // 22% of the canvas tall, unless that would be wider than 90% of it.
-  addImageLayer(url, names[config.type], ratio, Math.min(90, 22 / ratio), 'live')
-  const layer = selectedLayer.value
-  layer.dynamic = config
-  layer.liveData = live // the last weather answer, so redrawing does not ask the server again
-}
-
-function addTimeSticker(type) {
-  addLiveLayer({
-    type,
-    style: liveStyle.value,
-    hour12: liveHour12.value,
-    timeZone: liveLockZone.value ? myTimeZone : '',
-  })
-}
-
-function weatherMessage(error) {
-  return (error && error.message) || 'Weather is not available right now.'
-}
-
-async function findCity() {
-  const query = liveCity.value.trim()
-  if (!query) {
-    liveError.value = 'Type a place first, like SMU, Jurong or Tokyo.'
-    return
-  }
-  liveError.value = ''
-  liveBusy.value = 'city'
-  try {
-    const answer = await findPlace({ query })
-    liveResults.value = answer.results
-    liveResultIndex.value = 0
-    liveNearby.value = [] // the list is for "Use my location"; a typed place replaces it
-    await usePlace(answer.results[0])
-  } catch (error) {
-    liveError.value = weatherMessage(error)
-  } finally {
-    liveBusy.value = ''
-  }
-}
-
-// WHY two lookups: OpenStreetMap names the spot (SMU, Jurong West), but only OpenWeatherMap
-// has the weather, and it only knows cities. So the location sticker shows the name you
-// pick, and the weather sticker uses the city OpenWeatherMap gives for the same spot.
-async function usePlace(place) {
-  liveError.value = ''
-  liveNames.value = place.names
-  liveLabel.value = place.names[0]
-  // Until the weather answers, the widest name (usually the city) stands in.
-  livePlace.value = { city: place.names[place.names.length - 1], country: place.country }
-  liveWeather.value = null
-  try {
-    const weather = await fetchWeather({ lat: place.lat, lon: place.lon })
-    liveWeather.value = weather
-    livePlace.value = { city: weather.city, country: weather.country || place.country }
-  } catch (error) {
-    liveError.value = 'Found the place, but not its weather. ' + weatherMessage(error)
-  }
-}
-
-// "154 m" or "1.2 km" for the nearby list.
-function formatDistance(metres) {
-  return metres < 1000 ? Math.max(10, Math.round(metres / 10) * 10) + ' m' : (metres / 1000).toFixed(1) + ' km'
-}
-
-// A search matched several places (Jurong East, Jurong West...): use the one tapped.
-async function pickResult(index) {
-  if (index === liveResultIndex.value || liveBusy.value) return
-  liveResultIndex.value = index
-  liveBusy.value = 'city'
-  try {
-    await usePlace(liveResults.value[index])
-  } finally {
-    liveBusy.value = ''
-  }
-}
-
-// WHY the coordinates are never saved: they go to our server once, to look up the place
-// name, and only the name you pick goes on the sticker. A public sticker must not reveal
-// exactly where someone was standing.
-function useMyLocation() {
-  liveError.value = ''
-  if (!navigator.geolocation) {
-    liveError.value = 'This browser cannot share your location. Type a place instead.'
-    return
-  }
-  // WHY check this first: phones only share location with https:// sites. On the laptop's
-  // http:// address (npm run dev or vercel dev opened from a phone) the browser says no
-  // without ever asking, which looked like "blocked" with no way to allow it.
-  if (!window.isSecureContext) {
-    liveError.value = 'Location only works on a secure (https://) link. Open the Vercel link on your phone, or type a place.'
-    return
-  }
-  liveBusy.value = 'gps'
-  navigator.geolocation.getCurrentPosition(
-    async (position) => {
-      try {
-        const { latitude, longitude } = position.coords
-        const answer = await findPlace({ lat: latitude, lon: longitude })
-        liveResults.value = []
-        liveNearby.value = answer.nearby || []
-        // If the area lookup found nothing but landmarks did, the closest landmark stands in.
-        const area = answer.results[0] || {
-          names: [liveNearby.value[0].name],
-          country: '',
-          lat: Number(latitude.toFixed(2)),
-          lon: Number(longitude.toFixed(2)),
-        }
-        await usePlace(area)
-        // Start on the closest landmark when it is close enough to be where you are.
-        if (liveNearby.value[0] && liveNearby.value[0].distance <= 100) liveLabel.value = liveNearby.value[0].name
-      } catch (error) {
-        liveError.value = weatherMessage(error)
-      } finally {
-        liveBusy.value = ''
-      }
-    },
-    (error) => {
-      liveBusy.value = ''
-      if (error.code === 1) {
-        liveError.value = 'Location is turned off for this site. Allow it in your browser settings (on iPhone: Settings > Privacy > Location Services), or type a place.'
-      } else if (error.code === 3) {
-        liveError.value = 'Finding your location took too long. Try again, or type a place.'
-      } else {
-        liveError.value = 'Could not find your location. Type a place instead.'
-      }
-    },
-    // WHY high accuracy and a fresh fix: without them a phone may answer with a rough guess
-    // from Wi-Fi, or a position up to 10 minutes old, so the nearby list was for the wrong spot.
-    { enableHighAccuracy: true, timeout: 20000, maximumAge: 30 * 1000 },
-  )
-}
-
-function addPlaceSticker(type) {
-  if (!livePlace.value) {
-    liveError.value = 'Find a place or use your location first.'
-    return
-  }
-  // The location sticker shows the picked name; the weather sticker needs the city.
-  const city = type === 'location' ? (liveLabel.value.trim() || livePlace.value.city).slice(0, 40) : livePlace.value.city
-  addLiveLayer(
-    { type, style: liveStyle.value, city, country: livePlace.value.country },
-    type === 'weather' ? liveWeather.value : null,
-  )
-}
-
-// Change the look of the selected live sticker (Properties panel).
-function setLiveStyle(style) {
-  const layer = selectedLayer.value
-  if (!layer || !layer.dynamic) return
-  snapshot()
-  layer.dynamic = { ...layer.dynamic, style }
-  redrawLive(layer)
-}
-
-function redrawLive(layer) {
-  const { url, ratio } = dynamicDataUrl(layer.dynamic, layer.liveData || null)
-  // Keep the same height on screen when the text gets longer or shorter.
-  if (layer.url !== url) {
-    layer.width = layer.width * (layer.ratio / ratio)
-    layer.url = url
-    layer.ratio = ratio
-  }
-}
-
-// Every 30 seconds, redraw the live layers in every frame so the clock keeps time.
-let liveTimer = null
-function tickLive() {
-  for (const frame of frames.value) {
-    for (const layer of frame.layers) {
-      if (layer.dynamic && (layer.dynamic.type === 'time' || layer.dynamic.type === 'date')) redrawLive(layer)
-    }
-  }
-}
-
-// Save writes the settings of a live sticker next to it, so Joash and Germaine can draw it
-// live. WHY a second step: saveSticker (Gabriel's) only saves a picture. If the Firestore
-// rules do not allow config yet, the sticker is still saved, just as a picture.
-async function saveLiveConfig(stickerId, config) {
-  await updateDoc(doc(db, 'stickers', stickerId), {
-    config: cleanDynamicConfig(config),
-    updatedAt: Date.now(),
-  })
-}
-
-// A sticker is "dynamic" only when it is one live element on its own. Mixed with other
-// layers it is saved as a normal picture, because another page could not redraw the rest.
-const liveOnlyLayer = computed(() => {
-  if (frames.value.length !== 1 || layers.value.length !== 1) return null
-  const layer = layers.value[0]
-  return layer.dynamic && isDynamicConfig(layer.dynamic) ? layer : null
-})
-const hasLiveLayer = computed(() => layers.value.some((layer) => layer.dynamic))
 
 // source records where the picture came from: 'photo' | 'sticker'.
 // Only a real photo gets the Remove background button, because the other one already
@@ -1994,7 +1764,6 @@ async function saveToStudio() {
   // their own folders, we quietly use 'other' so the rules accept it.
   const publicCategories = pickedDefaults.value.length > 0 ? pickedDefaults.value : ['other']
   const animated = mode.value === 'gif' && frames.value.length > 1
-  const live = animated ? null : liveOnlyLayer.value
 
   saving.value = true
   try {
@@ -2014,23 +1783,10 @@ async function saveToStudio() {
     // Step 1: upload the image + create the sticker document.
     const stickerId = await saveSticker({
       name: name,
-      // 'animated' is what My Studio expects for a GIF; 'dynamic' is a live sticker whose
-      // image is only a preview — other pages redraw it from its config.
-      kind: animated ? 'animated' : live ? 'dynamic' : 'static',
+      kind: animated ? 'animated' : 'static', // 'animated' is what My Studio expects for a GIF
       categories: publicCategories,
       image: blob,
     })
-
-    // Step 1b: a live sticker also stores its settings, so teammates can draw it live.
-    let configFailed = false
-    if (live) {
-      try {
-        await saveLiveConfig(stickerId, live.dynamic)
-      } catch (error) {
-        console.error('Could not save the live settings', error)
-        configFailed = true
-      }
-    }
 
     // Step 2: add that ID to each of my chosen folders. The sticker is already safe at
     // this point, so a failure here only affects the folders.
@@ -2047,15 +1803,9 @@ async function saveToStudio() {
     pickedFolders.value = []
     myStickers.value = []
     await loadMine() // reload so the new sticker shows up in its folder tabs
-    if (configFailed) {
-      // WHY warn instead of fail: the picture is safe in My Studio. Only the "live" part
-      // waits for the Firestore rules to allow stickers.config.
-      showToast('"' + name + '" was saved as a picture. Live updates need the new Firebase rule.', 'warn')
-    } else {
-      showToast(folderFailed
-        ? '"' + name + '" was saved, but it could not be added to your folders.'
-        : '"' + name + '" was saved to My Studio.')
-    }
+    showToast(folderFailed
+      ? '"' + name + '" was saved, but it could not be added to your folders.'
+      : '"' + name + '" was saved to My Studio.')
   } catch (error) {
     errorMessage.value = error.message || 'Could not save the sticker. Please try again.'
   } finally {
@@ -2212,7 +1962,6 @@ onMounted(() => {
   window.addEventListener('copy', onCopy)
   window.addEventListener('cut', onCut)
   window.addEventListener('paste', onPaste)
-  liveTimer = setInterval(tickLive, 30 * 1000)
   refreshThumbs()
   if (isAccount.value) loadMine()
 })
@@ -2230,7 +1979,6 @@ onBeforeUnmount(() => {
   endRowDrag()
   clearTimeout(toastTimer)
   clearTimeout(thumbTimer)
-  clearInterval(liveTimer)
   clearInterval(playTimer)
   window.removeEventListener('copy', onCopy)
   window.removeEventListener('cut', onCut)
@@ -2511,156 +2259,6 @@ function imageStyle(layer) {
                   <span class="sm-font-card-name">{{ font.name }}</span>
                 </button>
               </div>
-            </div>
-          </template>
-
-          <!-- ---------- LIVE (time, date, weather, location) ---------- -->
-          <template v-else-if="tool === 'live'">
-            <p class="sm-hint mt-0">
-              Live stickers update by themselves. Saved on their own, they keep updating on
-              everyone's photostrips.
-            </p>
-
-            <div class="sm-section">
-              <p class="sm-label">Look</p>
-              <div class="seg-tabs sm-seg-block" role="group" aria-label="Look">
-                <button
-                  v-for="style in DYNAMIC_STYLES"
-                  :key="style.id"
-                  type="button"
-                  class="seg-tab"
-                  :class="{ active: liveStyle === style.id }"
-                  :aria-pressed="liveStyle === style.id"
-                  @click="liveStyle = style.id"
-                >{{ style.label }}</button>
-              </div>
-            </div>
-
-            <div class="sm-section">
-              <p class="sm-label">Time and date</p>
-              <div class="sm-grid sm-grid-2">
-                <button type="button" class="sm-cell sm-cell-live" @click="addTimeSticker('time')">
-                  <img :src="dynamicDataUrl({ type: 'time', style: liveStyle, hour12: liveHour12, timeZone: liveLockZone ? myTimeZone : '' }).url" alt="" class="sm-thumb" />
-                  <span class="sm-cell-caption">Time</span>
-                </button>
-                <button type="button" class="sm-cell sm-cell-live" @click="addTimeSticker('date')">
-                  <img :src="dynamicDataUrl({ type: 'date', style: liveStyle, timeZone: liveLockZone ? myTimeZone : '' }).url" alt="" class="sm-thumb" />
-                  <span class="sm-cell-caption">Date</span>
-                </button>
-              </div>
-              <div class="sm-toggles">
-                <label class="form-check form-switch">
-                  <input v-model="liveHour12" class="form-check-input" type="checkbox" role="switch" />
-                  <span class="form-check-label">12-hour clock (3:42 PM)</span>
-                </label>
-                <label class="form-check form-switch">
-                  <input v-model="liveLockZone" class="form-check-input" type="checkbox" role="switch" />
-                  <span class="form-check-label">Always show my time zone</span>
-                </label>
-                <p class="sm-hint mt-0">
-                  {{ liveLockZone ? 'Everyone sees the time in ' + myTimeZone + '.' : 'Everyone sees their own local time.' }}
-                </p>
-              </div>
-            </div>
-
-            <div class="sm-section">
-              <p class="sm-label">Weather and location</p>
-              <form class="input-group" @submit.prevent="findCity">
-                <input
-                  v-model="liveCity"
-                  type="text"
-                  class="form-control sm-city"
-                  maxlength="80"
-                  placeholder="SMU, Jurong, Tokyo…"
-                  aria-label="Place"
-                />
-                <button type="submit" class="btn btn-outline-secondary" :disabled="liveBusy !== ''">
-                  {{ liveBusy === 'city' ? 'Finding…' : 'Find' }}
-                </button>
-              </form>
-              <button
-                type="button"
-                class="btn btn-outline-primary btn-sm w-100 mt-2"
-                :disabled="liveBusy !== ''"
-                @click="useMyLocation"
-              >
-                <AppIcon name="globe" :size="14" />
-                {{ liveBusy === 'gps' ? 'Finding you…' : 'Use my location' }}
-              </button>
-              <p v-if="liveError" class="sm-error" role="alert">{{ liveError }}</p>
-
-              <!-- How specific the location sticker is: a landmark, the area, or the city -->
-              <template v-if="livePlace">
-                <!-- More than one match: pick the right one -->
-                <template v-if="liveResults.length > 1">
-                  <p class="sm-label mt-3">Which one?</p>
-                  <div class="sm-result-list" role="group" aria-label="Matching places">
-                    <button
-                      v-for="(result, index) in liveResults"
-                      :key="index"
-                      type="button"
-                      class="sm-result"
-                      :class="{ active: liveResultIndex === index }"
-                      :aria-pressed="liveResultIndex === index"
-                      @click="pickResult(index)"
-                    >{{ result.summary }}</button>
-                  </div>
-                </template>
-
-                <!-- After "Use my location": landmarks around you, closest first -->
-                <template v-if="liveNearby.length > 0">
-                  <p class="sm-label mt-3">
-                    Places near you
-                    <span class="sm-count">{{ liveNearby.length }}</span>
-                  </p>
-                  <div class="sm-nearby" role="group" aria-label="Places near you">
-                    <button
-                      v-for="place in liveNearby"
-                      :key="place.name"
-                      type="button"
-                      class="sm-nearby-row"
-                      :class="{ active: liveLabel === place.name }"
-                      :aria-pressed="liveLabel === place.name"
-                      @click="liveLabel = place.name"
-                    >
-                      <span class="sm-nearby-name">{{ place.name }}</span>
-                      <span class="sm-nearby-meta">{{ place.kind }} · {{ formatDistance(place.distance) }}</span>
-                    </button>
-                  </div>
-                </template>
-
-                <p class="sm-label mt-3">{{ liveNearby.length > 0 ? 'Or the area' : 'Name on the sticker' }}</p>
-                <div v-if="liveNames.length > 1 || liveNearby.length > 0" class="sm-chip-row sm-chip-wrap" role="group" aria-label="Pick a name">
-                  <button
-                    v-for="name in liveNames"
-                    :key="name"
-                    type="button"
-                    class="chip chip-sm"
-                    :class="{ active: liveLabel === name }"
-                    :aria-pressed="liveLabel === name"
-                    @click="liveLabel = name"
-                  >{{ name }}</button>
-                </div>
-                <input
-                  v-model="liveLabel"
-                  type="text"
-                  class="form-control sm-city mt-2"
-                  maxlength="40"
-                  aria-label="Name on the location sticker"
-                />
-
-                <div class="sm-grid sm-grid-2 mt-3">
-                  <button type="button" class="sm-cell sm-cell-live" @click="addPlaceSticker('weather')">
-                    <img :src="dynamicDataUrl({ type: 'weather', style: liveStyle, city: livePlace.city, country: livePlace.country }, liveWeather).url" alt="" class="sm-thumb" />
-                    <span class="sm-cell-caption">Weather</span>
-                  </button>
-                  <button type="button" class="sm-cell sm-cell-live" @click="addPlaceSticker('location')">
-                    <img :src="dynamicDataUrl({ type: 'location', style: liveStyle, city: liveLabel.trim() || livePlace.city, country: livePlace.country }).url" alt="" class="sm-thumb" />
-                    <span class="sm-cell-caption">Location</span>
-                  </button>
-                </div>
-              </template>
-              <p class="sm-hint">Only the name you pick is saved, never your exact location.</p>
             </div>
           </template>
 
@@ -3128,7 +2726,7 @@ function imageStyle(layer) {
               <div class="sm-row"><span>Size</span><span>{{ EXPORT_SIZE }} × {{ EXPORT_SIZE }}</span></div>
               <div class="sm-row"><span>Background</span><span>Transparent</span></div>
               <div class="sm-row"><span>Layers</span><span>{{ layers.length }}</span></div>
-              <div class="sm-row"><span>Saves as</span><span>{{ mode === 'gif' && frames.length > 1 ? 'Animated' : liveOnlyLayer ? 'Live' : 'Still' }}</span></div>
+              <div class="sm-row"><span>Saves as</span><span>{{ mode === 'gif' && frames.length > 1 ? 'Animated' : 'Still' }}</span></div>
             </div>
           </template>
 
@@ -3159,23 +2757,6 @@ function imageStyle(layer) {
 
             <!-- PHOTO / STICKER properties -->
             <template v-else-if="selectedLayer.type === 'image'">
-              <div v-if="selectedLayer.dynamic" class="sm-section mt-0 mb-3">
-                <p class="sm-label">Look</p>
-                <div class="seg-tabs sm-seg-block" role="group" aria-label="Look">
-                  <button
-                    v-for="style in DYNAMIC_STYLES"
-                    :key="style.id"
-                    type="button"
-                    class="seg-tab"
-                    :class="{ active: selectedLayer.dynamic.style === style.id }"
-                    :aria-pressed="selectedLayer.dynamic.style === style.id"
-                    @click="setLiveStyle(style.id)"
-                  >{{ style.label }}</button>
-                </div>
-                <p class="sm-hint">
-                  {{ liveOnlyLayer ? 'Saves as a live sticker that keeps updating.' : 'With other layers it saves as a picture. Keep it on its own to stay live.' }}
-                </p>
-              </div>
               <div class="sm-section mt-0">
                 <p class="sm-label">
                   Size
@@ -3443,13 +3024,6 @@ function imageStyle(layer) {
         <div v-else class="sm-modal-body">
           <p class="sm-hint mt-0 mb-3">
             New stickers are private. Make one public in My Studio to share it on the Marketplace.
-          </p>
-          <p v-if="liveOnlyLayer" class="sm-live-note">
-            <AppIcon name="sparkle" :size="14" />
-            This saves as a live sticker: it keeps showing the current {{ liveOnlyLayer.dynamic.type }} on photostrips.
-          </p>
-          <p v-else-if="hasLiveLayer" class="sm-hint mt-0 mb-3">
-            Your live sticker is mixed with other layers, so it saves as a picture of how it looks now.
           </p>
 
           <label class="sm-label" for="sm-save-name">Name</label>
@@ -3994,60 +3568,6 @@ function imageStyle(layer) {
 .sm-btn-row { display: flex; flex-wrap: wrap; gap: 6px; }
 .sm-btn-row .btn { flex: 1 1 auto; }
 
-/* ---------- live stickers ---------- */
-.sm-cell-live { flex-direction: column; gap: 6px; aspect-ratio: auto; padding: 12px 8px 8px; }
-.sm-cell-live .sm-thumb { height: 40px; }
-.sm-toggles { display: flex; flex-direction: column; gap: 6px; margin-top: 12px; font-size: 0.85rem; }
-.sm-toggles .form-check { margin: 0; }
-.sm-city { font-size: 16px; } /* 16px so iPhones do not zoom in */
-/* Search matches: a short list, the one in use tinted blue like a selected layer */
-.sm-result-list { display: flex; flex-direction: column; gap: 4px; }
-.sm-result {
-  padding: 7px 10px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #ffffff;
-  font-size: 0.82rem;
-  text-align: left;
-  color: var(--ink);
-  -webkit-tap-highlight-color: transparent;
-  transition: border-color 150ms ease, background-color 150ms ease, transform 160ms var(--ease-out);
-}
-.sm-result:active { transform: scale(0.98); }
-.sm-result.active { border-color: var(--brand); background: var(--brand-tint); color: var(--brand); font-weight: 600; }
-/* Places near you: scrolls inside itself so the stickers below stay reachable */
-.sm-nearby {
-  display: flex; flex-direction: column; gap: 2px;
-  max-height: 220px;
-  overflow-y: auto;
-  padding: 4px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  scrollbar-width: thin;
-}
-.sm-nearby-row {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 1px;
-  padding: 7px 10px;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  background: transparent;
-  text-align: left;
-  -webkit-tap-highlight-color: transparent;
-  transition: background-color 150ms ease, border-color 150ms ease;
-}
-.sm-nearby-row.active { border-color: var(--brand); background: var(--brand-tint); }
-.sm-nearby-name { font-size: 0.85rem; font-weight: 600; color: var(--ink); }
-.sm-nearby-row.active .sm-nearby-name { color: var(--brand); }
-.sm-nearby-meta { font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
-.sm-live-note {
-  display: flex; align-items: center; gap: 6px;
-  margin: 0 0 12px;
-  padding: 8px 12px;
-  border-radius: 10px;
-  font-size: 0.85rem; font-weight: 600;
-  color: var(--brand);
-  background: var(--brand-tint);
-}
 .sm-btn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
 
 /* ---------- upload ---------- */
@@ -4443,8 +3963,6 @@ function imageStyle(layer) {
   .sm-grip-handle:hover { color: var(--ink); background: var(--soft); }
   .sm-drop:hover { border-color: var(--brand); background: var(--brand-tint); }
   .sm-layer-row:not(.active):hover { background: var(--soft); }
-  .sm-result:not(.active):hover { border-color: var(--brand); }
-  .sm-nearby-row:not(.active):hover { background: var(--soft); }
   .sm-row-del:hover { color: var(--danger); background: #FDE4E5; }
   .sm-close:hover { color: var(--ink); background: var(--soft); }
   .sm-mini:hover { color: var(--brand); border-color: var(--brand); }

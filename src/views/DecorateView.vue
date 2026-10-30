@@ -6,10 +6,12 @@ import { getGuestName } from '../guest.js'
 import { useAuth } from '../composables/useAuth.js'
 import { saveStrip } from '../studio.js'
 import { resolveEditedVideos } from '../clips.js'
-import { loadDefaultStickers, loadMyStickers } from '../stickerTray.js'
+import { loadDefaultStickers, loadMyStickers, liveStickerPng, DEFAULT_SECTIONS } from '../stickerTray.js'
 import { LAYOUTS, FRAME_STYLES, FILTERS, filterCss, saveField, saveFields, cropOf, cropSource } from '../stripData.js'
 import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
+import LiveStickerPicker from '../components/LiveStickerPicker.vue'
+import AppIcon from '../components/AppIcon.vue'
 
 // The "Decorate" page (a child of RoomLayout.vue): filters and stickers.
 //   Left:   filters and adjustments for the photo tapped on the strip
@@ -22,8 +24,10 @@ const myName = getGuestName()
 
 const selectedSlot = ref(0)          // the photo the filters change ("Applied to photo 1")
 const selectedStickerId = ref(null)  // the sticker being resized / rotated
-const trayTab = ref('default')       // 'default' | 'mine' | 'giphy' (see stickerTray.js)
-const selectedTrayId = ref(null)     // phones: the tray sticker tapped
+const trayTab = ref('default')       // 'default' | 'live' | 'mine' (see stickerTray.js)
+const trayOpen = ref(false)          // phones: the sticker tray is a sheet that slides up
+const mineOpen = ref({ mine: true, giphy: true }) // the Mine tab's two sections, folded or not
+const trayError = ref('')
 
 // Accounts can also save the strip to My Studio
 const { isAccount } = useAuth()
@@ -80,12 +84,13 @@ const photosById = computed(() => {
 })
 
 // ---------- STICKER TRAY ----------
-// Default = the Template Editor's stickers (Joash). My stickers / My GIPHY = this account's stickers from the
-// Sticker Maker (Rae) and the ones saved from the marketplace, loaded from Firebase (see stickerTray.js).
+// Default = the same stickers as the Sticker Maker (stickerArt.js). Live = time, date, weather and
+// location (LiveStickerPicker.vue). Mine = this account's stickers and GIFs from the Sticker Maker
+// (Rae) and the ones saved from the marketplace, loaded from Firebase (see stickerTray.js).
 const TRAY_TABS = [
   { id: 'default', label: 'Default' },
-  { id: 'mine', label: 'My stickers' },
-  { id: 'giphy', label: 'My GIPHY' },
+  { id: 'live', label: 'Live' },
+  { id: 'mine', label: 'Mine' },
 ]
 const defaultStickers = ref([])
 const myStickers = ref([])
@@ -115,11 +120,48 @@ onMounted(async () => {
 onBeforeUnmount(() => document.removeEventListener('visibilitychange', onTabVisible))
 watch(isAccount, refreshMyStickers) // logged in or out: load again
 
-// Every sticker the tray knows, the open tab's ones, and how many each tab has (for the small counts)
-const allStickers = computed(() => defaultStickers.value.concat(myStickers.value))
-const trayStickers = computed(() => allStickers.value.filter((s) => s.tab === trayTab.value))
-function tabCount(tab) {
-  return allStickers.value.filter((s) => s.tab === tab).length
+// The Default tab in the Sticker Maker's sections, and the Mine tab's two lists
+const defaultSections = computed(() => DEFAULT_SECTIONS
+  .map((section) => ({ ...section, stickers: defaultStickers.value.filter((s) => s.section === section.id) }))
+  .filter((section) => section.stickers.length > 0))
+const mineGroups = computed(() => [
+  {
+    id: 'mine',
+    title: 'My stickers',
+    list: myStickers.value.filter((s) => s.tab === 'mine'),
+    empty: 'Stickers you make in the Sticker Maker or save from the marketplace show up here.',
+  },
+  {
+    id: 'giphy',
+    title: 'My GIFs',
+    list: myStickers.value.filter((s) => s.tab === 'giphy'),
+    empty: 'GIFs you make in the Sticker Maker or save from the marketplace show up here.',
+  },
+])
+
+// The width where the page's columns stack and the tray becomes a sheet (Bootstrap "lg")
+function isPhone() {
+  return window.innerWidth < 992
+}
+
+// Tapping (or clicking) a tray sticker puts it in the middle of the strip, selected, so it can
+// be dragged straight into place. On a phone the tray sheet closes so the strip is in view.
+// (On a laptop, dragging a sticker onto a spot on the strip still works too.)
+function pickTraySticker(item, width) {
+  addSticker(item.src, 50, 50, width)
+  if (isPhone()) trayOpen.value = false
+}
+
+// The Live tab chose a sticker: draw it as a picture of this moment, then place it.
+// WHY wider: it is a row of words, and at a normal sticker's width they would be tiny.
+async function addLiveSticker({ config, live }) {
+  trayError.value = ''
+  try {
+    pickTraySticker({ src: await liveStickerPng(config, live) }, 80)
+  } catch (err) {
+    console.error('Could not draw the live sticker:', err)
+    trayError.value = 'Could not add that sticker. Please try again.'
+  }
 }
 
 // The photo in the selected slot, used for the filter previews
@@ -133,7 +175,18 @@ const currentEdit = computed(() => {
 const selectedSticker = computed(() => stickers.value.find((s) => s.id === selectedStickerId.value) || null)
 
 // Stickers sorted front to back, for the Layers list ([...] copies the list, so the real one is not reordered)
-const layersFrontToBack = computed(() => [...stickers.value].sort((a, b) => b.z - a.z))
+// (While a layer is being dragged, its new place in the list is shown, see dragOrder below.)
+const layersFrontToBack = computed(() => {
+  if (dragOrder.value) return dragOrder.value.map((id) => stickers.value.find((s) => s.id === id)).filter(Boolean)
+  return [...stickers.value].sort((a, b) => b.z - a.z)
+})
+
+// What the strip draws: the room's stickers, restacked while a layer is being dragged
+const stripStickers = computed(() => {
+  if (!dragOrder.value) return stickers.value
+  const order = dragOrder.value
+  return stickers.value.map((s) => ({ ...s, z: order.length - order.indexOf(s.id) }))
+})
 
 const photoCount = computed(() => Object.values(slotPhotos.value).filter(Boolean).length)
 
@@ -167,14 +220,14 @@ function onTrayDragStart(event, item) {
 }
 
 // A tray sticker was dropped at (x, y) %. The new sticker goes in front of all the others.
-async function addSticker(src, x, y) {
+async function addSticker(src, x, y, width = 45) {
   const topZ = Math.max(0, ...stickers.value.map((s) => s.z)) // the highest z so far (0 if none)
   const sticker = {
     id: Date.now(),  // a simple unique id
     src: src,
     x: Math.round(x), // centre of the sticker, in % of the strip
     y: Math.round(y),
-    w: 45,            // width, in % of the strip
+    w: width,         // width, in % of the strip
     rotate: 0,        // degrees
     z: topZ + 1,
     visible: true,
@@ -201,39 +254,70 @@ async function deleteSticker(id) {
   await saveStickers(stickers.value.filter((s) => s.id !== id))
 }
 
-// Bring forward / send backward: swap z with the sticker above or below it in the Layers list
-async function moveLayer(id, direction) {
-  const ordered = layersFrontToBack.value
-  const index = ordered.findIndex((s) => s.id === id)
-  const other = ordered[direction === 'up' ? index - 1 : index + 1]
-  if (!other) return // already at the front / back
-  const me = ordered[index]
-  const list = stickers.value.map((s) => {
-    if (s.id === me.id) return { ...s, z: other.z }
-    if (s.id === other.id) return { ...s, z: me.z }
-    return s
-  })
-  await saveStickers(list)
+// ---------- REORDERING LAYERS (drag the grip, like the Sticker Maker) ----------
+// While dragging, the new order is only kept here (dragOrder) and shown on the strip straight
+// away, so you see the sticker move in front of or behind the others. It is saved to the room
+// once, when you let go, so the room is not written on every move of the finger.
+// WHY pointer events: the browser's own drag-and-drop does not work with a finger.
+const layerListEl = ref(null)
+const dragOrder = ref(null)        // sticker ids, front to back, while a row is dragged
+const draggingLayerId = ref(null)
+let orderBeforeDrag = []           // to tell, on letting go, whether anything moved
+
+function startLayerDrag(event, sticker) {
+  event.preventDefault()
+  selectedStickerId.value = sticker.id
+  draggingLayerId.value = sticker.id
+  orderBeforeDrag = layersFrontToBack.value.map((s) => s.id)
+  dragOrder.value = [...orderBeforeDrag]
+  // On the window, so the drag keeps working while the row moves under the finger
+  window.addEventListener('pointermove', moveLayerDrag)
+  window.addEventListener('pointerup', endLayerDrag)
+  window.addEventListener('pointercancel', endLayerDrag)
 }
 
-// A tap on the strip: with a tray sticker tapped first (phones), add it there.
-// Otherwise it is a tap on an empty spot, so the selected sticker is let go (its box closes).
-// (On a phone, a sticker on the strip is moved by dragging it with a finger, see PhotoStrip.vue.)
-function onStripClick(x, y) {
-  if (selectedTrayId.value) {
-    const item = allStickers.value.find((s) => s.id === selectedTrayId.value)
-    addSticker(item.src, x, y)
-    selectedTrayId.value = null
-  } else {
-    selectedStickerId.value = null
+function moveLayerDrag(event) {
+  if (!dragOrder.value || !layerListEl.value) return
+  // The new place = how many other rows have their middle above the finger
+  let index = 0
+  layerListEl.value.querySelectorAll('[data-layer-id]').forEach((row) => {
+    if (row.dataset.layerId === String(draggingLayerId.value)) return
+    const box = row.getBoundingClientRect()
+    if (event.clientY > box.top + box.height / 2) index++
+  })
+  const order = dragOrder.value.filter((id) => id !== draggingLayerId.value)
+  order.splice(index, 0, draggingLayerId.value)
+  dragOrder.value = order
+}
+
+async function endLayerDrag() {
+  window.removeEventListener('pointermove', moveLayerDrag)
+  window.removeEventListener('pointerup', endLayerDrag)
+  window.removeEventListener('pointercancel', endLayerDrag)
+  const order = dragOrder.value
+  draggingLayerId.value = null
+  if (!order) return
+  // (Not layersFrontToBack: while dragging, that already shows the new order.)
+  if (order.some((id, i) => id !== orderBeforeDrag[i])) {
+    // Front of the list = the biggest z
+    await saveStickers(stickers.value.map((s) => ({ ...s, z: order.length - order.indexOf(s.id) })))
   }
+  dragOrder.value = null
+}
+
+onBeforeUnmount(endLayerDrag) // the page was left mid-drag
+
+// A tap on an empty spot of the strip lets go of the selected sticker (its box closes).
+// (On a phone, a sticker on the strip is moved by dragging it with a finger, see PhotoStrip.vue.)
+function onStripClick() {
+  selectedStickerId.value = null
 }
 
 // A click or tap anywhere else on the page (not on a sticker, its box, the tray or the layers list)
 // also lets go of the selected sticker
 function onPagePointerDown(event) {
   if (selectedStickerId.value === null) return
-  if (event.target.closest('.strip-wrap, .tray-item, .layers')) return // the strip handles its own taps
+  if (event.target.closest('.strip-wrap, .tray, .layers')) return // the strip handles its own taps
   selectedStickerId.value = null
 }
 
@@ -405,7 +489,7 @@ async function saveToStudio() {
           :slot-photos="slotPhotos"
           :edits="edits"
           :crops="crops"
-          :stickers="stickers"
+          :stickers="stripStickers"
           :clips="clips"
           :edited-videos="editedVideos"
           :selected-slot="selectedStickerId ? null : selectedSlot"
@@ -424,66 +508,139 @@ async function saveToStudio() {
     <!-- RIGHT: sticker tray, selected sticker, layers -->
     <div class="col-12 col-md-6 col-lg-3 order-3">
       <div class="panel d-flex flex-column">
-        <h2 class="h5 fw-bold mb-1">Sticker tray</h2>
-        <p class="tray-hint text-muted mb-2">Drag stickers onto the strip, then drag to move. Phone: tap a sticker in the tray, then tap the strip.</p>
-
-        <!-- Tabs: Default, My stickers, My GIPHY. On a narrow panel they scroll sideways instead of squashing. -->
-        <div class="tray-tabs mb-2" role="tablist" aria-label="Sticker tray">
-          <button
-            v-for="tab in TRAY_TABS"
-            :key="tab.id"
-            type="button"
-            class="tray-tab"
-            :class="{ active: trayTab === tab.id }"
-            role="tab"
-            :aria-selected="trayTab === tab.id"
-            @click="trayTab = tab.id"
-          >
-            {{ tab.label }}<span v-if="tab.id !== 'default' && tabCount(tab.id)" class="tray-count">{{ tabCount(tab.id) }}</span>
-          </button>
-        </div>
-
-        <!-- When a tab has nothing to show -->
-        <template v-if="trayStickers.length === 0">
-          <p v-if="trayTab === 'default'" class="small text-muted mb-2">Loading stickers…</p>
-          <p v-else-if="!isAccount" class="small text-muted mb-2">Log in to use the stickers you made or saved.</p>
-          <p v-else-if="loadingMine" class="small text-muted mb-2">Loading your stickers…</p>
-          <p v-else-if="trayTab === 'mine'" class="small text-muted mb-2">No stickers yet. Stickers you make in the Sticker Maker or save from the marketplace show up here.</p>
-          <p v-else class="small text-muted mb-2">No GIFs yet. GIF stickers you make in the Sticker Maker or save from the marketplace show up here.</p>
-        </template>
-
-        <!-- Drag a sticker onto the strip, or tap it (phones). 4 per row on phones and tablets, 3 in the narrow laptop side panel. -->
-        <div v-else class="row g-2 mb-3 tray-grid" role="tabpanel">
-          <div v-for="s in trayStickers" :key="s.id" class="col-3 col-lg-4 col-xxl-3">
-            <div class="tray-item" :class="{ selected: s.id === selectedTrayId }" :title="s.saved ? s.name + ' (saved from the marketplace)' : s.name">
-              <img
-                :src="s.src"
-                :alt="s.name"
-                draggable="true"
-                @dragstart="onTrayDragStart($event, s)"
-                @click="selectedTrayId = selectedTrayId === s.id ? null : s.id"
-              />
-              <span v-if="s.saved" class="saved-tag" aria-hidden="true">★</span>
-            </div>
+        <!-- The sticker tray. On a laptop it sits here in the panel. On a phone it is a sheet
+             that slides up from the "Stickers" button and closes when a sticker is picked. -->
+        <section class="tray" :class="{ open: trayOpen }" aria-label="Sticker tray">
+          <div class="tray-head">
+            <h2 class="h5 fw-bold mb-0">Sticker tray</h2>
+            <button type="button" class="tray-close" aria-label="Close the sticker tray" @click="trayOpen = false">✕</button>
           </div>
-        </div>
 
+          <!-- Tabs: Default, Live, Mine -->
+          <div class="tray-tabs mb-2" role="tablist" aria-label="Sticker tray">
+            <button
+              v-for="tab in TRAY_TABS"
+              :key="tab.id"
+              type="button"
+              class="tray-tab"
+              :class="{ active: trayTab === tab.id }"
+              role="tab"
+              :aria-selected="trayTab === tab.id"
+              @click="trayTab = tab.id"
+            >
+              {{ tab.label }}<span v-if="tab.id === 'mine' && myStickers.length" class="tray-count">{{ myStickers.length }}</span>
+            </button>
+          </div>
 
-        <!-- Layers: front at the top. Photos and frame are always behind the stickers, so they stay at the bottom -->
+          <div class="tray-body" role="tabpanel">
+            <p v-if="trayError" class="small text-danger mb-2" role="alert">{{ trayError }}</p>
+
+            <!-- DEFAULT: the Sticker Maker's stickers, shapes, washi tape and emoji.
+                 Click or tap to add to the middle of the strip; on a laptop you can also drag one onto a spot. -->
+            <template v-if="trayTab === 'default'">
+              <p v-if="defaultSections.length === 0" class="small text-muted mb-2">Loading stickers…</p>
+              <div v-for="section in defaultSections" :key="section.id" class="tray-section">
+                <p class="tray-label">{{ section.title }}</p>
+                <div class="tray-grid" :class="{ wide: section.id === 'tapes' }">
+                  <button
+                    v-for="s in section.stickers"
+                    :key="s.id"
+                    type="button"
+                    class="tray-item"
+                    :title="'Add ' + s.name"
+                    :aria-label="'Add ' + s.name"
+                    draggable="true"
+                    @dragstart="onTrayDragStart($event, s)"
+                    @click="pickTraySticker(s)"
+                  >
+                    <img :src="s.src" alt="" draggable="false" />
+                  </button>
+                </div>
+              </div>
+            </template>
+
+            <!-- LIVE: time, date, weather and location -->
+            <LiveStickerPicker v-else-if="trayTab === 'live'" @add="addLiveSticker" />
+
+            <!-- MINE: my stickers, then my GIFs, each folds away -->
+            <template v-else>
+              <p v-if="!isAccount" class="small text-muted mb-2">Log in to use the stickers you made or saved.</p>
+              <p v-else-if="loadingMine && myStickers.length === 0" class="small text-muted mb-2">Loading your stickers…</p>
+              <template v-else>
+                <div v-for="group in mineGroups" :key="group.id" class="tray-section">
+                  <button
+                    type="button"
+                    class="tray-fold"
+                    :aria-expanded="mineOpen[group.id]"
+                    @click="mineOpen[group.id] = !mineOpen[group.id]"
+                  >
+                    <span>{{ group.title }} <span class="tray-fold-count">{{ group.list.length }}</span></span>
+                    <AppIcon name="chevron" :size="16" class="tray-chevron" :class="{ up: mineOpen[group.id] }" />
+                  </button>
+                  <template v-if="mineOpen[group.id]">
+                    <p v-if="group.list.length === 0" class="small text-muted mb-2">{{ group.empty }}</p>
+                    <div v-else class="tray-grid">
+                      <button
+                        v-for="s in group.list"
+                        :key="s.id"
+                        type="button"
+                        class="tray-item"
+                        :title="s.saved ? s.name + ' (saved from the marketplace)' : 'Add ' + s.name"
+                        :aria-label="'Add ' + s.name"
+                        draggable="true"
+                        @dragstart="onTrayDragStart($event, s)"
+                        @click="pickTraySticker(s)"
+                      >
+                        <img :src="s.src" alt="" draggable="false" />
+                        <span v-if="s.saved" class="saved-tag" aria-hidden="true">★</span>
+                      </button>
+                    </div>
+                  </template>
+                </div>
+              </template>
+            </template>
+          </div>
+        </section>
+
+        <!-- Phones: the button that opens the tray, and the dim layer behind the open sheet -->
+        <button type="button" class="tray-fab" :aria-expanded="trayOpen" @click="trayOpen = true">
+          <span aria-hidden="true">✦</span> Stickers
+        </button>
+        <div v-if="trayOpen" class="tray-backdrop" @click="trayOpen = false"></div>
+
+        <!-- Layers: front at the top. Drag a row by its grip to move a sticker in front of or behind
+             others. Photos and frame are always behind the stickers, so they stay at the bottom. -->
         <h2 class="h5 fw-bold">Layers</h2>
-        <ul class="list-unstyled layers mb-3">
+        <ul ref="layerListEl" class="list-unstyled layers mb-3">
           <li
-            v-for="(s, index) in layersFrontToBack"
+            v-for="s in layersFrontToBack"
             :key="s.id"
+            :data-layer-id="s.id"
             class="layer"
-            :class="{ active: s.id === selectedStickerId }"
+            :class="{ active: s.id === selectedStickerId, dragging: s.id === draggingLayerId }"
             @click="selectedStickerId = s.id"
           >
+            <span
+              class="layer-grip"
+              title="Drag to move this sticker in front of or behind others"
+              aria-label="Drag to reorder"
+              @pointerdown="startLayerDrag($event, s)"
+              @click.stop
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M4 8h16 M4 16h16" /></svg>
+            </span>
             <img :src="s.src" alt="" class="layer-thumb" />
             <span class="flex-grow-1 small text-truncate">Sticker · {{ s.by || 'someone' }}</span>
-            <button class="icon-btn" :disabled="index === 0" title="Bring forward" @click.stop="moveLayer(s.id, 'up')">↑</button>
-            <button class="icon-btn" :disabled="index === layersFrontToBack.length - 1" title="Send backward" @click.stop="moveLayer(s.id, 'down')">↓</button>
-            <button class="icon-btn" title="Show / hide" @click.stop="updateSticker(s.id, { visible: !s.visible })">{{ s.visible ? '👁' : '—' }}</button>
+            <button
+              class="icon-btn"
+              :class="{ hidden: !s.visible }"
+              :title="s.visible ? 'Hide this sticker' : 'Show this sticker'"
+              :aria-label="s.visible ? 'Hide this sticker' : 'Show this sticker'"
+              :aria-pressed="!s.visible"
+              @click.stop="updateSticker(s.id, { visible: !s.visible })"
+            >
+              <AppIcon :name="s.visible ? 'eye' : 'eye-off'" :size="16" />
+            </button>
           </li>
           <li class="layer muted"><span class="small">Photos ({{ photoCount }})</span></li>
           <li class="layer muted"><span class="small">Frame · {{ layout.name }}</span></li>
@@ -557,10 +714,79 @@ async function saveToStudio() {
 }
 
 /* Sticker tray */
-/* The how-to line under the Sticker tray title */
-.tray-hint {
-  font-size: 0.72rem;
-  line-height: 1.35;
+.tray-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+/* The ✕ only means something on a phone, where the tray is a sheet */
+.tray-close {
+  display: none;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 999px;
+  background: none;
+  color: #6B7080;
+}
+
+/* The tray's content scrolls inside the panel, so Layers and the buttons stay close */
+.tray-body {
+  max-height: 360px;
+  overflow-y: auto;
+  margin-bottom: 16px;
+  padding-right: 2px;
+  scrollbar-width: thin;
+}
+
+.tray-section + .tray-section {
+  margin-top: 12px;
+}
+
+.tray-label {
+  margin: 0 0 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #14172B;
+}
+
+/* Mine: "My stickers" and "My GIFs" headers that fold their list away */
+.tray-fold {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 8px;
+  background: #F4F5F9;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #14172B;
+}
+
+.tray-fold-count {
+  margin-left: 4px;
+  font-weight: 600;
+  color: #6B7080;
+}
+
+.tray-chevron {
+  line-height: 1;
+  transition: transform 200ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.tray-chevron.up {
+  transform: rotate(180deg);
+}
+
+/* Phones: the "Stickers" button and the dim layer behind the open sheet (hidden on laptops) */
+.tray-fab,
+.tray-backdrop {
+  display: none;
 }
 
 .tray-tabs {
@@ -604,10 +830,16 @@ async function saveToStudio() {
   padding: 0 6px;
 }
 
-/* Many stickers: the tray scrolls inside the panel instead of pushing the layers far down */
+/* 4 stickers a row; washi tape (long and thin) 2 a row. minmax(0, 1fr) lets the columns
+   shrink below the pictures' own width, so nothing pokes out of a narrow panel. */
 .tray-grid {
-  max-height: 280px;
-  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.tray-grid.wide {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 /* ★ on a sticker saved from the marketplace */
@@ -622,6 +854,7 @@ async function saveToStudio() {
 .tray-item {
   position: relative;
   aspect-ratio: 1;
+  min-width: 0;
   background: #F4F5F9;
   border-radius: 10px;
   border: 2px solid transparent;
@@ -629,16 +862,30 @@ async function saveToStudio() {
   align-items: center;
   justify-content: center;
   padding: 6px;
+  cursor: grab;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 150ms ease, background-color 150ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.tray-grid.wide .tray-item {
+  aspect-ratio: 2.4 / 1;
+}
+
+.tray-item:active {
+  transform: scale(0.94);
 }
 
 .tray-item img {
   max-width: 100%;
   max-height: 100%;
-  cursor: grab;
+  pointer-events: none;
 }
 
-.tray-item.selected {
-  border-color: #2F5BEA;
+@media (hover: hover) and (pointer: fine) {
+  .tray-item:hover {
+    border-color: #2F5BEA;
+    background: #E8EEFF;
+  }
 }
 
 
@@ -662,6 +909,43 @@ async function saveToStudio() {
   color: #2F5BEA;
 }
 
+/* The row being dragged lifts off the list, so it is clear which sticker is moving */
+.layer.dragging {
+  position: relative;
+  z-index: 1;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(20, 23, 43, 0.14);
+  transform: scale(1.02);
+}
+
+/* The grip is the drag handle: big enough for a thumb, and touch-action none so dragging it
+   moves the layer instead of scrolling the page */
+.layer-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: -4px 0 -4px -6px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  color: #9AA0AE;
+  cursor: grab;
+  touch-action: none;
+}
+
+.layer-grip svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+}
+
+.layer-grip:active {
+  cursor: grabbing;
+  color: #2F5BEA;
+}
+
 .layer.muted {
   color: #6B7080;
   cursor: default;
@@ -674,10 +958,28 @@ async function saveToStudio() {
 }
 
 .icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   border: none;
+  border-radius: 6px;
   background: none;
-  padding: 0 4px;
+  padding: 0;
   color: #6B7080;
+}
+
+/* A hidden sticker's crossed-out eye is paler, so hidden layers stand out in the list */
+.icon-btn.hidden {
+  color: #B9BECC;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .icon-btn:hover {
+    color: #2F5BEA;
+    background: #E8EEFF;
+  }
 }
 
 .icon-btn:disabled {
@@ -690,6 +992,89 @@ async function saveToStudio() {
     --stage-h: min(62vh, 560px); /* a bit shorter, so the panels below are not far away */
     padding-top: 20px;
     padding-bottom: 20px;
+  }
+
+  /* The tray becomes a sheet that slides up from the bottom, over the page. A picked sticker
+     closes it (pickTraySticker), so the strip is in view to drag the sticker into place. */
+  .tray {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 1045;
+    max-height: 70vh;
+    max-height: 70dvh;
+    display: flex;
+    flex-direction: column;
+    padding: 14px 16px calc(12px + env(safe-area-inset-bottom));
+    background: #fff;
+    border-radius: 20px 20px 0 0;
+    box-shadow: 0 -12px 32px rgba(20, 23, 43, 0.14);
+    transform: translateY(105%);
+    transition: transform 300ms cubic-bezier(0.23, 1, 0.32, 1);
+  }
+
+  .tray.open {
+    transform: translateY(0);
+  }
+
+  .tray-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .tray-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    margin-bottom: 0;
+  }
+
+  .tray-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .tray-grid.wide {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  /* A round button at the bottom right that opens the tray, always in reach of a thumb */
+  .tray-fab {
+    position: fixed;
+    right: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    z-index: 1040;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 12px 18px;
+    border: none;
+    border-radius: 999px;
+    background: #2F5BEA;
+    color: #fff;
+    font-weight: 700;
+    box-shadow: 0 8px 24px rgba(47, 91, 234, 0.35);
+  }
+
+  .tray-fab:active {
+    transform: scale(0.97);
+  }
+
+  .tray-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 1042;
+    background: rgba(20, 23, 43, 0.25);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tray,
+  .tray-item,
+  .tray-chevron {
+    transition: none;
   }
 }
 
