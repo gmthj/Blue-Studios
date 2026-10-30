@@ -306,6 +306,7 @@ function onStripClick(event) {
     class="strip"
     :style="{
       aspectRatio: layout.aspect,
+      '--strip-aspect': layout.aspect,
       background: frameStyle.thumbnailUrl ? `url(${frameStyle.thumbnailUrl}) center/cover no-repeat, ${frameStyle.background}` : frameStyle.background,
       borderColor: frameStyle.border
     }"
@@ -417,7 +418,9 @@ function onStripClick(event) {
 .strip {
   position: relative;
   width: 100%;
-  max-width: 300px;
+  /* At most 300px wide, and never taller than most of the screen: a tall 4-cut on a phone or a short laptop
+     screen gets narrower so the whole strip fits without scrolling (width = 82% of the screen height × aspect) */
+  max-width: min(300px, calc(82vh * var(--strip-aspect, 0.3)));
   margin: 0 auto;
   border: 4px solid;
   border-radius: 6px;

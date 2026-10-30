@@ -94,6 +94,10 @@ const mineTemplates = computed(() => {
   return [start, ...userTemplates.value]
 })
 
+// Mine shows 2 rows of 4 frames. With more than 8, the rows scroll sideways until "View all" is opened.
+const MINE_VISIBLE = 8
+const showAllMine = ref(false)
+
 // A templates/{id} document (mine or saved from the marketplace) as a swatch in the list
 async function templateSwatch(item) {
   let thumbUrl = null
@@ -508,7 +512,7 @@ async function goToStage(stage) {
   <!-- 3 columns from Bootstrap "lg" (992px) up. On phones: strip first, then gallery, then frames -->
   <div class="row g-3">
     <!-- LEFT: gallery -->
-    <div class="col-12 col-lg-3 order-2 order-lg-1">
+    <div class="col-12 col-md-6 col-lg-3 order-2 order-lg-1">
       <div class="panel">
         <div class="d-flex justify-content-between align-items-center mb-1">
           <h2 class="h5 fw-bold mb-0">Gallery</h2>
@@ -640,7 +644,7 @@ async function goToStage(stage) {
     </div>
 
     <!-- RIGHT: saved frames -->
-    <div class="col-12 col-lg-3 order-3">
+    <div class="col-12 col-md-6 col-lg-3 order-3">
       <div class="panel d-flex flex-column">
         <h2 class="h5 fw-bold">Saved frames</h2>
 
@@ -659,9 +663,21 @@ async function goToStage(stage) {
 
         <h3 class="h6 mt-3 d-flex justify-content-between align-items-center">
           <span>Mine</span>
-          <router-link to="/studio" class="small text-muted text-decoration-none" style="font-size: 0.75rem;">View all &rarr;</router-link>
+          <!-- View all: only when there are more than 8 (the 2 rows of 4 that fit). It opens the full list. -->
+          <button
+            v-if="mineTemplates.length > MINE_VISIBLE"
+            type="button"
+            class="view-all-btn"
+            :aria-expanded="showAllMine"
+            @click="showAllMine = !showAllMine"
+          >{{ showAllMine ? 'Show less' : 'View all \u2192' }}</button>
         </h3>
-        <div class="d-flex flex-wrap gap-2 align-items-center">
+        <!-- 8 or fewer: wrap as before. More than 8: 2 rows that scroll sideways (scroll bar at the bottom),
+             with the next column peeking in at the right, until View all opens the full list. -->
+        <div
+          class="d-flex flex-wrap gap-2 align-items-center"
+          :class="{ 'mine-scroll': mineTemplates.length > MINE_VISIBLE && !showAllMine }"
+        >
           <div
             v-for="tpl in mineTemplates"
             :key="tpl.id"
@@ -690,12 +706,6 @@ async function goToStage(stage) {
             @click="chooseStyle(s.id)"
           ></button>
 
-          <!-- Add new template button linking to Template Editor -->
-          <router-link
-            to="/template-editor"
-            class="swatch add-swatch text-decoration-none d-flex align-items-center justify-content-center"
-            title="Design a new frame in Template Editor"
-          >+</router-link>
         </div>
 
         <!-- Templates saved from the marketplace (in My Studio) -->
@@ -717,7 +727,7 @@ async function goToStage(stage) {
           </div>
         </template>
 
-        <!-- Re-edit banner when custom template is active -->
+        <!-- The template in use -->
         <div v-if="room.stripCustomTemplate" class="alert alert-light border p-2 mt-2 mb-0 d-flex align-items-center justify-content-between">
           <div class="d-flex align-items-center gap-2 overflow-hidden">
             <img
@@ -731,13 +741,6 @@ async function goToStage(stage) {
               <div class="text-muted" style="font-size: 0.7rem;">Active Template</div>
             </div>
           </div>
-          <router-link
-            :to="'/template-editor?template=' + room.stripCustomTemplate.id"
-            class="btn btn-sm btn-outline-primary py-0 px-2 text-decoration-none flex-shrink-0"
-            title="Re-edit this template in Template Editor (retains full workspace)"
-          >
-            ✏️ Re-edit
-          </router-link>
         </div>
 
         <!-- The cut is only for the default designs: a template already has its own slots -->
@@ -1006,11 +1009,51 @@ async function goToStage(stage) {
   box-shadow: 0 0 0 2px #E8EEFF;
 }
 
-.add-swatch {
-  border: 2px dashed #B8BECC;
-  color: #8A90A0;
-  font-size: 1.3rem;
-  background: #F4F5F9;
+
+/* "View all" next to the Mine title */
+.view-all-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 0.75rem;
+  color: #6B7080;
+}
+
+.view-all-btn:hover {
+  color: #2F5BEA;
+}
+
+/* More than 8 frames under Mine: 2 rows of the same 48px swatches, running sideways.
+   The box is a bit wider than 4 columns, so the 5th column peeks in at the right edge. */
+.mine-scroll {
+  display: grid !important;
+  grid-template-rows: repeat(2, 48px);
+  grid-auto-flow: column;
+  grid-auto-columns: 48px;
+  max-width: calc(4 * 48px + 4 * 8px + 22px);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding: 3px 3px 10px; /* room for the blue outline, and the scroll bar under the frames */
+  scrollbar-width: thin;
+  scrollbar-color: #B8C6F5 transparent;
+}
+
+.mine-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+
+.mine-scroll::-webkit-scrollbar-track {
+  background: #F1F2F6;
+  border-radius: 999px;
+}
+
+.mine-scroll::-webkit-scrollbar-thumb {
+  background: #B8C6F5;
+  border-radius: 999px;
+}
+
+.mine-scroll::-webkit-scrollbar-thumb:hover {
+  background: #2F5BEA;
 }
 
 .cut-list {
@@ -1045,5 +1088,27 @@ async function goToStage(stage) {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* ---------- Smaller screens ---------- */
+/* Tablets and phones: the panels stack, so the long lists get shorter scroll areas */
+@media (max-width: 991.98px) {
+  .canvas-area {
+    min-height: 0;
+    padding-top: 20px;
+    padding-bottom: 20px;
+  }
+
+  .gallery-scroll {
+    max-height: 55vh; /* leaves room to reach the frames below */
+  }
+}
+
+/* Phones: a little less padding so the content gets the room */
+@media (max-width: 575.98px) {
+  .panel {
+    padding: 12px;
+    border-radius: 12px;
+  }
 }
 </style>

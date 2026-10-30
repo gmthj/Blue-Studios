@@ -61,32 +61,8 @@ export const FRAME_STYLES = [
   { id: 'mine-sunny', group: 'mine', background: '#FFE8A3', border: '#E0A100', shape: 'rounded', caption: 'Our day out' },
 ]
 
-// ---------- STICKER TRAY (Decorate page) ----------
-// PLACEHOLDER (Rae): replace with stickers from the Sticker Maker.
-//   tab 'mine'    = stickers the user made (remove.bg cut-outs, Gemini captions)
-//   tab 'giphy'   = GIPHY search results (a .gif URL works as it is, <img> plays it)
-//   tab 'dynamic' = live stickers (OpenWeatherMap weather, the time)
-// Each sticker only needs { id, tab, name, src }, where src is an image URL.
-
-// Draws a coloured text badge as an SVG and returns it as an image URL, so we have
-// stickers to test with before the Sticker Maker is ready
-function makeBadge(text, background, colour) {
-  const svg =
-    '<svg xmlns="http://www.w3.org/2000/svg" width="260" height="70">' +
-    '<rect x="2" y="2" width="256" height="66" rx="33" fill="' + background + '"/>' +
-    '<text x="130" y="45" font-family="Arial" font-size="24" font-weight="bold" fill="' + colour +
-    '" text-anchor="middle">' + text + '</text></svg>'
-  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
-}
-
-export const STICKERS = [
-  { id: 'm1', tab: 'mine', name: 'main character energy', src: makeBadge('main character energy', '#F0457A', '#FFFFFF') },
-  { id: 'm2', tab: 'mine', name: 'four-cut legends', src: makeBadge('four-cut legends', '#FFFFFF', '#1A1A2E') },
-  { id: 'm3', tab: 'mine', name: 'besties', src: makeBadge('♥ besties ♥', '#2F5BEA', '#FFFFFF') },
-  { id: 'g1', tab: 'giphy', name: 'yay', src: makeBadge('YAY!', '#7B61FF', '#FFFFFF') },                    // Rae: a GIPHY .gif URL
-  { id: 'd1', tab: 'dynamic', name: 'Weather', src: makeBadge('☀ 29°C · Singapore', '#FFE8A3', '#7A5200') }, // Rae: live weather
-  { id: 'd2', tab: 'dynamic', name: 'Time', src: makeBadge('🕘 9:02 PM', '#E8EEFF', '#2F5BEA') },           // Rae: live time
-]
+// ---------- STICKER TRAY ----------
+// The Decorate page's stickers are in stickerTray.js (Template Editor defaults + the account's own and saved stickers).
 
 // ---------- FILTERS (Decorate page) ----------
 // Each filter is a CSS "filter" value. The same text also works on a canvas (ctx.filter) for the download.
