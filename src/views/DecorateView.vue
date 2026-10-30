@@ -24,7 +24,6 @@ const selectedSlot = ref(0)          // the photo the filters change ("Applied t
 const selectedStickerId = ref(null)  // the sticker being resized / rotated
 const trayTab = ref('default')       // 'default' | 'mine' | 'giphy' (see stickerTray.js)
 const selectedTrayId = ref(null)     // phones: the tray sticker tapped
-const exporting = ref(false)
 
 // Accounts can also save the strip to My Studio
 const { isAccount } = useAuth()
@@ -252,7 +251,7 @@ function loadImage(src) {
   })
 }
 
-// Draw the strip on a canvas (used by Download and Save to My Studio)
+// Draw the strip on a canvas (used by Save to My Studio)
 async function drawStripCanvas() {
   const W = 900                                 // width of the PNG, in pixels
   const H = Math.round(W / layout.value.aspect) // height, from the strip's shape
@@ -326,21 +325,6 @@ async function drawStripCanvas() {
     ctx.fillText(frameStyle.value.caption, W / 2, H - H * 0.03)
   }
   return canvas
-}
-
-async function downloadJpg() {
-  exporting.value = true
-  try {
-    const canvas = await drawStripCanvas()
-    // Download: make a temporary link to the PNG and click it
-    const link = document.createElement('a')
-    link.href = canvas.toDataURL('image/png')
-    link.download = 'photostrip-' + code.value + '.png'
-    link.click()
-  } catch (error) {
-    console.error(error)
-  }
-  exporting.value = false
 }
 
 // Accounts: save a copy of the strip to My Studio (Firebase Storage + a strips document, see studio.js)
@@ -508,16 +492,11 @@ async function saveToStudio() {
           <button class="btn btn-primary w-100 mb-2" @click="goToStage('music')">Mix soundtrack</button>
           <div class="d-flex gap-2">
             <button class="btn btn-outline-secondary btn-sm flex-fill" @click="goToStage('pick')">&larr; Pick</button>
-            <button class="btn btn-outline-secondary btn-sm flex-fill" :disabled="exporting || hasVideoSlot" :title="hasVideoSlot ? 'A strip with video is exported as an MP4' : ''" @click="downloadJpg">
-              {{ exporting ? 'Saving...' : 'Download JPG' }}
-            </button>
+            <button class="btn btn-outline-primary btn-sm flex-fill" @click="goToStage('export')">Export &rarr;</button>
           </div>
           <button v-if="isAccount" class="btn btn-outline-primary btn-sm w-100 mt-2" :disabled="saving || hasVideoSlot" @click="saveToStudio">
             {{ saving ? 'Saving...' : 'Save to My Studio' }}
           </button>
-          <!-- A strip with video is exported as an MP4 on the Export page (the JPG buttons above are for photo strips) -->
-          <button v-if="hasVideoSlot" class="btn btn-primary btn-sm w-100 mt-2" @click="goToStage('export')">Export video &rarr;</button>
-          <p v-if="hasVideoSlot" class="small text-muted text-center mt-1 mb-0">This strip has a video, so it is exported as an MP4.</p>
           <p v-if="saveMessage" class="small text-center mt-2 mb-0">{{ saveMessage }}</p>
         </div>
       </div>

@@ -432,22 +432,55 @@ service cloud.firestore {
     // ---------- Strips (finished photostrips saved to My Studio) ----------
     // strips/{id}  { ownerId, title, imagePath, createdAt }   always private to the owner
     // The image is in Firebase Storage: strips/{uid}/{id}.jpg
+    // A strip saved from the Share page also has format: 'png' | 'gif' | 'mp4', and imagePath ends with it: strips/{uid}/{id}.mp4
 
     match /strips/{stripId} {
       allow read: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
 
       allow create: if isCreator()
-        && request.resource.data.keys().hasOnly(['ownerId', 'title', 'imagePath', 'createdAt'])
         && request.resource.data.ownerId == request.auth.uid
         && isTitle(request.resource.data.title)
-        && request.resource.data.imagePath == 'strips/' + request.auth.uid + '/' + stripId + '.jpg'
-        && request.resource.data.createdAt is int;
+        && request.resource.data.createdAt is int
+        && (
+          // a JPG, from the Decorate page
+          (request.resource.data.keys().hasOnly(['ownerId', 'title', 'imagePath', 'createdAt'])
+            && request.resource.data.imagePath == 'strips/' + request.auth.uid + '/' + stripId + '.jpg')
+          // a PNG, GIF or MP4, from the Share page
+          || (request.resource.data.keys().hasOnly(['ownerId', 'title', 'imagePath', 'format', 'createdAt'])
+            && request.resource.data.format in ['png', 'gif', 'mp4']
+            && request.resource.data.imagePath == 'strips/' + request.auth.uid + '/' + stripId + '.' + request.resource.data.format)
+        );
 
       allow update: if isCreator()
         && resource.data.ownerId == request.auth.uid
         && onlyChanged(['title'])
         && isTitle(request.resource.data.title);
 
+      allow delete: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
+    // ---------- Shares (a finished strip from the Export page, opened by its link and QR code) ----------
+    // shares/{id}  { ownerId, title, format, filePath, fileUrl, size, roomCode, createdAt }
+    // The file is in Firebase Storage: shares/{uid}/{id}.png | .gif | .mp4
+    // Guests can make one too. Anyone signed in (guests too) can open one if they know its id (a long random text),
+    // but nobody can list them. A share is never changed. Only its maker (or an admin) can delete it.
+
+    match /shares/{shareId} {
+      allow get: if signedIn();
+      allow list: if isAdmin();
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['ownerId', 'title', 'format', 'filePath', 'fileUrl', 'size', 'roomCode', 'createdAt'])
+        && request.resource.data.ownerId == request.auth.uid
+        && isTitle(request.resource.data.title)
+        && request.resource.data.format in ['png', 'gif', 'mp4']
+        && request.resource.data.filePath == 'shares/' + request.auth.uid + '/' + shareId + '.' + request.resource.data.format
+        && request.resource.data.fileUrl is string
+        && request.resource.data.size is int
+        && request.resource.data.roomCode is string
+        && request.resource.data.createdAt is int;
+
+      allow update: if false;
       allow delete: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
     }
 
@@ -513,7 +546,7 @@ service cloud.firestore {
 
     match /{collectionName}/{docId=**} {
       allow read, write: if signedIn()
-        && !(collectionName in ['rooms', 'users', 'templates', 'stickers', 'strips', 'reports', 'adminLog']);
+        && !(collectionName in ['rooms', 'users', 'templates', 'stickers', 'strips', 'shares', 'reports', 'adminLog']);
     }
   }
 }

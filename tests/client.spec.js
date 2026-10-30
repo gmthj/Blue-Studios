@@ -239,7 +239,7 @@ describe('Critical UI components (AppIcon, StageBar, MarketplaceCard, ItemDetail
   })
 
   // 24. StageBar step pills rendering
-  it('renders all 6 photostrip workflow steps in order (no lobby)', () => {
+  it('renders all 7 photostrip workflow steps in order (no lobby)', () => {
     const wrapper = mount(StageBar, {
       props: { current: 'pick' },
       global: {
@@ -249,10 +249,11 @@ describe('Critical UI components (AppIcon, StageBar, MarketplaceCard, ItemDetail
       }
     })
     const steps = wrapper.findAll('.step-pill')
-    expect(steps).toHaveLength(6)
+    expect(steps).toHaveLength(7)
     expect(steps[0].text()).toContain('Shoot')
     expect(steps[1].text()).toContain('Pick')
     expect(steps[5].text()).toContain('Export')
+    expect(steps[6].text()).toContain('Share')
     expect(wrapper.text()).not.toContain('Lobby')
   })
 
@@ -366,7 +367,7 @@ describe('Critical UI components (AppIcon, StageBar, MarketplaceCard, ItemDetail
 // ============================================================================
 describe('Room stages (useRoom.js)', () => {
   it('uses one name per stage, the same names as the stage bar', () => {
-    expect(ROOM_STAGES.map((stage) => stage.id)).toEqual(['shoot', 'pick', 'video', 'decorate', 'music', 'export'])
+    expect(ROOM_STAGES.map((stage) => stage.id)).toEqual(['shoot', 'pick', 'video', 'decorate', 'music', 'export', 'share'])
     for (const stage of ROOM_STAGES) {
       expect(stage).not.toHaveProperty('step')
       expect(stage).not.toHaveProperty('path') // the URL is the name: /room/4821/pick
@@ -375,7 +376,7 @@ describe('Room stages (useRoom.js)', () => {
 
   it('only lets the stage bar open stages whose page is in the app', () => {
     const withPages = ROOM_STAGES.filter((stage) => stage.hasPage).map((stage) => stage.id)
-    expect(withPages).toEqual(['shoot', 'pick', 'video', 'decorate', 'music', 'export'])
+    expect(withPages).toEqual(['shoot', 'pick', 'video', 'decorate', 'music', 'export', 'share'])
   })
 
   it('gives each stage its place in the order', () => {
