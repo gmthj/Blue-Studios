@@ -119,6 +119,7 @@ const LOCAL_ICONS = {
   sliders: 'M4 7h10 M18 7h2 M4 17h4 M12 17h8 M14 5v4 M8 15v4',
   grip: 'M4 8h16 M4 16h16',
   clock: 'M12 3a9 9 0 1 0 0 18a9 9 0 1 0 0-18 M12 7v5l3 2',
+  stop: 'M7 7h10v10H7z',
 }
 
 // icon: an AppIcon name; local: a LOCAL_ICONS name.
@@ -133,7 +134,6 @@ const TOOLS = [
 const BRUSHES = [
   { id: 'pen', label: 'Pen', icon: 'pen' },
   { id: 'highlighter', label: 'Highlighter', icon: 'highlighter' },
-  { id: 'sparkle', label: 'Sparkle', icon: 'glitter' },
 ]
 
 // WHY 4-digit hex like #0000 is transparent, not black, so the old list had an
@@ -149,6 +149,7 @@ const stageEl = ref(null)        // the grey area the canvas sits in (measured t
 const canvasEl = ref(null)       // the square white canvas
 const fileInput = ref(null)      // the hidden <input type="file"> the Upload button clicks
 const editEl = ref(null)         // the contenteditable div while a text layer is being typed into
+const textBoxEl = ref(null)      // the text box in the Edit panel (used to type on phones)
 const stageWidth = ref(400)      // the canvas width in px, so text size scales with the preview
 
 const mode = ref('sticker')      // 'sticker' | 'gif' — controls the frame strip and the save kind
@@ -180,7 +181,7 @@ const gifSpeed = ref(6)          // frames per second
 const drawing = computed(() => tool.value === 'draw')
 
 const currentColor = ref('#101828')
-const brush = ref('pen')         // 'pen' | 'highlighter' | 'sparkle'
+const brush = ref('pen')         // 'pen' | 'highlighter'
 const brushSize = ref(1.2)       // percent of the canvas width
 const drawLayerId = ref(null)    // the drawing layer new strokes are added to
 
@@ -192,6 +193,15 @@ const activeFolder = ref('all')  // 'all' or a folder id
 // WHY: the properties panel's "Remove background" button calls this. It goes through
 // our server function so the remove.bg key stays secret, then swaps the layer's
 // picture for the cut-out one.
+// Remove background works on uploaded photos and on still stickers saved in My Studio.
+// Not on the built-in stickers (already see-through drawings that remove.bg cannot read),
+// live stickers, or anything already cut out.
+const canCutOut = computed(() => {
+  const layer = selectedLayer.value
+  return !!layer && layer.type === 'image' && !layer.dynamic && !layer.cutOut
+    && (layer.source === 'photo' || layer.source === 'saved')
+})
+
 async function cutOutBackground(layer) {
   errorMessage.value = ''
   removingBg.value = true
@@ -202,14 +212,20 @@ async function cutOutBackground(layer) {
     const cutOut = await removeBackground(original)
 
     const url = tempUrl(cutOut)
-    const img = await loadImage(url)
+    let img
+    try {
+      img = await loadImage(url)
+    } catch (error) {
+      throw new Error('The cut-out picture came back broken. Please try again.')
+    }
     snapshot() // so Undo brings the original photo back
     layer.url = url
     layer.ratio = img.naturalHeight / img.naturalWidth // keep the shape correct
     layer.name = layer.name + ' (cut out)'
-    // WHY: the button only shows for source === 'photo'. Without this line it stays on
-    // screen after a successful cut-out, and a second click spends another remove.bg credit.
-    layer.source = 'sticker'
+    // WHY: hides the button after a successful cut-out, so a second click does not spend
+    // another remove.bg credit on a picture that has no background left.
+    layer.cutOut = true
+    showToast('Background removed. Undo brings it back.')
   } catch (error) {
     errorMessage.value = error.message || 'Could not remove the background.'
   } finally {
@@ -236,11 +252,21 @@ const dlBg = ref('white')        // 'white' | 'clear'
 const dlFormat = ref('photo')    // 'photo' | 'gif'
 const downloading = ref(false)
 const previewUrl = ref('')       // a small PNG of the active frame, drawn by the export code
+const previewFailed = ref(false) // the preview could not be drawn (the dialog says so instead of spinning)
 
 const errorMessage = ref('')
 const toastText = ref('')
 const toastType = ref('ok')
 let toastTimer = null
+
+// WHY: errorMessage is only printed inside the Download and Save dialogs. A problem in the
+// editor itself (remove background, upload, copy, loading stickers) used to be set and never
+// seen. When no dialog is open, the message pops up as a red toast instead.
+watch(errorMessage, (message) => {
+  if (!message || dlOpen.value || showSave.value) return
+  showToast(message, 'bad')
+  errorMessage.value = '' // so it does not reappear later inside a dialog
+})
 
 const removingBg = ref(false)
 
@@ -332,20 +358,31 @@ function tempUrl(blob) {
   return url
 }
 
-function loadImage(url) {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.onload = () => resolve(img)
-    img.onerror = () => reject(new Error('Could not load image'))
-    img.src = url
+// WHY decode(): Safari on iPhone can say an SVG has loaded before it is ready to draw, so
+// the canvas (download preview, saved file) came out blank. decode() waits until it is.
+async function loadImage(url) {
+  const img = await new Promise((resolve, reject) => {
+    const image = new Image()
+    image.onload = () => resolve(image)
+    image.onerror = () => reject(new Error('Could not load image'))
+    image.src = url
   })
+  if (img.decode) {
+    try {
+      await img.decode()
+    } catch (error) {
+      // Some browsers refuse to decode an SVG but can still draw it, so carry on.
+    }
+  }
+  return img
 }
 
 function showToast(text, type = 'ok') {
   toastText.value = text
   toastType.value = type
   clearTimeout(toastTimer)
-  toastTimer = setTimeout(() => { toastText.value = '' }, 3000)
+  // Problems stay up longer: they usually say what to do next, which takes longer to read.
+  toastTimer = setTimeout(() => { toastText.value = '' }, type === 'ok' ? 3000 : 6000)
 }
 
 function isSelected(layer) {
@@ -417,18 +454,33 @@ const visibleStickers = computed(() => {
 // Tools
 // ----
 
+// The width where the side panels turn into bottom sheets (the same as the CSS below).
+function isPhone() {
+  return window.innerWidth < 992
+}
+
 function pickTool(id) {
+  // On a phone, tapping the open tool again closes its sheet.
+  if (isPhone() && tool.value === id && mobilePanel.value === 'drawer') {
+    mobilePanel.value = null
+    return
+  }
   tool.value = id
   selectedId.value = null
   editingId.value = null
   // Load the user's saved stickers the first time the panel opens (accounts only).
   if (id === 'stickers' && isAccount.value && myStickers.value.length === 0) loadMine()
   // On a phone the drawer is a sheet, so opening a tool opens the sheet too.
-  if (window.innerWidth < 992) mobilePanel.value = 'drawer'
+  if (isPhone()) mobilePanel.value = 'drawer'
+}
+
+function toggleEditSheet() {
+  mobilePanel.value = mobilePanel.value === 'props' ? null : 'props'
 }
 
 function setMode(next) {
   mode.value = next
+  if (next === 'sticker') stopPlaying()
   // The frame strip only exists in GIF mode, so the download format follows it.
   if (next === 'sticker' && dlFormat.value === 'gif') dlFormat.value = 'photo'
 }
@@ -800,6 +852,17 @@ async function addText(style, font = null) {
   })
   selectedId.value = id
   tool.value = 'text'
+  if (isPhone()) {
+    // WHY: on a phone the drawer sheet would hide the new text, and typing straight on a
+    // small canvas is fiddly. The Edit sheet has a normal text box, ready to type in.
+    mobilePanel.value = 'props'
+    await nextTick()
+    if (textBoxEl.value) {
+      textBoxEl.value.focus()
+      textBoxEl.value.select()
+    }
+    return
+  }
   // Wait for the box to exist, then put the caret in it.
   await nextTick()
   startEditing(layers.value.find((layer) => layer.id === id))
@@ -867,6 +930,10 @@ async function loadMine() {
       }
     }))
     myStickers.value = withUrls.filter(Boolean)
+    const missing = items.length - myStickers.value.length
+    if (missing > 0) {
+      showToast(missing + (missing === 1 ? ' saved sticker' : ' saved stickers') + ' could not be loaded, so ' + (missing === 1 ? 'it is' : 'they are') + ' hidden.', 'warn')
+    }
     await loadFolders() // the folder tabs need the folders too
   } catch (error) {
     errorMessage.value = 'Could not load your saved stickers.'
@@ -882,12 +949,17 @@ async function addMySticker(sticker) {
   errorMessage.value = ''
   try {
     const response = await fetch(sticker.thumbUrl)
+    if (!response.ok) throw new Error('Download failed') // fetch does not throw on a 403 or 404
     const blob = await response.blob()
     const url = tempUrl(blob)
     const img = await loadImage(url)
-    addImageLayer(url, sticker.name, img.naturalHeight / img.naturalWidth, 30, 'sticker')
+    // 'saved' lets you remove its background. Animated ones stay 'sticker': remove.bg would
+    // keep only the first frame of the GIF.
+    addImageLayer(url, sticker.name, img.naturalHeight / img.naturalWidth, 30, sticker.kind === 'animated' ? 'sticker' : 'saved')
   } catch (error) {
-    errorMessage.value = 'Could not add that sticker. Ask Gabriel to check the Storage CORS settings.'
+    errorMessage.value = navigator.onLine === false
+      ? 'No internet connection, so that sticker could not be added.'
+      : 'Could not add that sticker. Ask Gabriel to check the Storage CORS settings.'
   }
 }
 
@@ -1015,6 +1087,7 @@ function startGesture(event, layer, mode2) {
   // While typing, a drag on the text box must not move it.
   if (editingId.value === layer.id) return
   event.preventDefault() // stops the browser selecting text or dragging the image
+  const wasSelected = selectedId.value === layer.id
   selectedId.value = layer.id
   snapshot()
 
@@ -1036,6 +1109,7 @@ function startGesture(event, layer, mode2) {
     centerY: centerY,
     startDistance: Math.hypot(event.clientX - centerX, event.clientY - centerY) || 1,
     startSize: layer[sizeKey(layer)],
+    wasSelected: wasSelected,
   }
 
   // Listen on the whole window so the gesture keeps working if the pointer leaves.
@@ -1068,7 +1142,14 @@ function onGesture(event) {
   }
 }
 
-function endGesture() {
+function endGesture(event) {
+  // WHY: phones have no double-click, so tapping text that is already selected (without
+  // dragging it) starts typing, the same as double-clicking does with a mouse.
+  if (gesture && event && gesture.mode === 'move' && gesture.wasSelected
+      && Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) < 6) {
+    const layer = layers.value.find((item) => item.id === gesture.id)
+    if (layer && layer.type === 'text' && !layer.emoji) startEditing(layer)
+  }
   gesture = null
   window.removeEventListener('pointermove', onGesture)
   window.removeEventListener('pointerup', endGesture)
@@ -1088,7 +1169,6 @@ function pointInStage(event) {
 }
 
 let currentStroke = null
-let lastStar = null
 
 function startStroke(event) {
   // Keeps the move/up events coming to the overlay even if the pointer leaves it.
@@ -1104,9 +1184,7 @@ function startStroke(event) {
   }
 
   const point = pointInStage(event)
-  const width = brush.value === 'highlighter' ? brushSize.value * 3
-    : brush.value === 'sparkle' ? brushSize.value * 0.7
-    : brushSize.value
+  const width = brush.value === 'highlighter' ? brushSize.value * 3 : brushSize.value
 
   layer.strokes.push({
     brush: brush.value,
@@ -1115,35 +1193,17 @@ function startStroke(event) {
     opacity: brush.value === 'highlighter' ? 0.4 : 1, // see-through, like a real highlighter
     // The second point is almost the same, so a single click still leaves a dot.
     points: [point, [point[0] + 0.01, point[1]]],
-    stars: [],
   })
   currentStroke = layer.strokes[layer.strokes.length - 1]
-  lastStar = point
-  if (brush.value === 'sparkle') addStar(point)
 }
 
 function moveStroke(event) {
   if (!currentStroke) return
-  const point = pointInStage(event)
-  currentStroke.points.push(point)
-
-  // The sparkle pen drops a star each time the pen has moved a little way.
-  if (currentStroke.brush === 'sparkle' && Math.hypot(point[0] - lastStar[0], point[1] - lastStar[1]) > 4) {
-    addStar(point)
-    lastStar = point
-  }
+  currentStroke.points.push(pointInStage(event))
 }
 
 function endStroke() {
   currentStroke = null
-}
-
-function addStar(point) {
-  currentStroke.stars.push({
-    x: point[0] + (Math.random() * 2 - 1),
-    y: point[1] + (Math.random() * 2 - 1),
-    r: (1 + Math.random() * 1.2) * (0.7 + brushSize.value * 0.5), // a random size looks natural
-  })
 }
 
 // Remove the last stroke of the current drawing (an undo just for drawing).
@@ -1162,18 +1222,6 @@ function clearDrawings() {
   snapshot()
   layers.value = layers.value.filter((item) => item.type !== 'draw')
   drawLayerId.value = null
-}
-
-// A 4-point star as an SVG path string. The preview uses it directly and the export
-// reuses the same string through Path2D, so both look identical.
-function starPath(cx, cy, r) {
-  const parts = []
-  for (let i = 0; i < 8; i++) {
-    const angle = (i * 45 - 90) * Math.PI / 180
-    const radius = i % 2 === 0 ? r : r * 0.3
-    parts.push((i === 0 ? 'M' : 'L') + (cx + Math.cos(angle) * radius).toFixed(2) + ' ' + (cy + Math.sin(angle) * radius).toFixed(2))
-  }
-  return parts.join(' ') + ' Z'
 }
 
 function pointsToString(points) {
@@ -1269,16 +1317,6 @@ async function renderFrameCanvas(frame, size = EXPORT_SIZE, background = 'transp
         })
         ctx.stroke()
         ctx.restore()
-
-        // Sparkle stars
-        for (const star of stroke.stars) {
-          ctx.save()
-          ctx.fillStyle = stroke.color
-          ctx.translate(star.x * k, star.y * k)
-          ctx.scale(k, k)
-          ctx.fill(new Path2D(starPath(0, 0, star.r)))
-          ctx.restore()
-        }
       }
     }
 
@@ -1403,13 +1441,23 @@ const dlSummary = computed(() => {
   return 'One PNG at ' + DOWNLOAD_SIZE + ' × ' + DOWNLOAD_SIZE + '.'
 })
 
-// A small picture of the active frame, drawn by the same code that makes the file.
+// A small picture of the sticker, drawn by the same code that makes the file. For a GIF
+// it is every frame, played at the chosen speed, so you see the animation before saving.
 async function refreshPreview() {
+  const background = dlBg.value === 'white' ? 'white' : 'transparent'
+  previewFailed.value = false
   try {
-    const canvas = await renderFrameCanvas(activeFrame.value, 240, dlBg.value === 'white' ? 'white' : 'transparent')
-    previewUrl.value = canvas.toDataURL('image/png')
+    await waitForFonts() // otherwise the first preview shows text in a stand-in font
+    if (dlFormat.value === 'gif') {
+      await startPlaying(240, background)
+    } else {
+      stopPlaying()
+      const canvas = await renderFrameCanvas(activeFrame.value, 240, background)
+      previewUrl.value = canvas.toDataURL('image/png')
+    }
   } catch (error) {
     previewUrl.value = ''
+    previewFailed.value = true
   }
 }
 
@@ -1420,14 +1468,84 @@ async function openDownload() {
     return
   }
   if (frames.value.length < 2 && dlFormat.value === 'gif') dlFormat.value = 'photo'
+  stopPlaying() // the canvas preview and the dialog preview share one player
+  previewUrl.value = ''
   dlOpen.value = true
   await nextTick()
   await refreshPreview()
 }
 
-// The background choice changes the preview, so redraw it when it changes.
-watch(dlBg, () => {
+// The background and the format both change the preview, so redraw it when they change.
+watch([dlBg, dlFormat], () => {
   if (dlOpen.value) refreshPreview()
+})
+
+watch(dlOpen, (open) => {
+  if (!open) stopPlaying()
+})
+
+// ----
+// GIF preview
+// WHY: the speed slider means nothing until you see it move. Every frame is drawn once
+// (with the export code, so it matches the file), then a timer flips through them.
+// Changing the speed while it plays restarts the timer at the new speed.
+// ----
+
+const playFrames = ref([])   // one image per frame, ready to show
+const playIndex = ref(0)
+const playing = ref(false)   // true while the canvas shows the animation
+let playTimer = null
+
+function startPlayTimer() {
+  clearInterval(playTimer)
+  playTimer = setInterval(() => {
+    playIndex.value = (playIndex.value + 1) % playFrames.value.length
+  }, Math.round(1000 / gifSpeed.value))
+}
+
+async function startPlaying(size, background) {
+  const images = []
+  for (const frame of frames.value) {
+    const canvas = await renderFrameCanvas(frame, size, background)
+    images.push(canvas.toDataURL('image/png'))
+  }
+  playFrames.value = images
+  playIndex.value = 0
+  startPlayTimer()
+}
+
+function stopPlaying() {
+  clearInterval(playTimer)
+  playTimer = null
+  playing.value = false
+  playFrames.value = []
+}
+
+// The Play button under the canvas.
+async function togglePlay() {
+  if (playing.value) {
+    stopPlaying()
+    return
+  }
+  if (frames.value.length < 2) {
+    showToast('Add a second frame to see it move.', 'warn')
+    return
+  }
+  selectedId.value = null
+  editingId.value = null
+  try {
+    await waitForFonts()
+    // The canvas is shown at stageWidth, so draw at that size (x2 for sharp phone screens).
+    await startPlaying(Math.min(EXPORT_SIZE, Math.round(stageWidth.value * 2)), 'transparent')
+    playing.value = true
+  } catch (error) {
+    stopPlaying()
+    showToast('Could not play the preview. One of the pictures would not load.', 'bad')
+  }
+}
+
+watch(gifSpeed, () => {
+  if (playTimer) startPlayTimer()
 })
 
 async function doDownload() {
@@ -1724,6 +1842,7 @@ async function refreshThumbs() {
 // keystroke in a text box from re-rendering every frame.
 let thumbTimer = null
 watch(frames, () => {
+  if (playing.value && !dlOpen.value) stopPlaying() // the canvas preview would be out of date
   clearTimeout(thumbTimer)
   thumbTimer = setTimeout(refreshThumbs, 400)
 }, { deep: true })
@@ -1809,6 +1928,7 @@ onBeforeUnmount(() => {
   clearTimeout(toastTimer)
   clearTimeout(thumbTimer)
   clearInterval(liveTimer)
+  clearInterval(playTimer)
   window.removeEventListener('copy', onCopy)
   window.removeEventListener('cut', onCut)
   window.removeEventListener('paste', onPaste)
@@ -1851,9 +1971,6 @@ function imageStyle(layer) {
     <!-- ============ TOP BAR ============ -->
     <header class="sm-topbar sm-card">
       <div class="sm-brand">
-        <span class="sm-brand-tile" aria-hidden="true">
-          <svg viewBox="0 0 24 24" class="sm-local-icon"><path :d="LOCAL_ICONS.sticker" /></svg>
-        </span>
         <div class="sm-brand-text">
           <h1 class="sm-brand-title">Sticker Maker</h1>
         </div>
@@ -1926,7 +2043,7 @@ function imageStyle(layer) {
           :key="item.id"
           type="button"
           class="sm-rail-btn"
-          :class="{ active: tool === item.id }"
+          :class="{ active: tool === item.id && mobilePanel !== 'props' }"
           :aria-pressed="tool === item.id"
           @click="pickTool(item.id)"
         >
@@ -1937,7 +2054,12 @@ function imageStyle(layer) {
           <span>{{ item.label }}</span>
         </button>
         <!-- Only on phones: opens the properties sheet -->
-        <button type="button" class="sm-rail-btn sm-mobile-only" @click="mobilePanel = 'props'">
+        <button
+          type="button"
+          class="sm-rail-btn sm-mobile-only"
+          :class="{ active: mobilePanel === 'props', 'has-dot': selectedLayer && mobilePanel !== 'props' }"
+          @click="toggleEditSheet"
+        >
           <span class="sm-rail-tile">
             <svg viewBox="0 0 24 24" class="sm-local-icon"><path :d="LOCAL_ICONS.sliders" /></svg>
           </span>
@@ -1975,7 +2097,7 @@ function imageStyle(layer) {
                 {{ section.title }}
                 <span class="sm-count">{{ section.items.length }}</span>
               </p>
-              <div class="sm-grid" :class="{ 'sm-grid-2': section.id === 'tapes' }">
+              <div class="sm-grid sm-art-grid" :class="{ 'sm-grid-2': section.id === 'tapes' }">
                 <button
                   v-for="item in section.items"
                   :key="item.id"
@@ -2005,7 +2127,7 @@ function imageStyle(layer) {
                   to use the stickers you saved in My Studio.
                 </span>
               </div>
-              <div v-else-if="loadingMine" class="sm-grid sm-grid-3" role="status" aria-label="Loading your stickers">
+              <div v-else-if="loadingMine" class="sm-grid sm-grid-3 sm-art-grid" role="status" aria-label="Loading your stickers">
                 <span v-for="n in 6" :key="n" class="skeleton sm-cell-skeleton"></span>
               </div>
               <div v-else-if="myStickers.length === 0" class="empty-state sm-empty-state">
@@ -2034,7 +2156,7 @@ function imageStyle(layer) {
                 </div>
 
                 <p v-if="visibleStickers.length === 0" class="sm-hint">No stickers in this folder yet.</p>
-                <div v-else class="sm-grid sm-grid-3">
+                <div v-else class="sm-grid sm-grid-3 sm-art-grid">
                   <button
                     v-for="item in visibleStickers"
                     :key="item.id"
@@ -2284,7 +2406,8 @@ function imageStyle(layer) {
       <main class="sm-main">
         <div ref="stageEl" class="sm-stage">
           <span class="sm-stage-pill sm-stage-tag">{{ EXPORT_SIZE }} × {{ EXPORT_SIZE }}</span>
-          <span class="sm-stage-pill sm-stage-zoom">{{ zoomPercent }}%</span>
+          <span v-if="playing" class="sm-stage-pill sm-stage-zoom sm-stage-playing">Playing · tap to stop</span>
+          <span v-else class="sm-stage-pill sm-stage-zoom">{{ zoomPercent }}%</span>
 
           <div
             ref="canvasEl"
@@ -2357,20 +2480,31 @@ function imageStyle(layer) {
                 viewBox="0 0 100 100"
                 preserveAspectRatio="none"
               >
-                <g v-for="(stroke, i) in item.strokes" :key="i">
-                  <polyline
-                    :points="pointsToString(stroke.points)"
-                    fill="none"
-                    :stroke="stroke.color"
-                    :stroke-width="stroke.width"
-                    :stroke-opacity="stroke.opacity"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                  <path v-for="(star, j) in stroke.stars" :key="j" :d="starPath(star.x, star.y, star.r)" :fill="stroke.color" />
-                </g>
+                <polyline
+                  v-for="(stroke, i) in item.strokes"
+                  :key="i"
+                  :points="pointsToString(stroke.points)"
+                  fill="none"
+                  :stroke="stroke.color"
+                  :stroke-width="stroke.width"
+                  :stroke-opacity="stroke.opacity"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
               </svg>
             </template>
+
+            <!-- GIF preview: covers the canvas while it plays. Tapping it stops. -->
+            <button
+              v-if="playing && playFrames.length"
+              type="button"
+              class="sm-play"
+              aria-label="Stop the preview"
+              @pointerdown.stop
+              @click="stopPlaying"
+            >
+              <img :src="playFrames[playIndex]" alt="" draggable="false" />
+            </button>
 
             <!-- While drawing, this transparent sheet catches the pointer so layers below are not moved -->
             <div
@@ -2431,6 +2565,19 @@ function imageStyle(layer) {
           </div>
 
           <div class="sm-frame-speed">
+            <button
+              type="button"
+              class="btn btn-sm sm-play-btn"
+              :class="playing ? 'btn-primary' : 'btn-outline-primary'"
+              :disabled="frames.length < 2"
+              :title="frames.length < 2 ? 'Add a second frame to see it move' : ''"
+              :aria-pressed="playing"
+              @click="togglePlay"
+            >
+              <svg v-if="playing" viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true"><path :d="LOCAL_ICONS.stop" /></svg>
+              <AppIcon v-else name="play" :size="14" />
+              {{ playing ? 'Stop' : 'Play' }}
+            </button>
             <span class="sm-label mb-0">Speed</span>
             <input
               v-model.number="gifSpeed"
@@ -2473,6 +2620,7 @@ function imageStyle(layer) {
             <template v-if="selectedLayer.type === 'text'">
               <template v-if="!selectedLayer.emoji">
                 <textarea
+                  ref="textBoxEl"
                   :value="selectedLayer.text"
                   class="form-control sm-textarea"
                   rows="2"
@@ -2626,7 +2774,7 @@ function imageStyle(layer) {
               </div>
 
               <button
-                v-if="selectedLayer.source === 'photo'"
+                v-if="canCutOut"
                 type="button"
                 class="btn btn-outline-primary w-100 sm-action mt-3"
                 :disabled="removingBg"
@@ -2753,7 +2901,13 @@ function imageStyle(layer) {
 
           <div class="sm-dl-top">
             <div class="sm-dl-preview" :class="{ 'is-clear': dlBg === 'clear' }">
-              <img v-if="previewUrl" :src="previewUrl" alt="Preview of the sticker" />
+              <img
+                v-if="dlFormat === 'gif' && playFrames.length"
+                :src="playFrames[playIndex]"
+                alt="Preview of the GIF"
+              />
+              <img v-else-if="dlFormat !== 'gif' && previewUrl" :src="previewUrl" alt="Preview of the sticker" />
+              <span v-else class="sm-dl-loading" role="status">{{ previewFailed ? 'No preview, but the download still works.' : 'Drawing preview…' }}</span>
             </div>
 
             <div class="sm-dl-fields">
@@ -2783,6 +2937,22 @@ function imageStyle(layer) {
                 >GIF</button>
               </div>
               <p class="sm-hint">{{ dlSummary }}</p>
+
+              <!-- Speed here too, so you can tune it while watching the preview -->
+              <div v-if="dlFormat === 'gif'" class="sm-frame-speed sm-dl-speed">
+                <span class="sm-label mb-0">Speed</span>
+                <input
+                  v-model.number="gifSpeed"
+                  type="range"
+                  class="sm-range"
+                  :style="{ '--fill': ((gifSpeed - 1) / 14) * 100 + '%' }"
+                  min="1"
+                  max="15"
+                  step="1"
+                  aria-label="GIF speed"
+                />
+                <span class="sm-frame-fps">{{ gifSpeed }} fps</span>
+              </div>
             </div>
           </div>
 
@@ -2978,7 +3148,9 @@ function imageStyle(layer) {
 /*  Blue Studios rather than a copy of another editor.                 */
 /* ------------------------------------------------------------------ */
 .sm-page {
-  --sm-navbar: 56px; /* the navbar height in App.vue */
+  /* Everything App.vue puts around the page: the 57px navbar, its 24px margin (mb-4) and
+     main's 16px bottom padding (pb-3). The editor fills exactly what is left, so it never scrolls. */
+  --sm-navbar: 97px;
   --sm-gap: 12px;
   --sm-float: 0 1px 2px rgba(20, 23, 43, 0.04), 0 12px 32px rgba(20, 23, 43, 0.06);
   --sm-faint: #9AA0AE;
@@ -3023,16 +3195,6 @@ function imageStyle(layer) {
   padding: 8px 8px 8px 12px;
 }
 .sm-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
-/* The icon tile from design.md, tilted a little for personality */
-.sm-brand-tile {
-  display: flex; align-items: center; justify-content: center;
-  width: 36px; height: 36px;
-  border-radius: 10px;
-  color: var(--brand);
-  background: var(--brand-tint);
-  transform: rotate(-4deg);
-  flex-shrink: 0;
-}
 .sm-brand-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
 .sm-brand-title {
   margin: 0;
@@ -3083,6 +3245,16 @@ function imageStyle(layer) {
 .sm-rail-btn.active { color: var(--brand); }
 .sm-rail-btn.active .sm-rail-tile { color: var(--brand); background: var(--brand-tint); transform: rotate(-4deg); }
 .sm-rail-btn:active .sm-rail-tile { transform: scale(0.94); }
+/* A dot on "Edit" when something is selected, so phone users know where its settings are */
+.sm-rail-btn.has-dot .sm-rail-tile { position: relative; }
+.sm-rail-btn.has-dot .sm-rail-tile::after {
+  content: '';
+  position: absolute; top: 3px; right: 3px;
+  width: 8px; height: 8px;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: var(--brand);
+}
 .sm-mobile-only { display: none; }
 
 .sm-panel {
@@ -3178,7 +3350,7 @@ function imageStyle(layer) {
 .sm-font-card-name { font-size: 0.72rem; font-weight: 600; color: var(--muted); }
 
 /* ---------- draw tool ---------- */
-.sm-brushes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.sm-brushes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
 .sm-brush {
   display: flex; flex-direction: column; align-items: center; gap: 4px;
   padding: 10px 4px;
@@ -3397,6 +3569,20 @@ function imageStyle(layer) {
   cursor: grab;
 }
 
+/* GIF preview: sits over the layers with the same checkerboard, so it looks like the canvas moving */
+.sm-play {
+  position: absolute; inset: 0; z-index: 25;
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: inherit;
+  cursor: pointer;
+}
+.sm-play img { display: block; width: 100%; height: 100%; pointer-events: none; }
+.sm-stage-playing { color: var(--brand); border-color: var(--brand-tint); }
+.sm-play-btn { flex-shrink: 0; }
+
 .sm-draw-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .sm-draw-overlay { position: absolute; inset: 0; z-index: 20; cursor: crosshair; touch-action: none; }
 
@@ -3544,6 +3730,8 @@ function imageStyle(layer) {
   background: transparent; color: var(--muted);
   transition: background-color 150ms ease, color 150ms ease;
 }
+/* The panels' close button only means something on a phone, where they are sheets */
+.sm-close.sm-mobile-only { display: none; }
 
 /* ---------- dialogs ---------- */
 .sm-modal-backdrop {
@@ -3604,6 +3792,9 @@ function imageStyle(layer) {
   background-position: 0 0, 0 6px, 6px -6px, -6px 0;
 }
 .sm-dl-preview img { max-width: 100%; max-height: 100%; display: block; }
+.sm-dl-loading { padding: 8px; font-size: 0.78rem; color: var(--muted); text-align: center; }
+.sm-dl-speed { margin-top: 12px; }
+.sm-dl-speed .sm-range { flex: 1; width: auto; min-width: 0; }
 .sm-dl-fields { flex: 1; min-width: 0; }
 
 .sm-folder { display: flex; align-items: center; gap: 3px; }
@@ -3674,47 +3865,93 @@ function imageStyle(layer) {
 }
 
 /* ---------- phones and small tablets ---------- */
-/* WHY: below 992px the two side panels become bottom sheets, so the canvas keeps
-   the whole screen and you never have to scroll to reach it. */
+/* WHY: below 992px the page fits the screen exactly, like a phone app:
+   a short top bar, the canvas, and the tools pinned along the bottom. A tool opens as a
+   short sheet just above the tools, so the canvas and every tool stay in view while you
+   pick stickers. */
 @media (max-width: 991.98px) {
   .sm-page {
-    height: auto;
-    min-height: calc(100vh - var(--sm-navbar));
-    min-height: calc(100dvh - var(--sm-navbar));
-    overflow: visible;
-    padding: 8px;
+    --sm-rail-h: calc(62px + env(safe-area-inset-bottom));
+    /* Pull up 16px into the navbar's 24px margin: small screens need every pixel. */
+    --sm-navbar: 81px;
+    margin-top: -16px;
+    height: calc(100vh - var(--sm-navbar));
+    height: calc(100dvh - var(--sm-navbar));
+    min-height: 0;
+    padding: 8px 8px calc(var(--sm-rail-h) + 8px);
     gap: 8px;
   }
-  .sm-topbar { flex-wrap: wrap; }
-  .sm-mode { order: 3; margin-left: 0; width: 100%; }
-  .sm-mode .seg-tab { flex: 1; justify-content: center; }
-  .sm-topbar-actions { margin-left: auto; }
-  .sm-body { flex-direction: column; gap: 8px; }
-  .sm-rail { width: 100%; flex-direction: row; padding: 4px; }
-  .sm-rail-btn { flex: 1; }
-  .sm-mobile-only { display: flex; }
 
-  .sm-panel {
-    position: fixed; left: 0; right: 0; bottom: 0; z-index: 1040;
+  /* Top bar: title and actions on one row, Sticker / GIF underneath */
+  .sm-topbar { flex-wrap: wrap; gap: 6px; padding: 6px 6px 6px 10px; }
+  .sm-mode { order: 3; margin-left: 0; width: 100%; }
+  .sm-mode .seg-tab { flex: 1; justify-content: center; padding-top: 5px; padding-bottom: 5px; }
+  .sm-topbar-actions { margin-left: auto; gap: 4px; }
+  .sm-topbar .sm-square,
+  .sm-topbar .sm-action { width: 36px; height: 36px; padding: 0; }
+  .sm-topbar .sm-hide-xs { display: none; }
+
+  .sm-body { flex-direction: column; gap: 8px; }
+  .sm-mobile-only,
+  .sm-close.sm-mobile-only { display: flex; }
+
+  /* Tools: a bar pinned to the bottom of the screen, above the sheets */
+  .sm-rail {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 1045;
     width: auto;
-    max-height: 70vh;
-    max-height: 70dvh;
+    height: var(--sm-rail-h);
+    flex-direction: row; gap: 0;
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    border-width: 1px 0 0;
+    border-radius: 0;
+    box-shadow: 0 -4px 16px rgba(20, 23, 43, 0.06);
+  }
+  .sm-rail-btn { flex: 1; gap: 2px; padding: 0; font-size: 0.68rem; }
+  .sm-rail-tile { width: 40px; height: 30px; border-radius: 10px; }
+
+  /* Sheets: open just above the tool bar, under half the screen */
+  .sm-panel {
+    position: fixed; left: 0; right: 0; bottom: var(--sm-rail-h); z-index: 1040;
+    width: auto;
+    max-height: 46vh;
+    max-height: 46dvh;
     border-radius: 20px 20px 0 0;
     border-bottom: 0;
     box-shadow: 0 -12px 32px rgba(20, 23, 43, 0.12);
-    transform: translateY(101%);
+    transform: translateY(calc(100% + var(--sm-rail-h)));
     transition: transform 300ms var(--ease-out);
   }
   .sm-panel.is-open { transform: translateY(0); }
-  .sm-sheet-backdrop { position: fixed; inset: 0; z-index: 1030; background: rgba(20, 23, 43, 0.35); }
+  .sm-panel-head { padding: 10px 16px 6px; }
+  .sm-panel-title { font-size: 0.95rem; }
+  .sm-section { margin-top: 14px; }
+  /* Light, so you can still see the sticker you just added */
+  .sm-sheet-backdrop { position: fixed; inset: 0; z-index: 1030; background: rgba(20, 23, 43, 0.12); }
 
-  .sm-stage { min-height: 62vh; min-height: 62dvh; }
-  .sm-frames { flex-wrap: wrap; }
+  /* Smaller sticker tiles: six in a row instead of four */
+  .sm-art-grid { grid-template-columns: repeat(6, 1fr); gap: 6px; }
+  .sm-art-grid.sm-grid-2 { grid-template-columns: repeat(3, 1fr); }
+  .sm-art-grid .sm-cell { padding: 5px; border-radius: 10px; }
+  .sm-art-grid .sm-emoji { font-size: 22px; }
+  .sm-font-cards { grid-template-columns: 1fr 1fr; }
+  .sm-font-card { padding: 8px 10px; }
+  .sm-font-card-sample { font-size: 1.1rem; }
+
+  .sm-stage { border-radius: 16px; }
+  .sm-stage-pill { top: 8px; padding: 2px 8px; font-size: 0.7rem; }
+  .sm-stage-tag { left: 8px; }
+  .sm-stage-zoom { right: 8px; }
+
+  /* Frame strip: frames on one scrolling row, buttons and speed on the next */
+  .sm-frames { flex-wrap: wrap; gap: 8px; padding: 8px; }
   .sm-frame-list { width: 100%; }
+  .sm-frame { width: 48px; height: 48px; border-radius: 10px; }
   .sm-frame-actions { flex-direction: row; }
-  .sm-frame-speed { margin-left: auto; }
+  .sm-frame-speed { flex: 1 1 auto; justify-content: flex-end; }
+  .sm-frame-speed .sm-range { flex: 1; width: auto; min-width: 60px; max-width: 140px; }
+
   .sm-dl-top { flex-direction: column; }
-  .sm-dl-preview { width: 100%; height: 150px; }
+  .sm-dl-preview { width: 100%; height: 200px; }
 }
 
 /* Below ~400px: icon-only top buttons, and dialog buttons stack full width */
