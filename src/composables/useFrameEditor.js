@@ -2432,6 +2432,7 @@ function triggerFileUpload() {
 
 const ALLOWED_UPLOAD_EXTS = ['.png', '.jpg', '.jpeg', '.svg']
 const ALLOWED_UPLOAD_MIMES = ['image/png', 'image/jpeg', 'image/svg+xml']
+const isInternalDragging = ref(false)
 
 function isAllowedUploadFile(file) {
   if (!file) return false
@@ -2448,8 +2449,30 @@ async function handleFileUpload(event) {
   if (uploadInputRef.value) uploadInputRef.value.value = ''
 }
 
+function onDropzoneDragOver(event) {
+  if (isInternalDragging.value) {
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'none'
+    return
+  }
+  event.preventDefault()
+}
+
 async function handleFileUploadDrop(event) {
   event.preventDefault()
+
+  // Prevent re-uploading/duplicating an already existing asset dragged from the drawer
+  if (isInternalDragging.value) {
+    isInternalDragging.value = false
+    return
+  }
+
+  if (event.dataTransfer) {
+    const types = Array.from(event.dataTransfer.types || [])
+    if (types.includes('application/x-blue-asset') || types.includes('application/json')) {
+      return
+    }
+  }
+
   const files = event.dataTransfer?.files
   if (!files || files.length === 0) return
   await processUploadedFiles(Array.from(files))
@@ -2467,8 +2490,12 @@ async function processUploadedFiles(files) {
   }
 
   isUploading.value = true
+  let addedCount = 0
+  let duplicateCount = 0
+
   for (const file of validFiles) {
     const isSvg = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg')
+    const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, '')
     const reader = new FileReader()
 
     await new Promise(resolve => {
@@ -2476,9 +2503,21 @@ async function processUploadedFiles(files) {
         reader.onload = async e => {
           const svgContent = e.target.result
           const dataUrl = 'data:image/svg+xml;utf8,' + encodeURIComponent(svgContent)
+
+          // Deduplicate: check if this SVG is already in userUploads
+          const isDuplicate = userUploads.value.some(u =>
+            u.isSvg && (u.svgContent === svgContent || (u.name === fileNameWithoutExt && u.size === file.size))
+          )
+
+          if (isDuplicate) {
+            duplicateCount++
+            resolve()
+            return
+          }
+
           const newUpload = {
             id: 'upl-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
-            name: file.name.replace(/\.[^/.]+$/, ''),
+            name: fileNameWithoutExt,
             type: 'svg',
             isSvg: true,
             svgContent: svgContent,
@@ -2488,15 +2527,28 @@ async function processUploadedFiles(files) {
           }
           userUploads.value.unshift(newUpload)
           await saveUploadToDB(newUpload)
+          addedCount++
           resolve()
         }
         reader.readAsText(file)
       } else {
         reader.onload = async e => {
           const dataUrl = e.target.result
+
+          // Deduplicate: check if this raster image is already in userUploads
+          const isDuplicate = userUploads.value.some(u =>
+            !u.isSvg && (u.dataUrl === dataUrl || (u.name === fileNameWithoutExt && u.size === file.size))
+          )
+
+          if (isDuplicate) {
+            duplicateCount++
+            resolve()
+            return
+          }
+
           const newUpload = {
             id: 'upl-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
-            name: file.name.replace(/\.[^/.]+$/, ''),
+            name: fileNameWithoutExt,
             type: 'image',
             isSvg: false,
             dataUrl: dataUrl,
@@ -2505,6 +2557,7 @@ async function processUploadedFiles(files) {
           }
           userUploads.value.unshift(newUpload)
           await saveUploadToDB(newUpload)
+          addedCount++
           resolve()
         }
         reader.readAsDataURL(file)
@@ -2512,10 +2565,13 @@ async function processUploadedFiles(files) {
     })
   }
   isUploading.value = false
-  if (rejectedCount > 0) {
-    notify(`Uploaded ${validFiles.length} file${validFiles.length > 1 ? 's' : ''} (${rejectedCount} unsupported skipped — PNG, JPG & SVG only)`)
-  } else {
-    notify(`Uploaded ${validFiles.length} file${validFiles.length > 1 ? 's' : ''}!`)
+
+  if (duplicateCount > 0 && addedCount === 0) {
+    notify(`Asset${duplicateCount > 1 ? 's' : ''} already in your uploads!`)
+  } else if (rejectedCount > 0) {
+    notify(`Uploaded ${addedCount} file${addedCount > 1 ? 's' : ''} (${rejectedCount} unsupported skipped)`)
+  } else if (addedCount > 0) {
+    notify(`Uploaded ${addedCount} file${addedCount > 1 ? 's' : ''}!`)
   }
 }
 
@@ -2571,16 +2627,41 @@ function addUploadToCanvas(item, customX = null, customY = null) {
 }
 
 function onAssetDragStart(item, event) {
+  isInternalDragging.value = true
   if (event && event.dataTransfer) {
     event.dataTransfer.setData('application/json', JSON.stringify(item))
+    event.dataTransfer.setData('application/x-blue-asset', item.id || 'true')
     event.dataTransfer.effectAllowed = 'copy'
   }
+}
+
+function onAssetDragEnd() {
+  isInternalDragging.value = false
 }
 
 async function onCanvasDrop(event) {
   event.preventDefault()
 
-  // 1. Files dropped from computer desktop / file browser
+  // 1. Internal drawer asset drag (Prioritize internal drag to avoid synthetic file creation)
+  const rawData = event.dataTransfer?.getData('application/json')
+  if (rawData) {
+    try {
+      const item = JSON.parse(rawData)
+      if (item && (item.id || item.svgContent || item.dataUrl)) {
+        isInternalDragging.value = false
+        if (!stripRef.value) return
+        const rect = stripRef.value.getBoundingClientRect()
+        const dropX = Math.round((event.clientX - rect.left) / canvasScale.value - 40)
+        const dropY = Math.round((event.clientY - rect.top) / canvasScale.value - 40)
+        addUploadToCanvas(item, dropX, dropY)
+        return
+      }
+    } catch (err) {
+      console.warn('Canvas drop parse error:', err)
+    }
+  }
+
+  // 2. Files dropped from computer desktop / file browser
   if (event.dataTransfer?.files && event.dataTransfer.files.length > 0) {
     const file = event.dataTransfer.files[0]
     if (file.name.endsWith('.png') || file.type === 'image/png' || file.name.endsWith('.json')) {
@@ -2594,20 +2675,6 @@ async function onCanvasDrop(event) {
     }
     handleFileUploadDrop(event)
     return
-  }
-
-  // 2. Internal drawer asset drag
-  const rawData = event.dataTransfer?.getData('application/json')
-  if (!rawData) return
-  try {
-    const item = JSON.parse(rawData)
-    if (!stripRef.value) return
-    const rect = stripRef.value.getBoundingClientRect()
-    const dropX = Math.round((event.clientX - rect.left) / canvasScale.value - 40)
-    const dropY = Math.round((event.clientY - rect.top) / canvasScale.value - 40)
-    addUploadToCanvas(item, dropX, dropY)
-  } catch (err) {
-    console.warn('Canvas drop error:', err)
   }
 }
 
@@ -4015,6 +4082,8 @@ onBeforeUnmount(() => {
     deleteUpload,
     addUploadToCanvas,
     onAssetDragStart,
+    onAssetDragEnd,
+    onDropzoneDragOver,
     onCanvasDrop,
     shrinkPng,
     measureSlots,
