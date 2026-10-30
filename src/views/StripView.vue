@@ -3,8 +3,9 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import { useAuth } from '../composables/useAuth.js'
-import { LAYOUTS, FRAME_STYLES, filterCss, saveFields, saveField, cropOf, cropSource, MAX_ZOOM } from '../stripData.js'
-import { listMyItems, getFileUrl, loadTemplateProject } from '../studio.js'
+import { LAYOUTS, FRAME_STYLES, saveFields, saveField, cropOf, MAX_ZOOM } from '../stripData.js'
+import { listMyItems, getFileUrl, templateFrameFields } from '../studio.js'
+import { getItem, listMySaved } from '../marketplace.js'
 import { loadSavedFramesFromDB } from '../utils/savedFrameEngine.js'
 import { resolveEditedVideos, editedVideoList } from '../clips.js'
 import EditedVideoThumb from '../components/EditedVideoThumb.vue'
@@ -16,7 +17,7 @@ import PhotoStrip from '../components/PhotoStrip.vue'
 // The "Pick" page (a child of RoomLayout.vue): choose a frame and drag photos into it.
 //   Left:   gallery, photos grouped by session (shot)
 //   Middle: the strip (PhotoStrip.vue)
-//   Right:  saved frames (Default / Mine styles, Cut layouts), Skip video, Next
+//   Right:  saved frames (Default / Mine / Saved from the marketplace, Cut layouts), Skip video, Next
 // Everything is saved in the room document, so everyone in the room sees the same strip.
 
 const { room, photos, clips, roomRef } = useRoom()
@@ -27,8 +28,8 @@ const cropSlot = ref(null)        // the slot being repositioned (moved / zoomed
 const draftZoom = ref(null)       // the zoom slider's value while it is being dragged (only on this screen), or null
 // const showCall = ref(true)        // the video call can be hidden so it does not cover the strip
 const userTemplates = ref([])
+const savedTemplates = ref([]) // templates I saved from the marketplace (shown under "Saved")
 const loadingTemplates = ref(false)
-const exportingPng = ref(false)
 
 // What the room has chosen (the first layout / style if nothing is saved yet)
 const layout = computed(() => {
@@ -69,6 +70,56 @@ const myStyles = FRAME_STYLES.filter((s) => s.group === 'mine')
 onMounted(loadTemplates)
 watch(isAccount, loadTemplates)
 
+// The template the room was made with ("Use template" in the marketplace or My Studio, see RoomLayout.vue).
+// Listed first under "Mine", even if it isn't mine or saved, so the room can go back to it.
+const startTemplate = ref(null)
+
+watch(() => room.value.startTemplateId, async (id) => {
+  startTemplate.value = null
+  if (!id) return
+  try {
+    const item = await getItem('templates', id)
+    if (!item || item.id !== room.value.startTemplateId) return
+    startTemplate.value = await templateSwatch(item)
+  } catch (err) {
+    console.warn("Could not load the room's template:", err) // e.g. someone else's private template
+  }
+}, { immediate: true })
+
+const mineTemplates = computed(() => {
+  const start = startTemplate.value
+  const listed = [...userTemplates.value, ...savedTemplates.value]
+  if (!start || listed.some((tpl) => tpl.id === start.id)) return userTemplates.value
+  return [start, ...userTemplates.value]
+})
+
+// Mine shows 2 rows of 4 frames. With more than 8, the rows scroll sideways until "View all" is opened.
+const MINE_VISIBLE = 8
+const showAllMine = ref(false)
+
+// A templates/{id} document (mine or saved from the marketplace) as a swatch in the list
+async function templateSwatch(item) {
+  let thumbUrl = null
+  if (item.thumbnailPath) {
+    try {
+      thumbUrl = await getFileUrl(item.thumbnailPath)
+    } catch (err) {
+      console.warn('Could not get thumbnail URL:', err)
+    }
+  }
+  return {
+    id: item.id,
+    name: item.name,
+    thumbnailUrl: thumbUrl,
+    dataPath: item.dataPath,
+    thumbnailPath: item.thumbnailPath,
+    slotCount: item.slotCount,
+    shape: 'square',
+    background: '#FFFFFF',
+    border: '#1A1A2E'
+  }
+}
+
 async function loadTemplates() {
   loadingTemplates.value = true
   const list = []
@@ -93,38 +144,24 @@ async function loadTemplates() {
     console.warn('Could not load local frames:', e)
   }
 
-  // 2. Load cloud templates
+  // 2. Load cloud templates: my own, and the ones I saved from the marketplace (both together)
+  let saved = []
   if (isAccount.value) {
     try {
-      const cloudItems = await listMyItems('templates')
-      for (const item of cloudItems) {
-        if (!list.some((existing) => existing.id === item.id)) {
-          let thumbUrl = null
-          if (item.thumbnailPath) {
-            try {
-              thumbUrl = await getFileUrl(item.thumbnailPath)
-            } catch (err) {
-              console.warn('Could not get thumbnail URL:', err)
-            }
-          }
-          list.push({
-            id: item.id,
-            name: item.name,
-            thumbnailUrl: thumbUrl,
-            dataPath: item.dataPath,
-            thumbnailPath: item.thumbnailPath,
-            slotCount: item.slotCount,
-            shape: 'square',
-            background: '#FFFFFF',
-            border: '#1A1A2E'
-          })
-        }
-      }
+      const results = await Promise.all([listMyItems('templates'), listMySaved()])
+      const mine = results[0].filter((item) => !list.some((existing) => existing.id === item.id))
+      list.push(...(await Promise.all(mine.map(templateSwatch))))
+      // Saved ones that are still available (null = the maker made it private or removed it)
+      const savedItems = results[1]
+        .filter((entry) => entry.type === 'templates' && entry.item && !list.some((existing) => existing.id === entry.id))
+        .map((entry) => entry.item)
+      saved = await Promise.all(savedItems.map(templateSwatch))
     } catch (err) {
       console.warn('Could not load cloud templates:', err)
     }
   }
 
+  savedTemplates.value = saved
   userTemplates.value = list
   loadingTemplates.value = false
 }
@@ -317,7 +354,7 @@ function resetCrop() {
 
 // A different cut has different slots, so the slots are emptied (ask first if photos would be lost)
 async function chooseLayout(id) {
-  if (id === layout.value.id && !room.value.stripCustomTemplate) return
+  if (id === layout.value.id) return
   if (filledCount.value > 0) {
     const sure = await askConfirm({
       title: 'Change the cut?',
@@ -339,26 +376,9 @@ async function chooseStyle(id) {
 // Choose a saved template from the Template Editor
 async function chooseCustomTemplate(tpl) {
   try {
-    let project = tpl.projectData
-    if (!project && tpl.dataPath) {
-      project = await loadTemplateProject(tpl)
-    }
-    const thumbUrl = tpl.thumbnailUrl || (tpl.thumbnailPath ? await getFileUrl(tpl.thumbnailPath).catch(() => null) : null) || null
+    const { fields, slotCount } = await templateFrameFields(tpl)
 
-    const aspect = project?.aspect || (3 / 10)
-    const slots = project?.slots || project?.slotRects || [
-      { x: 6, y: 3, w: 88, h: 20 },
-      { x: 6, y: 25, w: 88, h: 20 },
-      { x: 6, y: 47, w: 88, h: 20 },
-      { x: 6, y: 69, w: 88, h: 20 },
-    ]
-    const shape = (project?.slotShape || project?.shape || 'square').toLowerCase()
-    const bg = project?.background || project?.selectedBgColor || (project?.frameBg?.type === 'gradient' ? project.frameBg.value : project?.frameBg?.baseColor) || '#FFFFFF'
-    const border = project?.borderColor || project?.border || '#1A1A2E'
-    const caption = project?.captionText || project?.caption || tpl.name || ''
-    const captionColor = project?.captionColor || border
-
-    if (filledCount.value > 0 && slots.length !== layout.value.slots.length) {
+    if (filledCount.value > 0 && slotCount !== layout.value.slots.length) {
       const sure = await askConfirm({
         title: 'Use this template?',
         message: 'It has a different number of photo slots, so the photos on the strip are cleared for everyone.',
@@ -369,123 +389,9 @@ async function chooseCustomTemplate(tpl) {
       if (!sure) return
     }
 
-    await saveFields(roomRef(), {
-      stripStyleId: tpl.id,
-      stripLayoutId: project?.stripLayoutId || project?.activeLayout || 'custom',
-      stripCustomTemplate: {
-        id: tpl.id,
-        name: tpl.name || project?.templateName || 'Custom Template',
-        aspect,
-        slots,
-        shape,
-        background: bg,
-        border,
-        caption,
-        captionColor,
-        thumbnailUrl: thumbUrl
-      }
-    })
+    await saveFields(roomRef(), fields)
   } catch (err) {
     console.error('Failed to apply custom template:', err)
-  }
-}
-
-// Helper to load image for canvas export
-function loadImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.crossOrigin = 'anonymous'
-    img.onload = () => resolve(img)
-    img.onerror = reject
-    img.src = src
-  })
-}
-
-// Produce and download high-resolution strip PNG
-async function producePng() {
-  exportingPng.value = true
-  try {
-    const W = 900
-    const H = Math.round(W / layout.value.aspect)
-    const canvas = document.createElement('canvas')
-    canvas.width = W
-    canvas.height = H
-    const ctx = canvas.getContext('2d')
-
-    // Frame background / Template PNG
-    if (frameStyle.value.thumbnailUrl) {
-      try {
-        const bgImg = await loadImage(frameStyle.value.thumbnailUrl)
-        ctx.drawImage(bgImg, 0, 0, W, H)
-      } catch {
-        ctx.fillStyle = frameStyle.value.background || '#FFFFFF'
-        ctx.fillRect(0, 0, W, H)
-      }
-    } else {
-      ctx.fillStyle = frameStyle.value.background || '#FFFFFF'
-      ctx.fillRect(0, 0, W, H)
-    }
-
-    // Photos: % of the strip -> pixels, then crop to fill the slot
-    for (let i = 0; i < layout.value.slots.length; i++) {
-      const s = layout.value.slots[i]
-      const x = (s.x / 100) * W
-      const y = (s.y / 100) * H
-      const w = (s.w / 100) * W
-      const h = (s.h / 100) * H
-      const photo = photosById.value[slotPhotos.value[i]]
-      if (!photo) continue
-
-      const img = await loadImage(photo.image)
-      const r = cropSource(img.width, img.height, w, h, cropOf(room.value.stripCrops, i)) // the part of the photo that shows
-
-      ctx.save()
-      ctx.beginPath()
-      if (frameStyle.value.shape === 'circle') {
-        ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2)
-      } else if (frameStyle.value.shape === 'rounded') {
-        const radius = Math.min(w, h) * 0.08
-        ctx.roundRect ? ctx.roundRect(x, y, w, h, radius) : ctx.rect(x, y, w, h)
-      } else {
-        ctx.rect(x, y, w, h)
-      }
-      ctx.clip()
-      ctx.filter = filterCss(room.value.stripEdits?.[i]) || 'none'
-      ctx.drawImage(img, r.sx, r.sy, r.sw, r.sh, x, y, w, h)
-      ctx.restore()
-    }
-
-    // Stickers if any
-    const stickers = room.value.stripStickers || []
-    const ordered = [...stickers].filter((s) => s.visible).sort((a, b) => a.z - b.z)
-    for (const st of ordered) {
-      const img = await loadImage(st.src)
-      const w = (st.w / 100) * W
-      const h = w * (img.height / img.width)
-      ctx.save()
-      ctx.translate((st.x / 100) * W, (st.y / 100) * H)
-      ctx.rotate((st.rotate * Math.PI) / 180)
-      ctx.drawImage(img, -w / 2, -h / 2, w, h)
-      ctx.restore()
-    }
-
-    // Caption (only if not already baked into custom template PNG)
-    if (frameStyle.value.caption && !frameStyle.value.thumbnailUrl) {
-      ctx.fillStyle = frameStyle.value.captionColor || frameStyle.value.border || '#1A1A2E'
-      ctx.font = 'bold 34px sans-serif'
-      ctx.textAlign = 'center'
-      ctx.fillText(frameStyle.value.caption, W / 2, H - H * 0.03)
-    }
-
-    // Download PNG
-    const link = document.createElement('a')
-    link.href = canvas.toDataURL('image/png')
-    link.download = `photostrip-${room.value.id || 'strip'}.png`
-    link.click()
-  } catch (err) {
-    console.error('Error producing PNG:', err)
-  } finally {
-    exportingPng.value = false
   }
 }
 
@@ -506,7 +412,7 @@ async function goToStage(stage) {
   <!-- 3 columns from Bootstrap "lg" (992px) up. On phones: strip first, then gallery, then frames -->
   <div class="row g-3">
     <!-- LEFT: gallery -->
-    <div class="col-12 col-lg-3 order-2 order-lg-1">
+    <div class="col-12 col-md-6 col-lg-3 order-2 order-lg-1">
       <div class="panel">
         <div class="d-flex justify-content-between align-items-center mb-1">
           <h2 class="h5 fw-bold mb-0">Gallery</h2>
@@ -638,7 +544,7 @@ async function goToStage(stage) {
     </div>
 
     <!-- RIGHT: saved frames -->
-    <div class="col-12 col-lg-3 order-3">
+    <div class="col-12 col-md-6 col-lg-3 order-3">
       <div class="panel d-flex flex-column">
         <h2 class="h5 fw-bold">Saved frames</h2>
 
@@ -657,19 +563,31 @@ async function goToStage(stage) {
 
         <h3 class="h6 mt-3 d-flex justify-content-between align-items-center">
           <span>Mine</span>
-          <router-link to="/studio" class="small text-muted text-decoration-none" style="font-size: 0.75rem;">View all &rarr;</router-link>
+          <!-- View all: only when there are more than 8 (the 2 rows of 4 that fit). It opens the full list. -->
+          <button
+            v-if="mineTemplates.length > MINE_VISIBLE"
+            type="button"
+            class="view-all-btn"
+            :aria-expanded="showAllMine"
+            @click="showAllMine = !showAllMine"
+          >{{ showAllMine ? 'Show less' : 'View all \u2192' }}</button>
         </h3>
-        <div class="d-flex flex-wrap gap-2 align-items-center">
+        <!-- 8 or fewer: wrap as before. More than 8: 2 rows that scroll sideways (scroll bar at the bottom),
+             with the next column peeking in at the right, until View all opens the full list. -->
+        <div
+          class="d-flex flex-wrap gap-2 align-items-center"
+          :class="{ 'mine-scroll': mineTemplates.length > MINE_VISIBLE && !showAllMine }"
+        >
           <div
-            v-for="tpl in userTemplates"
+            v-for="tpl in mineTemplates"
             :key="tpl.id"
             class="position-relative"
           >
             <button
               class="swatch"
-              :class="[tpl.shape || 'square', { active: tpl.id === frameStyle.id }]"
+              :class="[tpl.shape || 'square', { active: tpl.id === frameStyle.id, 'picture-swatch': !!tpl.thumbnailUrl }]"
               :style="{
-                background: tpl.thumbnailUrl ? `url(${tpl.thumbnailUrl}) center/cover no-repeat` : (tpl.background || '#FFE8A3'),
+                background: tpl.thumbnailUrl ? `url(${tpl.thumbnailUrl}) center/contain no-repeat` : (tpl.background || '#FFE8A3'),
                 borderColor: tpl.id === frameStyle.id ? '#2F5BEA' : (tpl.border || '#E0A100')
               }"
               :title="tpl.name"
@@ -679,7 +597,7 @@ async function goToStage(stage) {
 
           <!-- Fallback if no custom templates loaded -->
           <button
-            v-if="userTemplates.length === 0"
+            v-if="mineTemplates.length === 0"
             v-for="s in myStyles"
             :key="s.id"
             class="swatch"
@@ -688,15 +606,28 @@ async function goToStage(stage) {
             @click="chooseStyle(s.id)"
           ></button>
 
-          <!-- Add new template button linking to Template Editor -->
-          <router-link
-            to="/template-editor"
-            class="swatch add-swatch text-decoration-none d-flex align-items-center justify-content-center"
-            title="Design a new frame in Template Editor"
-          >+</router-link>
         </div>
 
-        <!-- Re-edit banner when custom template is active -->
+        <!-- Templates saved from the marketplace (in My Studio) -->
+        <template v-if="savedTemplates.length">
+          <h3 class="h6 mt-3">Saved</h3>
+          <div class="d-flex flex-wrap gap-2 align-items-center">
+            <button
+              v-for="tpl in savedTemplates"
+              :key="tpl.id"
+              class="swatch"
+              :class="[tpl.shape, { active: tpl.id === frameStyle.id, 'picture-swatch': !!tpl.thumbnailUrl }]"
+              :style="{
+                background: tpl.thumbnailUrl ? `url(${tpl.thumbnailUrl}) center/contain no-repeat` : tpl.background,
+                borderColor: tpl.id === frameStyle.id ? '#2F5BEA' : tpl.border
+              }"
+              :title="tpl.name"
+              @click="chooseCustomTemplate(tpl)"
+            ></button>
+          </div>
+        </template>
+
+        <!-- The template in use -->
         <div v-if="room.stripCustomTemplate" class="alert alert-light border p-2 mt-2 mb-0 d-flex align-items-center justify-content-between">
           <div class="d-flex align-items-center gap-2 overflow-hidden">
             <img
@@ -710,40 +641,32 @@ async function goToStage(stage) {
               <div class="text-muted" style="font-size: 0.7rem;">Active Template</div>
             </div>
           </div>
-          <router-link
-            :to="'/template-editor?template=' + room.stripCustomTemplate.id"
-            class="btn btn-sm btn-outline-primary py-0 px-2 text-decoration-none flex-shrink-0"
-            title="Re-edit this template in Template Editor (retains full workspace)"
-          >
-            ✏️ Re-edit
-          </router-link>
         </div>
 
-        <h3 class="h6 mt-3">Cut</h3>
-        <div class="d-flex flex-column gap-2 cut-list">
-          <button
-            v-for="l in LAYOUTS"
-            :key="l.id"
-            class="cut-item text-start"
-            :class="{ active: l.id === layout.id }"
-            @click="chooseLayout(l.id)"
-          >
-            <span class="d-block fw-semibold">{{ l.name }}</span>
-            <span class="small text-muted">{{ l.slots.length }} slots</span>
-            <span v-if="l.id === layout.id" class="check">✓</span>
-          </button>
-        </div>
+        <!-- The cut is only for the default designs: a template already has its own slots -->
+        <template v-if="!room.stripCustomTemplate">
+          <h3 class="h6 mt-3">Cut</h3>
+          <div class="d-flex flex-column gap-2 cut-list">
+            <button
+              v-for="l in LAYOUTS"
+              :key="l.id"
+              class="cut-item text-start"
+              :class="{ active: l.id === layout.id }"
+              @click="chooseLayout(l.id)"
+            >
+              <span class="d-block fw-semibold">{{ l.name }}</span>
+              <span class="small text-muted">{{ l.slots.length }} slots</span>
+              <span v-if="l.id === layout.id" class="check">✓</span>
+            </button>
+          </div>
+        </template>
 
         <p class="small text-muted mt-3 mb-2">
           {{ filledCount }} of {{ layout.slots.length }} slots filled · Slots: photo or clip
         </p>
 
-        <button
-          class="btn btn-outline-primary w-100 mb-2"
-          :disabled="filledCount === 0 || exportingPng"
-          @click="producePng"
-        >
-          {{ exportingPng ? 'Producing PNG...' : '📸 Produce Strip PNG' }}
+        <button class="btn btn-outline-primary w-100 mb-2" :disabled="filledCount === 0" @click="goToStage('export')">
+          Export
         </button>
 
         <!-- Opens the Video page, even before any photo is on the strip, as long as the room has photos or clips.
@@ -844,8 +767,11 @@ async function goToStage(stage) {
 }
 
 .canvas-area {
+  /* The same space for every frame: the strip is never taller than --stage-h (see PhotoStrip.vue),
+     and the area is always at least that tall, so it does not grow or shrink when a different frame is chosen */
+  --stage-h: min(72vh, 680px);
   background: #EEF0F6;
-  min-height: 420px;
+  min-height: calc(var(--stage-h) + 32px); /* + the panel's padding */
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -982,11 +908,66 @@ async function goToStage(stage) {
   box-shadow: 0 0 0 2px #E8EEFF;
 }
 
-.add-swatch {
-  border: 2px dashed #B8BECC;
-  color: #8A90A0;
-  font-size: 1.3rem;
-  background: #F4F5F9;
+/* A saved template shown as its own picture: the picture already has its rounded border, so the swatch adds
+   no border or corner of its own. The chosen one is marked with a blue ring around it instead. */
+.swatch.picture-swatch {
+  border: none;
+  border-radius: 0;
+  background-color: transparent;
+}
+
+.swatch.picture-swatch.active {
+  box-shadow: none;
+  outline: 2px solid #2F5BEA;
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+
+/* "View all" next to the Mine title */
+.view-all-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 0.75rem;
+  color: #6B7080;
+}
+
+.view-all-btn:hover {
+  color: #2F5BEA;
+}
+
+/* More than 8 frames under Mine: 2 rows of the same 48px swatches, running sideways.
+   The box is a bit wider than 4 columns, so the 5th column peeks in at the right edge. */
+.mine-scroll {
+  display: grid !important;
+  grid-template-rows: repeat(2, 48px);
+  grid-auto-flow: column;
+  grid-auto-columns: 48px;
+  max-width: calc(4 * 48px + 4 * 8px + 22px);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding: 3px 3px 10px; /* room for the blue outline, and the scroll bar under the frames */
+  scrollbar-width: thin;
+  scrollbar-color: #B8C6F5 transparent;
+}
+
+.mine-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+
+.mine-scroll::-webkit-scrollbar-track {
+  background: #F1F2F6;
+  border-radius: 999px;
+}
+
+.mine-scroll::-webkit-scrollbar-thumb {
+  background: #B8C6F5;
+  border-radius: 999px;
+}
+
+.mine-scroll::-webkit-scrollbar-thumb:hover {
+  background: #2F5BEA;
 }
 
 .cut-list {
@@ -1021,5 +1002,27 @@ async function goToStage(stage) {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* ---------- Smaller screens ---------- */
+/* Tablets and phones: the panels stack, so the long lists get shorter scroll areas */
+@media (max-width: 991.98px) {
+  .canvas-area {
+    --stage-h: min(62vh, 560px); /* a bit shorter, so the panels below are not far away */
+    padding-top: 20px;
+    padding-bottom: 20px;
+  }
+
+  .gallery-scroll {
+    max-height: 55vh; /* leaves room to reach the frames below */
+  }
+}
+
+/* Phones: a little less padding so the content gets the room */
+@media (max-width: 575.98px) {
+  .panel {
+    padding: 12px;
+    border-radius: 12px;
+  }
 }
 </style>

@@ -202,9 +202,7 @@ src/views/HomeView.vue           landing page: create room / join room by code
 src/views/LoginView.vue          log in / sign up (email + password, or Google), forgot password
 src/views/StudioView.vue         My Studio (/studio, accounts only): strips, templates, stickers, saved items
 src/views/MarketplaceView.vue    marketplace (/marketplace, anyone): browse by type, category, newest / most saved
-src/views/MarketplaceItemView.vue  one item (/marketplace/templates/{id}): save to My Studio, report
 src/views/AdminView.vue          admin page (/admin, admins only); each tab is in src/components/admin/
-src/views/TestUploadView.vue     TEMPORARY (/test-upload): makes test templates/stickers. Remove before submission
 src/views/RoomLayout.vue         parent page of a room: joins the room + call once, shows the floating call window, moves everyone with the room's stage
 src/views/RoomView.vue           (child, /room/1234/shoot) camera, shutter, countdown, join card, gallery
 src/views/StripView.vue          (child, /room/1234/pick) "Pick": choose the cut and frame, drag photos into slots
@@ -217,7 +215,8 @@ src/components/RoomGallery.vue      the shared gallery (grouped by shot) + Make 
 src/components/StageBar.vue         the step bar on the strip pages (Lobby ... Export) and who is in the room
 src/components/PhotoStrip.vue       the shared strip: slots, photos, filters, stickers (drag and drop)
 src/components/StorageImage.vue     an <img> of a Firebase Storage file (only loads if the rules allow it)
-src/components/MarketplaceCard.vue  one template/sticker in a grid (links to its page)
+src/components/MarketplaceCard.vue  one template/sticker in a grid (opens it in the item popup)
+src/components/MarketplaceItemDialog.vue  the item popup on any page with ?item=templates:{id}: save to My Studio, report
 src/components/ItemDetailsForm.vue  rename a template/sticker and pick its categories
 src/components/admin/*.vue          admin tabs: Overview, Reports, Items, Accounts, Rooms, Log
 

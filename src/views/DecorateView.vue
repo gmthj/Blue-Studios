@@ -1,12 +1,13 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import { getGuestName } from '../guest.js'
 import { useAuth } from '../composables/useAuth.js'
 import { saveStrip } from '../studio.js'
 import { resolveEditedVideos } from '../clips.js'
-import { LAYOUTS, FRAME_STYLES, STICKERS, FILTERS, filterCss, saveField, saveFields, cropOf, cropSource } from '../stripData.js'
+import { loadDefaultStickers, loadMyStickers } from '../stickerTray.js'
+import { LAYOUTS, FRAME_STYLES, FILTERS, filterCss, saveField, saveFields, cropOf, cropSource } from '../stripData.js'
 import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
 
@@ -21,9 +22,8 @@ const myName = getGuestName()
 
 const selectedSlot = ref(0)          // the photo the filters change ("Applied to photo 1")
 const selectedStickerId = ref(null)  // the sticker being resized / rotated
-const trayTab = ref('mine')          // 'mine' | 'giphy' | 'dynamic'
+const trayTab = ref('default')       // 'default' | 'mine' | 'giphy' (see stickerTray.js)
 const selectedTrayId = ref(null)     // phones: the tray sticker tapped
-const exporting = ref(false)
 
 // Accounts can also save the strip to My Studio
 const { isAccount } = useAuth()
@@ -79,8 +79,48 @@ const photosById = computed(() => {
   return map
 })
 
-// PLACEHOLDER (Rae): STICKERS is in stripData.js. Only the open tab's stickers are shown.
-const trayStickers = computed(() => STICKERS.filter((s) => s.tab === trayTab.value))
+// ---------- STICKER TRAY ----------
+// Default = the Template Editor's stickers (Joash). My stickers / My GIPHY = this account's stickers from the
+// Sticker Maker (Rae) and the ones saved from the marketplace, loaded from Firebase (see stickerTray.js).
+const TRAY_TABS = [
+  { id: 'default', label: 'Default' },
+  { id: 'mine', label: 'My stickers' },
+  { id: 'giphy', label: 'My GIPHY' },
+]
+const defaultStickers = ref([])
+const myStickers = ref([])
+const loadingMine = ref(false)
+
+async function refreshMyStickers() {
+  loadingMine.value = true
+  try {
+    myStickers.value = await loadMyStickers(isAccount.value)
+  } catch (err) {
+    console.error('Could not load my stickers:', err)
+  } finally {
+    loadingMine.value = false
+  }
+}
+
+// Load again when this browser tab comes back into view (e.g. after making a sticker in another tab)
+function onTabVisible() {
+  if (document.visibilityState === 'visible') refreshMyStickers()
+}
+
+onMounted(async () => {
+  refreshMyStickers()
+  document.addEventListener('visibilitychange', onTabVisible)
+  defaultStickers.value = await loadDefaultStickers()
+})
+onBeforeUnmount(() => document.removeEventListener('visibilitychange', onTabVisible))
+watch(isAccount, refreshMyStickers) // logged in or out: load again
+
+// Every sticker the tray knows, the open tab's ones, and how many each tab has (for the small counts)
+const allStickers = computed(() => defaultStickers.value.concat(myStickers.value))
+const trayStickers = computed(() => allStickers.value.filter((s) => s.tab === trayTab.value))
+function tabCount(tab) {
+  return allStickers.value.filter((s) => s.tab === tab).length
+}
 
 // The photo in the selected slot, used for the filter previews
 const selectedPhoto = computed(() => photosById.value[slotPhotos.value[selectedSlot.value]] || null)
@@ -176,17 +216,29 @@ async function moveLayer(id, direction) {
   await saveStickers(list)
 }
 
-// Phones do not support drag and drop:
-// tap a tray sticker then tap the strip to add it, or select a strip sticker then tap the strip to move it
+// A tap on the strip: with a tray sticker tapped first (phones), add it there.
+// Otherwise it is a tap on an empty spot, so the selected sticker is let go (its box closes).
+// (On a phone, a sticker on the strip is moved by dragging it with a finger, see PhotoStrip.vue.)
 function onStripClick(x, y) {
   if (selectedTrayId.value) {
-    const item = STICKERS.find((s) => s.id === selectedTrayId.value)
+    const item = allStickers.value.find((s) => s.id === selectedTrayId.value)
     addSticker(item.src, x, y)
     selectedTrayId.value = null
-  } else if (selectedSticker.value) {
-    moveSticker(selectedSticker.value.id, x, y)
+  } else {
+    selectedStickerId.value = null
   }
 }
+
+// A click or tap anywhere else on the page (not on a sticker, its box, the tray or the layers list)
+// also lets go of the selected sticker
+function onPagePointerDown(event) {
+  if (selectedStickerId.value === null) return
+  if (event.target.closest('.strip-wrap, .tray-item, .layers')) return // the strip handles its own taps
+  selectedStickerId.value = null
+}
+
+onMounted(() => document.addEventListener('pointerdown', onPagePointerDown))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', onPagePointerDown))
 
 // Everyone moves to another page together (RoomLayout.vue follows the room's "stage")
 async function goToStage(stage) {
@@ -211,7 +263,7 @@ function loadImage(src) {
   })
 }
 
-// Draw the strip on a canvas (used by Download and Save to My Studio)
+// Draw the strip on a canvas (used by Save to My Studio)
 async function drawStripCanvas() {
   const W = 900                                 // width of the PNG, in pixels
   const H = Math.round(W / layout.value.aspect) // height, from the strip's shape
@@ -285,21 +337,6 @@ async function drawStripCanvas() {
     ctx.fillText(frameStyle.value.caption, W / 2, H - H * 0.03)
   }
   return canvas
-}
-
-async function downloadJpg() {
-  exporting.value = true
-  try {
-    const canvas = await drawStripCanvas()
-    // Download: make a temporary link to the PNG and click it
-    const link = document.createElement('a')
-    link.href = canvas.toDataURL('image/png')
-    link.download = 'photostrip-' + code.value + '.png'
-    link.click()
-  } catch (error) {
-    console.error(error)
-  }
-  exporting.value = false
 }
 
 // Accounts: save a copy of the strip to My Studio (Firebase Storage + a strips document, see studio.js)
@@ -376,29 +413,49 @@ async function saveToStudio() {
           @drop-sticker="addSticker"
           @move-sticker="moveSticker"
           @sticker-click="(id) => (selectedStickerId = id)"
+          @delete-sticker="deleteSticker"
+          @update-sticker="updateSticker"
           @slot-click="onSlotClick"
           @strip-click="onStripClick"
         />
-        <p class="small text-muted text-center mt-2 mb-0">
-          Drag stickers onto the strip, then drag to move. Phone: tap a sticker in the tray, then tap the strip.
-        </p>      </div>
+      </div>
     </div>
 
     <!-- RIGHT: sticker tray, selected sticker, layers -->
     <div class="col-12 col-md-6 col-lg-3 order-3">
       <div class="panel d-flex flex-column">
-        <h2 class="h5 fw-bold">Sticker tray</h2>
+        <h2 class="h5 fw-bold mb-1">Sticker tray</h2>
+        <p class="tray-hint text-muted mb-2">Drag stickers onto the strip, then drag to move. Phone: tap a sticker in the tray, then tap the strip.</p>
 
-        <ul class="nav nav-pills nav-fill small mb-2 tray-tabs">
-          <li class="nav-item"><button class="nav-link" :class="{ active: trayTab === 'mine' }" @click="trayTab = 'mine'">My stickers</button></li>
-          <li class="nav-item"><button class="nav-link" :class="{ active: trayTab === 'giphy' }" @click="trayTab = 'giphy'">GIPHY</button></li>
-          <li class="nav-item"><button class="nav-link" :class="{ active: trayTab === 'dynamic' }" @click="trayTab = 'dynamic'">Dynamic</button></li>
-        </ul>
+        <!-- Tabs: Default, My stickers, My GIPHY. On a narrow panel they scroll sideways instead of squashing. -->
+        <div class="tray-tabs mb-2" role="tablist" aria-label="Sticker tray">
+          <button
+            v-for="tab in TRAY_TABS"
+            :key="tab.id"
+            type="button"
+            class="tray-tab"
+            :class="{ active: trayTab === tab.id }"
+            role="tab"
+            :aria-selected="trayTab === tab.id"
+            @click="trayTab = tab.id"
+          >
+            {{ tab.label }}<span v-if="tab.id !== 'default' && tabCount(tab.id)" class="tray-count">{{ tabCount(tab.id) }}</span>
+          </button>
+        </div>
 
-        <!-- Drag a sticker onto the strip, or tap it (phones) -->
-        <div class="row g-2 mb-3">
-          <div v-for="s in trayStickers" :key="s.id" class="col-4">
-            <div class="tray-item" :class="{ selected: s.id === selectedTrayId }" :title="s.name">
+        <!-- When a tab has nothing to show -->
+        <template v-if="trayStickers.length === 0">
+          <p v-if="trayTab === 'default'" class="small text-muted mb-2">Loading stickers…</p>
+          <p v-else-if="!isAccount" class="small text-muted mb-2">Log in to use the stickers you made or saved.</p>
+          <p v-else-if="loadingMine" class="small text-muted mb-2">Loading your stickers…</p>
+          <p v-else-if="trayTab === 'mine'" class="small text-muted mb-2">No stickers yet. Stickers you make in the Sticker Maker or save from the marketplace show up here.</p>
+          <p v-else class="small text-muted mb-2">No GIFs yet. GIF stickers you make in the Sticker Maker or save from the marketplace show up here.</p>
+        </template>
+
+        <!-- Drag a sticker onto the strip, or tap it (phones). 4 per row on phones and tablets, 3 in the narrow laptop side panel. -->
+        <div v-else class="row g-2 mb-3 tray-grid" role="tabpanel">
+          <div v-for="s in trayStickers" :key="s.id" class="col-3 col-lg-4 col-xxl-3">
+            <div class="tray-item" :class="{ selected: s.id === selectedTrayId }" :title="s.saved ? s.name + ' (saved from the marketplace)' : s.name">
               <img
                 :src="s.src"
                 :alt="s.name"
@@ -406,24 +463,11 @@ async function saveToStudio() {
                 @dragstart="onTrayDragStart($event, s)"
                 @click="selectedTrayId = selectedTrayId === s.id ? null : s.id"
               />
+              <span v-if="s.saved" class="saved-tag" aria-hidden="true">★</span>
             </div>
-          </div>
-          <div class="col-4">
-            <!-- PLACEHOLDER (Rae): link to the Sticker Maker page when it is on main -->
-            <div class="tray-item add-item" title="Sticker maker coming soon">+</div>
           </div>
         </div>
 
-        <!-- Only shown when a sticker on the strip is selected -->
-        <div v-if="selectedSticker" class="mb-3">
-          <label class="form-label small d-flex justify-content-between mb-0">Size <span>{{ selectedSticker.w }}%</span></label>
-          <input type="range" class="form-range" min="10" max="100" :value="selectedSticker.w"
-                 @change="updateSticker(selectedSticker.id, { w: Number($event.target.value) })" />
-          <label class="form-label small d-flex justify-content-between mb-0">Rotate <span>{{ selectedSticker.rotate }}°</span></label>
-          <input type="range" class="form-range" min="-180" max="180" :value="selectedSticker.rotate"
-                 @change="updateSticker(selectedSticker.id, { rotate: Number($event.target.value) })" />
-          <button class="btn btn-outline-danger btn-sm" @click="deleteSticker(selectedSticker.id)">Delete sticker</button>
-        </div>
 
         <!-- Layers: front at the top. Photos and frame are always behind the stickers, so they stay at the bottom -->
         <h2 class="h5 fw-bold">Layers</h2>
@@ -451,16 +495,11 @@ async function saveToStudio() {
           <button class="btn btn-primary w-100 mb-2" @click="goToStage('music')">Mix soundtrack</button>
           <div class="d-flex gap-2">
             <button class="btn btn-outline-secondary btn-sm flex-fill" @click="goToStage('pick')">&larr; Pick</button>
-            <button class="btn btn-outline-secondary btn-sm flex-fill" :disabled="exporting || hasVideoSlot" :title="hasVideoSlot ? 'A strip with video is exported as an MP4' : ''" @click="downloadJpg">
-              {{ exporting ? 'Saving...' : 'Download JPG' }}
-            </button>
+            <button class="btn btn-outline-primary btn-sm flex-fill" @click="goToStage('export')">Export &rarr;</button>
           </div>
           <button v-if="isAccount" class="btn btn-outline-primary btn-sm w-100 mt-2" :disabled="saving || hasVideoSlot" @click="saveToStudio">
             {{ saving ? 'Saving...' : 'Save to My Studio' }}
           </button>
-          <!-- A strip with video is exported as an MP4 on the Export page (the JPG buttons above are for photo strips) -->
-          <button v-if="hasVideoSlot" class="btn btn-primary btn-sm w-100 mt-2" @click="goToStage('export')">Export video &rarr;</button>
-          <p v-if="hasVideoSlot" class="small text-muted text-center mt-1 mb-0">This strip has a video, so it is exported as an MP4.</p>
           <p v-if="saveMessage" class="small text-center mt-2 mb-0">{{ saveMessage }}</p>
         </div>
       </div>
@@ -478,8 +517,11 @@ async function saveToStudio() {
 }
 
 .canvas-area {
+  /* The same space for every frame: the strip is never taller than --stage-h (see PhotoStrip.vue),
+     and the area is always at least that tall, so it does not grow or shrink when a different frame is chosen */
+  --stage-h: min(72vh, 680px);
   background: #EEF0F6;
-  min-height: 420px;
+  min-height: calc(var(--stage-h) + 32px); /* + the panel's padding */
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -515,24 +557,70 @@ async function saveToStudio() {
 }
 
 /* Sticker tray */
+/* The how-to line under the Sticker tray title */
+.tray-hint {
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 .tray-tabs {
+  display: flex;
+  gap: 2px;
   background: #F1F2F6;
   border-radius: 10px;
   padding: 3px;
+  overflow-x: auto;      /* very narrow: scroll the tabs instead of wrapping them */
+  scrollbar-width: none; /* no scroll bar for 3 short tabs */
 }
 
-.tray-tabs .nav-link {
-  padding: 4px 6px;
+.tray-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tray-tab {
+  flex: 1 0 auto;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 0.78rem;
   color: #444;
+  white-space: nowrap;
 }
 
-.tray-tabs .nav-link.active {
+.tray-tab.active {
   background: #fff;
   color: #2F5BEA;
+  font-weight: 600;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
+.tray-count {
+  margin-left: 4px;
+  font-size: 0.65rem;
+  background: #E8EEFF;
+  color: #2F5BEA;
+  border-radius: 999px;
+  padding: 0 6px;
+}
+
+/* Many stickers: the tray scrolls inside the panel instead of pushing the layers far down */
+.tray-grid {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+/* ★ on a sticker saved from the marketplace */
+.saved-tag {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font-size: 0.65rem;
+  color: #E0A100;
+}
+
 .tray-item {
+  position: relative;
   aspect-ratio: 1;
   background: #F4F5F9;
   border-radius: 10px;
@@ -553,11 +641,6 @@ async function saveToStudio() {
   border-color: #2F5BEA;
 }
 
-.add-item {
-  border: 2px dashed #B8BECC;
-  color: #8A90A0;
-  font-size: 1.5rem;
-}
 
 /* Layers */
 .layers {
@@ -599,4 +682,22 @@ async function saveToStudio() {
 
 .icon-btn:disabled {
   opacity: 0.3;
-}</style>
+}
+/* ---------- Smaller screens ---------- */
+/* Tablets and phones: the panels stack, so the long lists get shorter scroll areas */
+@media (max-width: 991.98px) {
+  .canvas-area {
+    --stage-h: min(62vh, 560px); /* a bit shorter, so the panels below are not far away */
+    padding-top: 20px;
+    padding-bottom: 20px;
+  }
+}
+
+/* Phones: a little less padding so the content gets the room */
+@media (max-width: 575.98px) {
+  .panel {
+    padding: 12px;
+    border-radius: 12px;
+  }
+}
+</style>
