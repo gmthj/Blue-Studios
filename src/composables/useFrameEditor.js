@@ -205,8 +205,9 @@ const {
 const templateName = ref('my-templates-1')
 const activeLayout = ref('retro-4-cut') // 'retro-4-cut' | 'polaroid-2x2' | 'film-3-cut'
 const slotShape = ref('Rounded') // 'Square' | 'Rounded' | 'Circle'
-const activeTool = ref('elements') // 'templates' | 'elements' | 'text' | 'background' | 'layers'
-const isDrawerOpen = ref(true)
+const isMobileInitial = typeof window !== 'undefined' && window.innerWidth < 992
+const activeTool = ref('templates') // 'templates' (Presets) | 'elements' | 'text' | 'background' | 'layers'
+const isDrawerOpen = ref(!isMobileInitial)
 const showCutouts = ref(true) // Toggle cutouts on/off
 const cutoutsLayerPosition = ref('above') // 'above' (over elements) | 'below' (behind elements)
 const activeBgTab = ref('colors') // 'colors' | 'gradients' | 'patterns'
@@ -3769,6 +3770,14 @@ onMounted(async () => {
   window.addEventListener('click', handleGlobalClick)
   window.addEventListener('resize', updateScreenSize)
   updateScreenSize()
+
+  if (typeof window !== 'undefined' && window.innerWidth < 992) {
+    isDrawerOpen.value = false
+    isMobileEditSheetOpen.value = false
+  } else {
+    activeTool.value = 'templates'
+    isDrawerOpen.value = true
+  }
 
   nextTick(() => {
     fitToScreen(canvasWorkspaceRef.value, stripRef.value)
