@@ -149,7 +149,6 @@ const stageEl = ref(null)        // the grey area the canvas sits in (measured t
 const canvasEl = ref(null)       // the square white canvas
 const fileInput = ref(null)      // the hidden <input type="file"> the Upload button clicks
 const editEl = ref(null)         // the contenteditable div while a text layer is being typed into
-const textBoxEl = ref(null)      // the text box in the Edit panel (used to type on phones)
 const stageWidth = ref(400)      // the canvas width in px, so text size scales with the preview
 
 const mode = ref('sticker')      // 'sticker' | 'gif' — controls the frame strip and the save kind
@@ -464,6 +463,12 @@ function isPhone() {
   return window.innerWidth < 992
 }
 
+// WHY: on a phone the sheet covers half the canvas. Once you have picked what you came for
+// (a sticker, a photo, a colour), it gets out of the way so you see the result straight away.
+function closeSheetOnPhone() {
+  if (isPhone()) mobilePanel.value = null
+}
+
 function pickTool(id) {
   // On a phone, tapping the open tool again closes its sheet.
   if (isPhone() && tool.value === id && mobilePanel.value === 'drawer') {
@@ -471,8 +476,10 @@ function pickTool(id) {
     return
   }
   tool.value = id
-  selectedId.value = null
   editingId.value = null
+  // Keep a selected text box selected when opening Text, so tapping a font restyles it.
+  const keepText = id === 'text' && selectedLayer.value && selectedLayer.value.type === 'text' && !selectedLayer.value.emoji
+  if (!keepText) selectedId.value = null
   // Load the user's saved stickers the first time the panel opens (accounts only).
   if (id === 'stickers' && isAccount.value && myStickers.value.length === 0) loadMine()
   // On a phone the drawer is a sheet, so opening a tool opens the sheet too.
@@ -506,6 +513,7 @@ function addArt(item) {
   // At the same width it looked far bigger than the stickers next to it.
   const width = item.kind === 'tape' ? 24 : 30
   addImageLayer(item.url, item.name, item.ratio, width, 'sticker')
+  closeSheetOnPhone()
 }
 
 function addEmoji(item) {
@@ -528,6 +536,7 @@ function addEmoji(item) {
   })
   selectedId.value = id
   editingId.value = null
+  closeSheetOnPhone()
 }
 
 function openFilePicker() {
@@ -559,6 +568,7 @@ async function addPhotoFile(file) {
     // Fit the photo inside 80% of the canvas, whatever its shape.
     const fit = ratio <= 1 ? 80 : 80 / ratio
     addImageLayer(url, file.name, ratio, fit)
+    closeSheetOnPhone()
   } catch (error) {
     errorMessage.value = 'That image could not be opened.'
   }
@@ -904,15 +914,16 @@ function addImageLayer(url, name, ratio, width, source = 'photo') {
 
 // style: one of TEXT_STYLES (or null). font: a font from the library, so clicking a font
 // in the Text drawer starts a box already set in that font, with its sample word.
-async function addText(style, font = null) {
+// at: where to put it ({ x, y } in percent), for a double-click on the canvas.
+async function addText(style, font = null, at = null) {
   snapshot()
   const id = newId()
   layers.value.push({
     id: id,
     type: 'text',
     text: font ? font.preview : '',
-    x: 50,
-    y: 50,
+    x: at ? at.x : 50,
+    y: at ? at.y : 50,
     width: 70,             // percent of the canvas: the box the text wraps inside
     size: style ? style.size : 10,
     font: font ? font.name : APP_FONT,
@@ -922,21 +933,32 @@ async function addText(style, font = null) {
     rotation: 0,
   })
   selectedId.value = id
-  tool.value = 'text'
-  if (isPhone()) {
-    // WHY: on a phone the drawer sheet would hide the new text, and typing straight on a
-    // small canvas is fiddly. The Edit sheet has a normal text box, ready to type in.
-    mobilePanel.value = 'props'
-    await nextTick()
-    if (textBoxEl.value) {
-      textBoxEl.value.focus()
-      textBoxEl.value.select()
-    }
-    return
-  }
-  // Wait for the box to exist, then put the caret in it.
+  // WHY on the canvas, on phones too: you type where the text will be, and see it in its
+  // font while you type, instead of in a plain box in a pop-up.
+  closeSheetOnPhone()
   await nextTick()
   startEditing(layers.value.find((layer) => layer.id === id))
+}
+
+// Double-click (double-tap on a phone) an empty spot on the canvas: a text box appears there.
+// WHY counted by hand: phones do not send dblclick, so two quick taps close together are
+// counted here, and the same code serves the mouse.
+let lastCanvasTap = null
+function onCanvasPointerDown(event) {
+  if (drawing.value || playing.value) return
+  const now = Date.now()
+  const last = lastCanvasTap
+  lastCanvasTap = { time: now, x: event.clientX, y: event.clientY }
+  if (last && now - last.time < 400 && Math.hypot(event.clientX - last.x, event.clientY - last.y) < 30) {
+    lastCanvasTap = null
+    event.preventDefault()
+    const [x, y] = pointInStage(event)
+    addText(null, null, { x, y })
+    return
+  }
+  // A single tap on empty canvas: finish typing and deselect.
+  if (editingId.value) stopEditing()
+  clearSelection()
 }
 
 // ----
@@ -972,7 +994,13 @@ function onTextInput(event, layer) {
 }
 
 function stopEditing() {
+  const layer = layers.value.find((item) => item.id === editingId.value)
   editingId.value = null
+  // A box left empty would be an invisible layer, so it goes away.
+  if (layer && !String(layer.text || '').trim()) {
+    layers.value = layers.value.filter((item) => item.id !== layer.id)
+    if (selectedId.value === layer.id) selectedId.value = null
+  }
 }
 
 // ----
@@ -1027,6 +1055,7 @@ async function addMySticker(sticker) {
     // 'saved' lets you remove its background. Animated ones stay 'sticker': remove.bg would
     // keep only the first frame of the GIF.
     addImageLayer(url, sticker.name, img.naturalHeight / img.naturalWidth, 30, sticker.kind === 'animated' ? 'sticker' : 'saved')
+    closeSheetOnPhone()
   } catch (error) {
     errorMessage.value = navigator.onLine === false
       ? 'No internet connection, so that sticker could not be added.'
@@ -1106,32 +1135,50 @@ function resetLayer(layer) {
 }
 
 // ----
-// Drag and drop inside the Layers list (the browser's own drag events)
+// Reordering the Layers list by dragging the grip
+// WHY pointer events and not the browser's drag-and-drop: drag-and-drop does not work with
+// a finger, so on phones the list could not be reordered at all.
+// WHY move while dragging (not only on drop): the canvas restacks as you go and the layer
+// stays selected, so you see which layer is moving and where it now sits.
 // ----
 
-let draggedId = null
-const dropTargetId = ref(null)
+const layerListEl = ref(null)
+const draggingLayerId = ref(null)
 
-function onRowDragStart(layer) {
-  draggedId = layer.id
+// WHY listen on the window: the row moves in the list while you drag it, and a moved element
+// stops receiving the finger's movements. The window always does (like moving a sticker).
+function startRowDrag(event, layer) {
+  event.preventDefault()
+  snapshot() // one undo step for the whole drag
+  selectedId.value = layer.id
+  draggingLayerId.value = layer.id
+  window.addEventListener('pointermove', moveRowDrag)
+  window.addEventListener('pointerup', endRowDrag)
+  window.addEventListener('pointercancel', endRowDrag)
 }
 
-function onRowDrop(target) {
-  if (draggedId && draggedId !== target.id) {
-    snapshot()
-    const from = layers.value.findIndex((item) => item.id === draggedId)
-    const to = layers.value.findIndex((item) => item.id === target.id)
-    // Take the dragged layer out, then drop it into the target's place.
-    const moved = layers.value.splice(from, 1)[0]
-    layers.value.splice(to, 0, moved)
-  }
-  draggedId = null
-  dropTargetId.value = null
+function moveRowDrag(event) {
+  if (!draggingLayerId.value || !layerListEl.value) return
+  // The list is shown top layer first, so count the other rows whose middle is above the finger.
+  const rows = [...layerListEl.value.querySelectorAll('.sm-layer-row')]
+  let shownIndex = 0
+  rows.forEach((row) => {
+    if (row.dataset.id === draggingLayerId.value) return
+    const box = row.getBoundingClientRect()
+    if (event.clientY > box.top + box.height / 2) shownIndex++
+  })
+  const from = layers.value.findIndex((item) => item.id === draggingLayerId.value)
+  const to = layers.value.length - 1 - shownIndex // back from "top first" to the layers order
+  if (from === -1 || from === to) return
+  const moved = layers.value.splice(from, 1)[0]
+  layers.value.splice(to, 0, moved)
 }
 
-function onRowDragEnd() {
-  draggedId = null
-  dropTargetId.value = null
+function endRowDrag() {
+  draggingLayerId.value = null
+  window.removeEventListener('pointermove', moveRowDrag)
+  window.removeEventListener('pointerup', endRowDrag)
+  window.removeEventListener('pointercancel', endRowDrag)
 }
 
 // ----
@@ -1287,6 +1334,59 @@ function undoStroke() {
     layers.value = layers.value.filter((item) => item.id !== layer.id) // an empty drawing is not worth keeping
     drawLayerId.value = null
   }
+}
+
+// A colour from the Draw sheet: on a phone the sheet closes so you can start drawing.
+function pickDrawColor(color) {
+  pickColor(color)
+  closeSheetOnPhone()
+}
+
+// Leave drawing mode from the canvas toolbar (back to moving stickers around).
+function finishDrawing() {
+  tool.value = 'stickers'
+  mobilePanel.value = null
+}
+
+// ----
+// Stroke size: the long upside-down triangle beside the canvas
+// WHY a triangle: wide at the top = thick line, thin at the bottom = fine line, so the shape
+// says what it does without a label. Dragged with a finger or a mouse (pointer events).
+// ----
+const STROKE_MIN = 0.5
+const STROKE_MAX = 5
+const strokeEl = ref(null)
+
+// Where the handle sits: 0% at the top (thickest) to 100% at the bottom (thinnest).
+const strokeTop = computed(() => ((STROKE_MAX - brushSize.value) / (STROKE_MAX - STROKE_MIN)) * 100)
+
+// The handle is a dot the size of the line you will draw, in your colour.
+const strokeDot = computed(() => {
+  const width = brush.value === 'highlighter' ? brushSize.value * 3 : brushSize.value
+  return clamp((width / 100) * stageWidth.value, 6, 40)
+})
+
+function setStrokeFromPointer(event) {
+  const rect = strokeEl.value.getBoundingClientRect()
+  const share = clamp((event.clientY - rect.top) / rect.height, 0, 1)
+  brushSize.value = Math.round((STROKE_MAX - share * (STROKE_MAX - STROKE_MIN)) * 10) / 10
+}
+
+function startStrokeDrag(event) {
+  event.currentTarget.setPointerCapture(event.pointerId)
+  setStrokeFromPointer(event)
+}
+
+function moveStrokeDrag(event) {
+  if (event.currentTarget.hasPointerCapture(event.pointerId)) setStrokeFromPointer(event)
+}
+
+// Arrow keys for keyboard users (up = thicker).
+function strokeKey(event) {
+  const step = { ArrowUp: 0.1, ArrowRight: 0.1, ArrowDown: -0.1, ArrowLeft: -0.1 }[event.key]
+  if (!step) return
+  event.preventDefault()
+  brushSize.value = Math.round(clamp(brushSize.value + step, STROKE_MIN, STROKE_MAX) * 10) / 10
 }
 
 function clearDrawings() {
@@ -1964,13 +2064,18 @@ function onKeyDown(event) {
 let resizeObserver = null
 
 // WHY: the canvas is square, so it must fit the smaller of the two sides of the grey
-// area. The 48px leaves room for the corner labels and a little breathing space.
+// area. The spare pixels leave room for the corner labels and a little breathing space.
+// While drawing there is a toolbar along the top and the stroke size down the sides, so
+// the canvas steps in a little to keep them off it.
 function measureStage() {
   const el = stageEl.value
   if (!el) return
   const box = el.getBoundingClientRect()
-  stageWidth.value = Math.max(180, Math.floor(Math.min(box.width - 56, box.height - 64)))
+  const spareWidth = drawing.value ? 104 : 56
+  const spareHeight = drawing.value ? 128 : 64
+  stageWidth.value = Math.max(180, Math.floor(Math.min(box.width - spareWidth, box.height - spareHeight)))
 }
+watch(drawing, () => nextTick(measureStage))
 
 onMounted(() => {
   loadArtFonts() // the shared library's 29 fonts (only added to the page once)
@@ -1996,6 +2101,7 @@ onBeforeUnmount(() => {
   if (resizeObserver) resizeObserver.disconnect()
   window.removeEventListener('keydown', onKeyDown)
   endGesture() // remove the window listeners if the page is left mid-drag
+  endRowDrag()
   clearTimeout(toastTimer)
   clearTimeout(thumbTimer)
   clearInterval(liveTimer)
@@ -2250,7 +2356,9 @@ function imageStyle(layer) {
               <AppIcon name="plus" :size="16" />
               <span>Add a text box</span>
             </button>
-            <p class="sm-hint">Type straight into the box on the canvas, then click anywhere else to finish.</p>
+            <p class="sm-hint">
+              Or double-tap anywhere on the canvas. To change a font, select the text, then tap a font below.
+            </p>
 
             <div class="sm-section">
               <p class="sm-label">Text styles</p>
@@ -2280,7 +2388,9 @@ function imageStyle(layer) {
                   :key="font.name"
                   type="button"
                   class="sm-font-card"
-                  :title="'Add text in ' + font.name"
+                  :class="{ active: selectedLayer && selectedLayer.type === 'text' && selectedLayer.font === font.name }"
+                  :title="selectedLayer && selectedLayer.type === 'text' && !selectedLayer.emoji ? 'Change to ' + font.name : 'Add text in ' + font.name"
+                  @pointerdown.prevent
                   @click="pickFont(font)"
                 >
                   <span class="sm-font-card-sample" :style="{ fontFamily: font.stack }">{{ font.preview }}</span>
@@ -2442,63 +2552,29 @@ function imageStyle(layer) {
 
           <!-- ---------- DRAW ---------- -->
           <template v-else-if="tool === 'draw'">
-            <p class="sm-label">Brush</p>
-            <div class="sm-brushes" role="group" aria-label="Brush">
+            <!-- Pick a colour to start. The pen, colours and stroke size are also on the canvas. -->
+            <p class="sm-label">Pick a colour to start</p>
+            <div class="sm-swatches">
               <button
-                v-for="item in BRUSHES"
-                :key="item.id"
+                v-for="color in [...SOLID_COLORS, ...PASTEL_COLORS]"
+                :key="color"
                 type="button"
-                class="sm-brush"
-                :class="{ active: brush === item.id }"
-                :aria-pressed="brush === item.id"
-                @click="brush = item.id"
-              >
-                <AppIcon :name="item.icon" :size="18" />
-                <span>{{ item.label }}</span>
-              </button>
-            </div>
-
-            <div class="sm-section">
-              <p class="sm-label">Colour</p>
-              <div class="sm-swatches">
-                <button
-                  v-for="color in [...SOLID_COLORS, ...PASTEL_COLORS]"
-                  :key="color"
-                  type="button"
-                  class="sm-swatch"
-                  :class="{ active: currentColor === color }"
-                  :style="{ background: color }"
-                  :aria-label="'Colour ' + color"
-                  :aria-pressed="currentColor === color"
-                  @click="pickColor(color)"
-                ></button>
-                <label class="sm-swatch sm-swatch-custom" title="Custom colour">
-                  <input
-                    type="color"
-                    :value="currentColor"
-                    aria-label="Custom colour"
-                    @input="pickColor($event.target.value)"
-                  />
-                  <AppIcon name="plus" :size="14" />
-                </label>
-              </div>
-            </div>
-
-            <div class="sm-section">
-              <p class="sm-label">
-                Stroke
-                <span class="sm-count">{{ brushSize.toFixed(1) }}</span>
-              </p>
-              <input
-                v-model.number="brushSize"
-                type="range"
-                class="sm-range"
-                :style="{ '--fill': ((brushSize - 0.5) / 4.5) * 100 + '%' }"
-                min="0.5"
-                max="5"
-                step="0.1"
-                aria-label="Stroke size"
-              />
+                class="sm-swatch"
+                :class="{ active: currentColor === color }"
+                :style="{ background: color }"
+                :aria-label="'Colour ' + color"
+                :aria-pressed="currentColor === color"
+                @click="pickDrawColor(color)"
+              ></button>
+              <label class="sm-swatch sm-swatch-custom" title="Custom colour">
+                <input
+                  type="color"
+                  :value="currentColor"
+                  aria-label="Custom colour"
+                  @change="pickDrawColor($event.target.value)"
+                />
+                <AppIcon name="plus" :size="14" />
+              </label>
             </div>
 
             <div class="sm-section sm-btn-row">
@@ -2509,7 +2585,10 @@ function imageStyle(layer) {
                 <AppIcon name="eraser" :size="14" /> Clear all
               </button>
             </div>
-            <p class="sm-hint">Draw straight on the canvas. Pick another tool to stop drawing.</p>
+            <p class="sm-hint">
+              Draw straight on the canvas. Switch pen or highlighter and change colours along the
+              top, and drag the triangle at the side for a thicker or thinner line.
+            </p>
           </template>
 
           <!-- ---------- UPLOAD ---------- -->
@@ -2537,20 +2616,87 @@ function imageStyle(layer) {
       <!-- ---------- CANVAS + FRAMES ---------- -->
       <main class="sm-main">
         <div ref="stageEl" class="sm-stage">
-          <span class="sm-stage-pill sm-stage-tag">{{ EXPORT_SIZE }} × {{ EXPORT_SIZE }}</span>
-          <span v-if="playing" class="sm-stage-pill sm-stage-zoom sm-stage-playing">Playing · tap to stop</span>
-          <span v-else class="sm-stage-pill sm-stage-zoom">{{ zoomPercent }}%</span>
+          <template v-if="!drawing">
+            <span class="sm-stage-pill sm-stage-tag">{{ EXPORT_SIZE }} × {{ EXPORT_SIZE }}</span>
+            <span v-if="playing" class="sm-stage-pill sm-stage-zoom sm-stage-playing">Playing · tap to stop</span>
+            <span v-else class="sm-stage-pill sm-stage-zoom">{{ zoomPercent }}%</span>
+          </template>
+
+          <!-- Drawing tools on the canvas itself: pen or highlighter, colours, undo, done -->
+          <div v-if="drawing" class="sm-drawbar" role="toolbar" aria-label="Drawing tools">
+            <button
+              v-for="item in BRUSHES"
+              :key="item.id"
+              type="button"
+              class="sm-drawbar-btn"
+              :class="{ active: brush === item.id }"
+              :aria-pressed="brush === item.id"
+              :aria-label="item.label"
+              :title="item.label"
+              @click="brush = item.id"
+            >
+              <AppIcon :name="item.icon" :size="18" />
+            </button>
+            <span class="sm-drawbar-line" aria-hidden="true"></span>
+            <div class="sm-drawbar-colors">
+              <button
+                v-for="color in [...SOLID_COLORS, ...PASTEL_COLORS]"
+                :key="color"
+                type="button"
+                class="sm-drawbar-swatch"
+                :class="{ active: currentColor === color }"
+                :style="{ background: color }"
+                :aria-label="'Colour ' + color"
+                :aria-pressed="currentColor === color"
+                @click="pickColor(color)"
+              ></button>
+              <label class="sm-drawbar-swatch sm-swatch-custom" title="Custom colour">
+                <input type="color" :value="currentColor" aria-label="Custom colour" @input="pickColor($event.target.value)" />
+                <AppIcon name="plus" :size="12" />
+              </label>
+            </div>
+            <span class="sm-drawbar-line" aria-hidden="true"></span>
+            <button type="button" class="sm-drawbar-btn" aria-label="Undo last stroke" title="Undo last stroke" @click="undoStroke">
+              <AppIcon name="undo" :size="18" />
+            </button>
+            <button type="button" class="sm-drawbar-done" @click="finishDrawing">Done</button>
+          </div>
+
+          <!-- Stroke size: drag up for thicker, down for thinner -->
+          <div
+            v-if="drawing"
+            ref="strokeEl"
+            class="sm-stroke"
+            role="slider"
+            tabindex="0"
+            aria-label="Stroke size"
+            aria-orientation="vertical"
+            :aria-valuemin="STROKE_MIN"
+            :aria-valuemax="STROKE_MAX"
+            :aria-valuenow="brushSize"
+            @pointerdown="startStrokeDrag"
+            @pointermove="moveStrokeDrag"
+            @keydown="strokeKey"
+          >
+            <svg class="sm-stroke-shape" viewBox="0 0 24 200" preserveAspectRatio="none" aria-hidden="true">
+              <polygon points="1,1 23,1 12,199" />
+            </svg>
+            <span
+              class="sm-stroke-dot"
+              :style="{ top: strokeTop + '%', width: strokeDot + 'px', height: strokeDot + 'px', background: currentColor }"
+            ></span>
+          </div>
 
           <div
             ref="canvasEl"
             class="sm-canvas"
             :style="{ width: stageWidth + 'px', height: stageWidth + 'px' }"
-            @pointerdown.self="clearSelection"
+            @pointerdown.self="onCanvasPointerDown"
           >
             <div v-if="layers.length === 0" class="sm-empty">
               <span class="sm-empty-tile"><AppIcon name="sparkle" :size="22" /></span>
               <span class="sm-empty-title">Your sticker starts here</span>
-              <span>Pick a sticker, add some text or upload a photo.</span>
+              <span>Pick a sticker or upload a photo. Double-tap anywhere to write.</span>
             </div>
 
             <!-- One element per layer. Later layers are drawn on top, because that is the list order. -->
@@ -2751,16 +2897,9 @@ function imageStyle(layer) {
             <!-- TEXT properties (emoji only get size + rotation) -->
             <template v-if="selectedLayer.type === 'text'">
               <template v-if="!selectedLayer.emoji">
-                <textarea
-                  ref="textBoxEl"
-                  :value="selectedLayer.text"
-                  class="form-control sm-textarea"
-                  rows="2"
-                  placeholder="Type your text"
-                  aria-label="Text"
-                  @focus="snapshot"
-                  @input="setProp('text', $event.target.value)"
-                ></textarea>
+                <button type="button" class="btn btn-outline-secondary btn-sm w-100 sm-action" @click="closeSheetOnPhone(); startEditing(selectedLayer)">
+                  <AppIcon name="edit" :size="14" /> Edit the words on the canvas
+                </button>
 
                 <div class="sm-section">
                   <p class="sm-label">
@@ -2958,12 +3097,6 @@ function imageStyle(layer) {
                 <button
                   type="button"
                   class="btn btn-outline-secondary btn-sm"
-                  title="Copy (Ctrl+C), then paste with Ctrl+V, even in another frame"
-                  @click="copyLayer(selectedLayer); showToast('Copied. Press Ctrl+V to paste.')"
-                >Copy</button>
-                <button
-                  type="button"
-                  class="btn btn-outline-secondary btn-sm"
                   title="Duplicate (Ctrl+D)"
                   @click="duplicateLayer(selectedLayer)"
                 >
@@ -2983,21 +3116,24 @@ function imageStyle(layer) {
               <span class="sm-count">{{ layers.length }}</span>
             </p>
             <p v-if="layers.length === 0" class="sm-hint">Nothing here yet. Add a sticker or a text box.</p>
-            <div v-else class="sm-layer-list">
+            <div v-else ref="layerListEl" class="sm-layer-list">
               <div
                 v-for="layer in layersTopFirst"
                 :key="layer.id"
+                :data-id="layer.id"
                 class="sm-layer-row"
-                :class="{ active: layer.id === selectedId, 'drop-target': layer.id === dropTargetId }"
-                draggable="true"
+                :class="{ active: layer.id === selectedId, 'is-dragging': layer.id === draggingLayerId }"
                 @click="selectLayer(layer)"
-                @dragstart="onRowDragStart(layer)"
-                @dragover.prevent="dropTargetId = layer.id"
-                @dragleave="dropTargetId = null"
-                @drop.prevent="onRowDrop(layer)"
-                @dragend="onRowDragEnd"
               >
-                <svg class="sm-grip sm-local-icon" viewBox="0 0 24 24" aria-hidden="true"><path :d="LOCAL_ICONS.grip" /></svg>
+                <span
+                  class="sm-grip-handle"
+                  title="Drag to move this layer up or down"
+                  aria-label="Drag to reorder"
+                  @pointerdown="startRowDrag($event, layer)"
+                  @click.stop
+                >
+                  <svg class="sm-grip sm-local-icon" viewBox="0 0 24 24" aria-hidden="true"><path :d="LOCAL_ICONS.grip" /></svg>
+                </span>
                 <img v-if="layer.type === 'image'" :src="layer.url" alt="" class="sm-layer-thumb" />
                 <span v-else class="sm-layer-thumb sm-layer-icon">
                   {{ layer.emoji ? layer.text : layer.type === 'text' ? 'T' : '' }}
@@ -3480,21 +3616,90 @@ function imageStyle(layer) {
   max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .sm-font-card-name { font-size: 0.72rem; font-weight: 600; color: var(--muted); }
+/* The font of the selected text box */
+.sm-font-card.active { border-color: var(--brand); background: var(--brand-tint); }
+.sm-font-card.active .sm-font-card-name { color: var(--brand); }
 
 /* ---------- draw tool ---------- */
-.sm-brushes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; }
-.sm-brush {
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  padding: 10px 4px;
+/* The toolbar floats along the top of the cutting mat while drawing */
+.sm-drawbar {
+  position: absolute; top: 10px; left: 50%; z-index: 30;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 4px;
+  max-width: calc(100% - 20px);
+  padding: 5px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 999px;
   background: #ffffff;
-  color: var(--muted);
-  font-size: 0.75rem; font-weight: 700;
-  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, transform 160ms var(--ease-out);
+  box-shadow: 0 6px 20px rgba(20, 23, 43, 0.1);
 }
-.sm-brush.active { color: var(--brand); border-color: var(--brand); background: var(--brand-tint); }
-.sm-brush:active { transform: scale(0.96); }
+.sm-drawbar-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  -webkit-tap-highlight-color: transparent;
+  transition: color 150ms ease, background-color 150ms ease, transform 160ms var(--ease-out);
+}
+.sm-drawbar-btn.active { color: var(--brand); background: var(--brand-tint); }
+.sm-drawbar-btn:active { transform: scale(0.92); }
+.sm-drawbar-line { width: 1px; height: 22px; flex-shrink: 0; background: var(--line); }
+/* The colours scroll sideways inside the bar on a narrow phone */
+.sm-drawbar-colors {
+  display: flex; align-items: center; gap: 6px;
+  min-width: 0;
+  padding: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.sm-drawbar-colors::-webkit-scrollbar { display: none; }
+.sm-drawbar-swatch {
+  position: relative;
+  width: 24px; height: 24px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid rgba(20, 23, 43, 0.12);
+  border-radius: 999px;
+  transition: transform 160ms var(--ease-out), box-shadow 150ms ease;
+}
+.sm-drawbar-swatch.active { box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--brand); }
+.sm-drawbar-swatch:active { transform: scale(0.9); }
+.sm-drawbar-done {
+  flex-shrink: 0;
+  height: 36px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--brand);
+  color: #ffffff;
+  font-size: 0.85rem; font-weight: 700;
+  transition: transform 160ms var(--ease-out);
+}
+.sm-drawbar-done:active { transform: scale(0.97); }
+
+/* Stroke size: a tall upside-down triangle at the side. The dot is the line you will draw. */
+.sm-stroke {
+  position: absolute; right: 14px; top: 50%; z-index: 30;
+  width: 32px; height: min(220px, 50%);
+  transform: translateY(-50%);
+  cursor: ns-resize;
+  touch-action: none;
+  border-radius: 8px;
+}
+.sm-stroke-shape { display: block; width: 100%; height: 100%; }
+.sm-stroke-shape polygon { fill: #E3E6EE; stroke: #C9CEDB; stroke-width: 1; vector-effect: non-scaling-stroke; }
+.sm-stroke-dot {
+  position: absolute; left: 50%;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  box-shadow: 0 0 0 1px rgba(20, 23, 43, 0.25), 0 2px 6px rgba(20, 23, 43, 0.2);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+.sm-stroke:focus-visible { outline: 2px solid var(--brand); outline-offset: 4px; }
 
 /* Round swatches with a ring when picked */
 .sm-swatches { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
@@ -3813,7 +4018,6 @@ function imageStyle(layer) {
 .sm-frame-fps { min-width: 44px; font-size: 0.85rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 
 /* ---------- properties ---------- */
-.sm-textarea { resize: vertical; font-size: 16px; } /* 16px so iPhones do not zoom in */
 .sm-rows { border-top: 1px solid var(--line); }
 .sm-row {
   display: flex; align-items: center; justify-content: space-between;
@@ -3866,8 +4070,27 @@ function imageStyle(layer) {
   transition: background-color 150ms ease, border-color 150ms ease;
 }
 .sm-layer-row.active { border-color: var(--brand); background: var(--brand-tint); }
-.sm-layer-row.drop-target { box-shadow: inset 0 2px 0 var(--brand); }
-.sm-grip { width: 12px; height: 14px; color: var(--sm-faint); cursor: grab; }
+/* The row being dragged lifts off the list, so it is clear what is moving */
+.sm-layer-row.is-dragging {
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(20, 23, 43, 0.14);
+  transform: scale(1.02);
+  position: relative; z-index: 1;
+}
+/* The grip is the drag handle: a 32px target, big enough for a thumb, and touch-action none
+   so dragging it moves the layer instead of scrolling the sheet. */
+.sm-grip-handle {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  margin: -4px -4px -4px -2px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  color: var(--sm-faint);
+  cursor: grab;
+  touch-action: none;
+}
+.sm-grip-handle:active { cursor: grabbing; color: var(--brand); }
+.sm-grip { width: 14px; height: 14px; }
 .sm-layer-thumb {
   width: 30px; height: 30px;
   flex-shrink: 0;
@@ -4006,7 +4229,9 @@ function imageStyle(layer) {
 .sm-cell:focus-visible,
 .sm-font-card:focus-visible,
 .sm-font-item:focus-visible,
-.sm-brush:focus-visible,
+.sm-drawbar-btn:focus-visible,
+.sm-drawbar-swatch:focus-visible,
+.sm-drawbar-done:focus-visible,
 .sm-swatch:focus-visible,
 .sm-swatch-custom:focus-within,
 .sm-frame:focus-visible,
@@ -4025,7 +4250,8 @@ function imageStyle(layer) {
   .sm-cell:hover { border-color: var(--brand); background: var(--brand-tint); }
   .sm-font-card:hover { border-color: var(--brand); background: var(--brand-tint); }
   .sm-font-item:not(.active):hover { background: var(--soft); }
-  .sm-brush:not(.active):hover { color: var(--ink); background: var(--soft); }
+  .sm-drawbar-btn:not(.active):hover { color: var(--ink); background: var(--soft); }
+  .sm-grip-handle:hover { color: var(--ink); background: var(--soft); }
   .sm-drop:hover { border-color: var(--brand); background: var(--brand-tint); }
   .sm-layer-row:not(.active):hover { background: var(--soft); }
   .sm-result:not(.active):hover { border-color: var(--brand); }
@@ -4103,7 +4329,7 @@ function imageStyle(layer) {
 
   /* Smaller sticker tiles: six in a row instead of four */
   .sm-art-grid { grid-template-columns: repeat(6, 1fr); gap: 6px; }
-  .sm-art-grid.sm-grid-2 { grid-template-columns: repeat(3, 1fr); }
+  .sm-art-grid.sm-grid-2 { grid-template-columns: repeat(4, 1fr); } /* the 4 washi tapes in one tidy row */
   .sm-art-grid .sm-cell { padding: 5px; border-radius: 10px; }
   .sm-art-grid .sm-emoji { font-size: 22px; }
   .sm-font-cards { grid-template-columns: 1fr 1fr; }
@@ -4144,7 +4370,8 @@ function imageStyle(layer) {
   .sm-rail-tile,
   .sm-cell,
   .sm-font-card,
-  .sm-brush,
+  .sm-drawbar-btn,
+  .sm-drawbar-swatch,
   .sm-swatch,
   .sm-drop,
   .sm-frame,
@@ -4153,7 +4380,8 @@ function imageStyle(layer) {
   .sm-rail-btn:active .sm-rail-tile,
   .sm-cell:active,
   .sm-font-card:active,
-  .sm-brush:active,
+  .sm-drawbar-btn:active,
+  .sm-drawbar-swatch:active,
   .sm-swatch:active,
   .sm-drop:active,
   .sm-frame:active,
