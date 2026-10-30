@@ -1,5 +1,8 @@
 // filterCss turns a slot's saved filter and sliders into a CSS filter text (the same as on screen)
 import { filterCss, cropOf, cropSource, isTrustedStickerSrc } from './stripData.js'
+// isGifSrc: is this sticker a GIF? decodeGif / pickFrame: take a GIF apart, and pick the picture that is on at a moment
+import { isGifSrc } from './exportRules.js'
+import { decodeGif, pickFrame } from './gifFrames.js'
 // getClipUrl gives a local address of a clip's video. CLIP_SECONDS is how long a raw clip is.
 import { getClipUrl, CLIP_SECONDS } from './clips.js'
 
@@ -145,7 +148,13 @@ export async function createScene({ layout, frameStyle, photosById, slotPhotos, 
   for (const sticker of [...stickers].filter((s) => s.visible).sort((a, b) => a.z - b.z)) {
     if (!isTrustedStickerSrc(sticker.src)) continue
     try {
-      stickerList.push({ sticker: sticker, img: await loadImage(sticker.src) })
+      // A GIF sticker moves: take it apart, and draw the picture that is on at each moment. If that cannot be done
+      // (this browser has no ImageDecoder), it stays a still picture.
+      let animation = null
+      if (await isGifSrc(sticker.src)) {
+        animation = await decodeGif(sticker.src).catch((error) => console.error('A GIF sticker could not be taken apart, so it stays still', error))
+      }
+      stickerList.push({ sticker: sticker, animation: animation, img: animation ? null : await loadImage(sticker.src) })
     } catch (error) {
       console.error('A sticker could not be loaded, so it is left out of the video', error)
     }
@@ -276,13 +285,14 @@ export async function createScene({ layout, frameStyle, photosById, slotPhotos, 
     }
 
     // Stickers. Move to the sticker's centre, rotate (canvas uses radians), draw it centred.
-    for (const { sticker, img } of stickerList) {
+    for (const { sticker, img, animation } of stickerList) {
+      const picture = animation ? pickFrame(animation, t).bitmap : img
       const w = (sticker.w / 100) * W
-      const h = w * (img.height / img.width) // keep the sticker's own proportions
+      const h = w * (picture.height / picture.width) // keep the sticker's own proportions
       ctx.save()
       ctx.translate((sticker.x / 100) * W, (sticker.y / 100) * H)
       ctx.rotate((sticker.rotate * Math.PI) / 180)
-      ctx.drawImage(img, -w / 2, -h / 2, w, h)
+      ctx.drawImage(picture, -w / 2, -h / 2, w, h)
       ctx.restore()
     }
 
