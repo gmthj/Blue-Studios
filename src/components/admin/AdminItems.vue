@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { listItems, hideItem, unhideItem } from '../../admin.js'
 import { CATEGORIES, categoryLabel } from '../../studio.js'
+import { itemLink } from '../../marketplace.js'
 import { useAdminTab, useSort, formatTime } from '../../composables/useAdminTab.js'
 import StorageImage from '../StorageImage.vue'
 import { askText } from '../../composables/useDialog.js'
@@ -124,7 +125,7 @@ function unhide(item) {
     <div class="row g-3">
       <div v-for="item in shown" :key="item.type + item.id" class="col-6 col-md-3 col-xl-2">
         <div class="card h-100">
-          <div class="preview"><StorageImage :path="item.type === 'templates' ? item.thumbnailPath : item.imagePath" :alt="item.name" /></div>
+          <div class="preview"><StorageImage :src="item.cardUrl" :path="item.type === 'templates' ? item.thumbnailPath : item.imagePath" :alt="item.name" /></div>
           <div class="card-body p-2 d-flex flex-column">
             <p class="small fw-semibold text-truncate mb-0" :title="item.name">{{ item.name }}</p>
             <p class="small mb-1">
@@ -139,7 +140,7 @@ function unhide(item) {
               {{ (item.categories || []).map(categoryLabel).join(', ') }}
             </p>
             <div class="mt-auto d-flex gap-1">
-              <router-link v-if="stateOf(item) === 'public'" :to="'/marketplace/' + item.type + '/' + item.id" class="btn btn-sm btn-outline-secondary flex-fill">Open</router-link>
+              <router-link v-if="stateOf(item) === 'public'" :to="itemLink(route, item.type, item.id)" class="btn btn-sm btn-outline-secondary flex-fill">Open</router-link>
               <button v-if="item.status === 'hidden'" class="btn btn-sm btn-outline-primary flex-fill" :disabled="busy" @click="unhide(item)">Unhide</button>
               <button v-else class="btn btn-sm btn-outline-danger flex-fill" :disabled="busy" @click="hide(item)">Hide</button>
             </div>

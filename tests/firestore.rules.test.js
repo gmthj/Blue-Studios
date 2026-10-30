@@ -402,6 +402,40 @@ test('the owner can make a template public/private, but not change status, saveC
   await assertFails(updateDoc(doc(db, 'templates/t1'), { ownerId: 'bob' }))
 })
 
+// A card picture's fields, as saveTemplate / saveSticker save them (see "Card pictures" in studio.js)
+function cardOf(path) {
+  return {
+    cardPath: path,
+    cardUrl: 'https://firebasestorage.googleapis.com/v0/b/demo.appspot.com/o/' + encodeURIComponent(path) + '?alt=media&token=abc',
+  }
+}
+
+test('items can have a card picture, but only their own file in Storage', async () => {
+  await seedAlice()
+  const db = dbAsAccount('alice')
+  await assertSucceeds(setDoc(doc(db, 'templates/t1'), newTemplate('alice', 't1', cardOf('templates/alice/t1/card.webp'))))
+  await assertSucceeds(setDoc(doc(db, 'stickers/s1'), newSticker('alice', 's1', cardOf('stickers/alice/s1/card.png'))))
+  await assertSucceeds(setDoc(doc(db, 'stickers/s2'), newSticker('alice', 's2', cardOf('stickers/alice/s2/image'))))
+
+  // Someone else's file, another item's file, a file that is not a card, or a link somewhere else
+  await assertFails(setDoc(doc(db, 'templates/t2'), newTemplate('alice', 't2', cardOf('templates/bob/t2/card.webp'))))
+  await assertFails(setDoc(doc(db, 'templates/t3'), newTemplate('alice', 't3', cardOf('templates/alice/t1/card.webp'))))
+  await assertFails(setDoc(doc(db, 'templates/t4'), newTemplate('alice', 't4', cardOf('templates/alice/t4/project.json'))))
+  await assertFails(setDoc(doc(db, 'templates/t5'), newTemplate('alice', 't5', {
+    cardPath: 'templates/alice/t5/card.webp',
+    cardUrl: 'https://example.com/templates%2Falice%2Ft5%2Fcard.webp?x',
+  })))
+  await assertFails(setDoc(doc(db, 'templates/t6'), newTemplate('alice', 't6', { cardUrl: cardOf('templates/alice/t6/card.webp').cardUrl })))
+})
+
+test('the owner can replace a template card when editing it', async () => {
+  await seedAlice()
+  await seed('templates/t1', newTemplate('alice', 't1', cardOf('templates/alice/t1/card.webp')))
+  const db = dbAsAccount('alice')
+  await assertSucceeds(updateDoc(doc(db, 'templates/t1'), { ...cardOf('templates/alice/t1/card.png'), updatedAt: 2 }))
+  await assertFails(updateDoc(doc(db, 'templates/t1'), { ...cardOf('templates/bob/x/card.png'), updatedAt: 3 }))
+})
+
 test('banned accounts cannot save or change templates', async () => {
   await seedAlice({ banned: true })
   await seed('templates/t1', newTemplate('alice', 't1'))
@@ -436,6 +470,27 @@ test('stickers follow the same rules (create, kind, visibility)', async () => {
   await assertFails(setDoc(doc(dbAsAccount('alice'), 'stickers/s2'), newSticker('alice', 's2', { kind: 'virus' })))
   await assertFails(setDoc(doc(dbAsAccount('alice'), 'stickers/s3'), newSticker('alice', 's3', { visibility: 'public' })))
   await assertFails(getDoc(doc(dbAsAccount('bob'), 'stickers/s1')))
+})
+
+test('a strip saved from the Share page can be a PNG, GIF or MP4, and remember its share', async () => {
+  await seedAlice()
+  const alice = dbAsAccount('alice')
+  const strip = { ownerId: 'alice', title: 'Room 1234', imagePath: 'strips/alice/s1.mp4', format: 'mp4', createdAt: 1 }
+  await assertSucceeds(setDoc(doc(alice, 'strips/s1'), strip))
+  await assertSucceeds(setDoc(doc(alice, 'strips/s2'), { ...strip, imagePath: 'strips/alice/s2.gif', format: 'gif', shareId: 'k3j9x0q7m2ab' }))
+  await assertSucceeds(setDoc(doc(alice, 'strips/s3'), { ...strip, imagePath: 'strips/alice/s3.png', format: 'png' }))
+  // the file ending must be the format, and the path must be mine
+  await assertFails(setDoc(doc(alice, 'strips/s4'), { ...strip, imagePath: 'strips/alice/s4.gif' }))
+  await assertFails(setDoc(doc(alice, 'strips/s5'), { ...strip, imagePath: 'strips/bob/s5.mp4' }))
+  // only png, gif, mp4
+  await assertFails(setDoc(doc(alice, 'strips/s6'), { ...strip, imagePath: 'strips/alice/s6.exe', format: 'exe' }))
+  // shareId is text, and not a long one; other extra fields are not allowed
+  await assertFails(setDoc(doc(alice, 'strips/s7'), { ...strip, imagePath: 'strips/alice/s7.mp4', shareId: 123 }))
+  await assertFails(setDoc(doc(alice, 'strips/s8'), { ...strip, imagePath: 'strips/alice/s8.mp4', shareId: 'x'.repeat(41) }))
+  await assertFails(setDoc(doc(alice, 'strips/s9'), { ...strip, imagePath: 'strips/alice/s9.mp4', extra: true }))
+  // guests cannot save, and nobody else can read it
+  await assertFails(setDoc(doc(dbAsGuest('g1'), 'strips/s10'), { ...strip, ownerId: 'g1', imagePath: 'strips/g1/s10.mp4' }))
+  await assertFails(getDoc(doc(dbAsAccount('bob'), 'strips/s2')))
 })
 
 test('strips are private to the owner', async () => {

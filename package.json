@@ -9,8 +9,9 @@
     "preview": "vite preview",
     "set-admin": "node --env-file=.env scripts/set-admin.mjs",
     "set-cors": "node --env-file=.env scripts/set-cors.mjs",
-    "test": "vitest run tests/client.spec.js",
-    "test:unit": "vitest run tests/client.spec.js",
+    "make-cards": "node --env-file=.env scripts/make-cards.mjs",
+    "test": "vitest run tests/client.spec.js tests/exportRules.spec.js tests/gifFrames.spec.js",
+    "test:unit": "vitest run tests/client.spec.js tests/exportRules.spec.js tests/gifFrames.spec.js",
     "test:rules": "firebase emulators:exec --only auth,firestore,storage --project demo-blue-studios \"node --test --test-concurrency=1 tests/firestore.rules.test.js tests/storage.rules.test.js tests/admin.api.test.js\""
   },
   "dependencies": {
@@ -26,6 +27,7 @@
     "gifenc": "^1.0.3",
     "html-to-image": "^1.11.13",
     "jspdf": "^4.2.1",
+    "qrcode": "^1.5.4",
     "tone": "^15.1.22",
     "vue": "^3.5.43",
     "vue-router": "^5.4.0"
@@ -35,6 +37,7 @@
     "@vitejs/plugin-vue": "^6.0.10",
     "@vue/test-utils": "^2.5.1",
     "jsdom": "^29.1.1",
+    "sharp": "^0.34.5",
     "vite": "^8.3.4",
     "vitest": "^5.0.5"
   },

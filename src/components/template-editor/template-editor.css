@@ -229,13 +229,6 @@
   height: 18px;
 }
 
-.mini-layout-music-4-cut {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 3px;
-  width: 42px;
-}
-
 .mini-slot {
   height: 13px;
   background: rgba(255, 255, 255, 0.75);

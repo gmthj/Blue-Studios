@@ -113,6 +113,20 @@ service cloud.firestore {
         && (!('country' in c) || (c.country is string && c.country.size() <= 2));
     }
 
+    // An item's card picture (see "Card pictures" in src/studio.js): optional, older items have none.
+    // If there, cardPath must be one of this item's own files in my folder (fileNames: a regex of the
+    // allowed names), and cardUrl must be that file's Firebase Storage link, so nobody can show an
+    // outside picture in the marketplace instead of the one that was checked.
+    function isMyCard(data, type, itemId, fileNames) {
+      let folder = type + '/' + request.auth.uid + '/' + itemId + '/';
+      return (!('cardPath' in data) && !('cardUrl' in data))
+        || (data.cardPath is string
+            && data.cardPath.matches(folder + '(' + fileNames + ')')
+            && data.cardUrl is string
+            && data.cardUrl.matches('https://firebasestorage[.]googleapis[.]com/v0/b/[^/?]+/o/'
+                 + data.cardPath.replace('/', '%2F').replace('[.]', '[.]') + '[?].*'));
+    }
+
     function itemPath(type, itemId) {
       return /databases/$(database)/documents/$(type)/$(itemId);
     }
@@ -336,14 +350,14 @@ service cloud.firestore {
 
     // ---------- Templates (frames made in the template editor) ----------
     // templates/{id}  { ownerId, ownerName, name, slotCount, categories, visibility, status, saveCount,
-    //                   thumbnailPath, dataPath, createdAt, updatedAt }
-    // The files are in Firebase Storage: templates/{uid}/{id}/thumbnail.png and project.json
+    //                   thumbnailPath, dataPath, cardPath?, cardUrl?, createdAt, updatedAt }
+    // The files are in Firebase Storage: templates/{uid}/{id}/thumbnail.png, project.json and card.webp (or card.png)
 
     match /templates/{itemId} {
       allow read: if canSeeItem();
 
       allow create: if isCreator()
-        && request.resource.data.keys().hasOnly(['ownerId', 'ownerName', 'name', 'slotCount', 'categories', 'visibility', 'status', 'saveCount', 'thumbnailPath', 'dataPath', 'createdAt', 'updatedAt'])
+        && request.resource.data.keys().hasOnly(['ownerId', 'ownerName', 'name', 'slotCount', 'categories', 'visibility', 'status', 'saveCount', 'thumbnailPath', 'dataPath', 'cardPath', 'cardUrl', 'createdAt', 'updatedAt'])
         && request.resource.data.ownerId == request.auth.uid
         && isMyName(request.resource.data.ownerName)
         && isTitle(request.resource.data.name)
@@ -356,13 +370,16 @@ service cloud.firestore {
         && request.resource.data.saveCount == 0
         && request.resource.data.thumbnailPath == 'templates/' + request.auth.uid + '/' + itemId + '/thumbnail.png'
         && request.resource.data.dataPath == 'templates/' + request.auth.uid + '/' + itemId + '/project.json'
+        && isMyCard(request.resource.data, 'templates', itemId, 'card[.](webp|png)')
         && request.resource.data.createdAt is int
         && request.resource.data.updatedAt is int;
 
-      // The owner can rename, change slots and categories, make public/private. Not status (admins) or saveCount.
+      // The owner can rename, change slots and categories, make public/private, and replace the card picture
+      // (when the template is edited). Not status (admins) or saveCount.
       allow update: if isCreator()
         && resource.data.ownerId == request.auth.uid
-        && onlyChanged(['ownerName', 'name', 'slotCount', 'categories', 'visibility', 'updatedAt'])
+        && onlyChanged(['ownerName', 'name', 'slotCount', 'categories', 'visibility', 'cardPath', 'cardUrl', 'updatedAt'])
+        && isMyCard(request.resource.data, 'templates', itemId, 'card[.](webp|png)')
         && isMyName(request.resource.data.ownerName)
         && isTitle(request.resource.data.name)
         && request.resource.data.slotCount is int
@@ -384,15 +401,17 @@ service cloud.firestore {
     }
 
     // ---------- Stickers (made in the sticker maker) ----------
-    // stickers/{id}  { ownerId, ownerName, name, kind, categories, visibility, status, saveCount, imagePath, createdAt, updatedAt, config? }
-    // The image is in Firebase Storage: stickers/{uid}/{id}/image
+    // stickers/{id}  { ownerId, ownerName, name, kind, categories, visibility, status, saveCount, imagePath,
+    //                  cardPath?, cardUrl?, createdAt, updatedAt, config? }
+    // The files are in Firebase Storage: stickers/{uid}/{id}/image and card.webp (or card.png).
+    // Moving stickers use their image as the card (cardPath = imagePath).
     // config is only on 'dynamic' (live) stickers: the settings each page uses to redraw it.
 
     match /stickers/{itemId} {
       allow read: if canSeeItem();
 
       allow create: if isCreator()
-        && request.resource.data.keys().hasOnly(['ownerId', 'ownerName', 'name', 'kind', 'categories', 'visibility', 'status', 'saveCount', 'imagePath', 'createdAt', 'updatedAt', 'config'])
+        && request.resource.data.keys().hasOnly(['ownerId', 'ownerName', 'name', 'kind', 'categories', 'visibility', 'status', 'saveCount', 'imagePath', 'cardPath', 'cardUrl', 'createdAt', 'updatedAt', 'config'])
         && request.resource.data.ownerId == request.auth.uid
         && isMyName(request.resource.data.ownerName)
         && isTitle(request.resource.data.name)
@@ -404,6 +423,7 @@ service cloud.firestore {
         && request.resource.data.status == 'active'
         && request.resource.data.saveCount == 0
         && request.resource.data.imagePath == 'stickers/' + request.auth.uid + '/' + itemId + '/image'
+        && isMyCard(request.resource.data, 'stickers', itemId, 'card[.](webp|png)|image')
         && request.resource.data.createdAt is int
         && request.resource.data.updatedAt is int;
 
@@ -430,22 +450,57 @@ service cloud.firestore {
     // ---------- Strips (finished photostrips saved to My Studio) ----------
     // strips/{id}  { ownerId, title, imagePath, createdAt }   always private to the owner
     // The image is in Firebase Storage: strips/{uid}/{id}.jpg
+    // A strip saved from the Share page also has format: 'png' | 'gif' | 'mp4', and imagePath ends with it: strips/{uid}/{id}.mp4
+    // and shareId (the id of its share, which My Studio opens as /s/{shareId}). shareId is optional.
 
     match /strips/{stripId} {
       allow read: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
 
       allow create: if isCreator()
-        && request.resource.data.keys().hasOnly(['ownerId', 'title', 'imagePath', 'createdAt'])
         && request.resource.data.ownerId == request.auth.uid
         && isTitle(request.resource.data.title)
-        && request.resource.data.imagePath == 'strips/' + request.auth.uid + '/' + stripId + '.jpg'
-        && request.resource.data.createdAt is int;
+        && request.resource.data.createdAt is int
+        && (
+          // a JPG, from the Decorate page
+          (request.resource.data.keys().hasOnly(['ownerId', 'title', 'imagePath', 'createdAt'])
+            && request.resource.data.imagePath == 'strips/' + request.auth.uid + '/' + stripId + '.jpg')
+          // a PNG, GIF or MP4, from the Share page
+          || (request.resource.data.keys().hasOnly(['ownerId', 'title', 'imagePath', 'format', 'shareId', 'createdAt'])
+            && (!request.resource.data.keys().hasAny(['shareId']) || (request.resource.data.shareId is string && request.resource.data.shareId.size() <= 40))
+            && request.resource.data.format in ['png', 'gif', 'mp4']
+            && request.resource.data.imagePath == 'strips/' + request.auth.uid + '/' + stripId + '.' + request.resource.data.format)
+        );
 
       allow update: if isCreator()
         && resource.data.ownerId == request.auth.uid
         && onlyChanged(['title'])
         && isTitle(request.resource.data.title);
 
+      allow delete: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+    }
+
+    // ---------- Shares (a finished strip from the Export page, opened by its link and QR code) ----------
+    // shares/{id}  { ownerId, title, format, filePath, fileUrl, size, roomCode, createdAt }
+    // The file is in Firebase Storage: shares/{uid}/{id}.png | .gif | .mp4
+    // Guests can make one too. Anyone signed in (guests too) can open one if they know its id (a long random text),
+    // but nobody can list them. A share is never changed. Only its maker (or an admin) can delete it.
+
+    match /shares/{shareId} {
+      allow get: if signedIn();
+      allow list: if isAdmin();
+
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['ownerId', 'title', 'format', 'filePath', 'fileUrl', 'size', 'roomCode', 'createdAt'])
+        && request.resource.data.ownerId == request.auth.uid
+        && isTitle(request.resource.data.title)
+        && request.resource.data.format in ['png', 'gif', 'mp4']
+        && request.resource.data.filePath == 'shares/' + request.auth.uid + '/' + shareId + '.' + request.resource.data.format
+        && request.resource.data.fileUrl is string
+        && request.resource.data.size is int
+        && request.resource.data.roomCode is string
+        && request.resource.data.createdAt is int;
+
+      allow update: if false;
       allow delete: if signedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
     }
 
@@ -511,7 +566,7 @@ service cloud.firestore {
 
     match /{collectionName}/{docId=**} {
       allow read, write: if signedIn()
-        && !(collectionName in ['rooms', 'users', 'templates', 'stickers', 'strips', 'reports', 'adminLog']);
+        && !(collectionName in ['rooms', 'users', 'templates', 'stickers', 'strips', 'shares', 'reports', 'adminLog']);
     }
   }
 }

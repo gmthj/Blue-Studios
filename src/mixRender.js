@@ -1,9 +1,10 @@
 import * as Tone from 'tone'
+import { MAX_EDIT_SECONDS } from './clips.js'   // the MP4's length, so the mix always matches the video
 
-// Renders 5 seconds of the mix into a WAV file (a Blob) WITHOUT playing it out loud.
+// Renders the mix (as long as the exported video) into a WAV file (a Blob) WITHOUT playing it out loud.
 // settings.bufferA / bufferB are the loaded songs (player.buffer from MusicView), or null for an empty deck.
 export async function renderMix(settings) {
-  const seconds = 5
+  const seconds = MAX_EDIT_SECONDS
 
   // Tone.Offline builds the same sound path as the live mixer, but records it instead of playing it
   const rendered = await Tone.Offline(function () {
@@ -14,12 +15,12 @@ export async function renderMix(settings) {
     if (settings.bufferA) {
       const playerA = new Tone.Player(settings.bufferA).connect(gainA)
       playerA.playbackRate = settings.speedA
-      playerA.start(0)
+      playerA.start(0, settings.startA || 0)   // from the chosen part (0 if no start was given)
     }
     if (settings.bufferB) {
       const playerB = new Tone.Player(settings.bufferB).connect(gainB)
       playerB.playbackRate = settings.speedB
-      playerB.start(0)
+      playerB.start(0, settings.startB || 0)
     }
   }, seconds)
 

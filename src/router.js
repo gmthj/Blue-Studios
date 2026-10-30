@@ -9,10 +9,10 @@ import TemplateEditorView from './views/TemplateEditorView.vue'
 import DecorateView from './views/DecorateView.vue'
 import VideoView from './views/VideoView.vue'
 import ExportView from './views/ExportView.vue'
+import ShareView from './views/ShareView.vue'
+import PublicShareView from './views/PublicShareView.vue'
 import StudioView from './views/StudioView.vue'
 import MarketplaceView from './views/MarketplaceView.vue'
-import MarketplaceItemView from './views/MarketplaceItemView.vue'
-import TestUploadView from './views/TestUploadView.vue'
 import AdminView from './views/AdminView.vue'
 import NotFoundView from './views/NotFoundView.vue'
 import { useAuth } from './composables/useAuth.js'
@@ -25,12 +25,16 @@ const routes = [
   { path: '/login', component: LoginView }, // /login?mode=signup shows the sign up tab
   // meta.requiresAccount: guests are sent to the log in page first (see beforeEach below)
   { path: '/studio', component: StudioView, meta: { requiresAccount: true } },
+  // A finished strip, opened by its link or QR code. Anyone can see it, guests too. (see PublicShareView.vue)
+  { path: '/s/:id', component: PublicShareView },
   // Anyone can browse the marketplace, guests too. /marketplace?type=stickers&category=cute&sort=popular
   { path: '/marketplace', component: MarketplaceView },
-  // One item, e.g. /marketplace/templates/aZ3kQ9 (type can only be templates or stickers)
-  { path: '/marketplace/:type(templates|stickers)/:id', component: MarketplaceItemView },
-  // TEMPORARY: make test templates/stickers until the editors are merged (remove before submission)
-  { path: '/test-upload', component: TestUploadView, meta: { requiresAccount: true } },
+  // One item opens as a popup: /marketplace?type=templates&item=templates:aZ3kQ9 (see itemLink() in marketplace.js).
+  // Old links to an item's own page, e.g. /marketplace/templates/aZ3kQ9, open that popup.
+  {
+    path: '/marketplace/:type(templates|stickers)/:id',
+    redirect: (to) => ({ path: '/marketplace', query: { type: to.params.type, item: to.params.type + ':' + to.params.id } }),
+  },
   // Moderators only (accounts with the admin mark, see scripts/set-admin.mjs). /admin?tab=overview|reports|items|accounts|rooms|log
   { path: '/admin', component: AdminView, meta: { requiresAdmin: true } },
   {
@@ -47,7 +51,8 @@ const routes = [
       { path: 'video', component: VideoView },       // /room/4821/video    (edit the clips into one video)
       { path: 'decorate', component: DecorateView }, // /room/4821/decorate (filters and stickers)
       { path: 'music', component: MusicView },       // /room/4821/music    (music mixer)
-      { path: 'export', component: ExportView },     // /room/4821/export   (make an MP4 of a strip with video)
+      { path: 'export', component: ExportView },     // /room/4821/export   (choose the format and the name)
+      { path: 'share', component: ShareView },       // /room/4821/share    (the file, its link and QR code)
     ],
   },
   // Anything else (a wrong link, a typo, /room/4821/nope): the "page doesn't exist" page.

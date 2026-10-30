@@ -1,7 +1,8 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { listReports, dismissReports, hideItem, getAnyItem, namesFor } from '../../admin.js'
-import { REPORT_REASONS } from '../../marketplace.js'
+import { REPORT_REASONS, itemLink } from '../../marketplace.js'
 import { useAdminTab, useSort, formatTime } from '../../composables/useAdminTab.js'
 import StorageImage from '../StorageImage.vue'
 
@@ -9,6 +10,7 @@ import StorageImage from '../StorageImage.vue'
 // resolved and dismissed ones are kept as a record.
 
 const emit = defineEmits(['open-tab'])
+const route = useRoute()
 
 const STATUSES = [
   { id: 'open', label: 'Open' },
@@ -128,7 +130,7 @@ function dismiss(group) {
             </p>
             <p class="small text-muted mb-2">
               by {{ names[group.ownerId] || group.ownerId }} &middot; {{ group.reports.length }} report(s)
-              <router-link v-if="group.item" :to="'/marketplace/' + group.type + '/' + group.itemId" class="ms-1">open</router-link>
+              <router-link v-if="group.item" :to="itemLink(route, group.type, group.itemId)" class="ms-1">open</router-link>
             </p>
             <ul class="small mb-3 ps-3">
               <li v-for="report in group.reports" :key="report.id" class="text-break">
