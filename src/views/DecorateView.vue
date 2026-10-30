@@ -216,17 +216,29 @@ async function moveLayer(id, direction) {
   await saveStickers(list)
 }
 
-// Phones do not support drag and drop:
-// tap a tray sticker then tap the strip to add it, or select a strip sticker then tap the strip to move it
+// A tap on the strip: with a tray sticker tapped first (phones), add it there.
+// Otherwise it is a tap on an empty spot, so the selected sticker is let go (its box closes).
+// (On a phone, a sticker on the strip is moved by dragging it with a finger, see PhotoStrip.vue.)
 function onStripClick(x, y) {
   if (selectedTrayId.value) {
     const item = allStickers.value.find((s) => s.id === selectedTrayId.value)
     addSticker(item.src, x, y)
     selectedTrayId.value = null
-  } else if (selectedSticker.value) {
-    moveSticker(selectedSticker.value.id, x, y)
+  } else {
+    selectedStickerId.value = null
   }
 }
+
+// A click or tap anywhere else on the page (not on a sticker, its box, the tray or the layers list)
+// also lets go of the selected sticker
+function onPagePointerDown(event) {
+  if (selectedStickerId.value === null) return
+  if (event.target.closest('.strip-wrap, .tray-item, .layers')) return // the strip handles its own taps
+  selectedStickerId.value = null
+}
+
+onMounted(() => document.addEventListener('pointerdown', onPagePointerDown))
+onBeforeUnmount(() => document.removeEventListener('pointerdown', onPagePointerDown))
 
 // Everyone moves to another page together (RoomLayout.vue follows the room's "stage")
 async function goToStage(stage) {
@@ -401,18 +413,19 @@ async function saveToStudio() {
           @drop-sticker="addSticker"
           @move-sticker="moveSticker"
           @sticker-click="(id) => (selectedStickerId = id)"
+          @delete-sticker="deleteSticker"
+          @update-sticker="updateSticker"
           @slot-click="onSlotClick"
           @strip-click="onStripClick"
         />
-        <p class="small text-muted text-center mt-2 mb-0">
-          Drag stickers onto the strip, then drag to move. Phone: tap a sticker in the tray, then tap the strip.
-        </p>      </div>
+      </div>
     </div>
 
     <!-- RIGHT: sticker tray, selected sticker, layers -->
     <div class="col-12 col-md-6 col-lg-3 order-3">
       <div class="panel d-flex flex-column">
-        <h2 class="h5 fw-bold">Sticker tray</h2>
+        <h2 class="h5 fw-bold mb-1">Sticker tray</h2>
+        <p class="tray-hint text-muted mb-2">Drag stickers onto the strip, then drag to move. Phone: tap a sticker in the tray, then tap the strip.</p>
 
         <!-- Tabs: Default, My stickers, My GIPHY. On a narrow panel they scroll sideways instead of squashing. -->
         <div class="tray-tabs mb-2" role="tablist" aria-label="Sticker tray">
@@ -455,16 +468,6 @@ async function saveToStudio() {
           </div>
         </div>
 
-        <!-- Only shown when a sticker on the strip is selected -->
-        <div v-if="selectedSticker" class="mb-3">
-          <label class="form-label small d-flex justify-content-between mb-0">Size <span>{{ selectedSticker.w }}%</span></label>
-          <input type="range" class="form-range" min="10" max="100" :value="selectedSticker.w"
-                 @change="updateSticker(selectedSticker.id, { w: Number($event.target.value) })" />
-          <label class="form-label small d-flex justify-content-between mb-0">Rotate <span>{{ selectedSticker.rotate }}°</span></label>
-          <input type="range" class="form-range" min="-180" max="180" :value="selectedSticker.rotate"
-                 @change="updateSticker(selectedSticker.id, { rotate: Number($event.target.value) })" />
-          <button class="btn btn-outline-danger btn-sm" @click="deleteSticker(selectedSticker.id)">Delete sticker</button>
-        </div>
 
         <!-- Layers: front at the top. Photos and frame are always behind the stickers, so they stay at the bottom -->
         <h2 class="h5 fw-bold">Layers</h2>
@@ -514,8 +517,11 @@ async function saveToStudio() {
 }
 
 .canvas-area {
+  /* The same space for every frame: the strip is never taller than --stage-h (see PhotoStrip.vue),
+     and the area is always at least that tall, so it does not grow or shrink when a different frame is chosen */
+  --stage-h: min(72vh, 680px);
   background: #EEF0F6;
-  min-height: 420px;
+  min-height: calc(var(--stage-h) + 32px); /* + the panel's padding */
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -551,6 +557,12 @@ async function saveToStudio() {
 }
 
 /* Sticker tray */
+/* The how-to line under the Sticker tray title */
+.tray-hint {
+  font-size: 0.72rem;
+  line-height: 1.35;
+}
+
 .tray-tabs {
   display: flex;
   gap: 2px;
@@ -675,7 +687,7 @@ async function saveToStudio() {
 /* Tablets and phones: the panels stack, so the long lists get shorter scroll areas */
 @media (max-width: 991.98px) {
   .canvas-area {
-    min-height: 0;
+    --stage-h: min(62vh, 560px); /* a bit shorter, so the panels below are not far away */
     padding-top: 20px;
     padding-bottom: 20px;
   }

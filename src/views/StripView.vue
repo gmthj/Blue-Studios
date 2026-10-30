@@ -585,9 +585,9 @@ async function goToStage(stage) {
           >
             <button
               class="swatch"
-              :class="[tpl.shape || 'square', { active: tpl.id === frameStyle.id }]"
+              :class="[tpl.shape || 'square', { active: tpl.id === frameStyle.id, 'picture-swatch': !!tpl.thumbnailUrl }]"
               :style="{
-                background: tpl.thumbnailUrl ? `url(${tpl.thumbnailUrl}) center/cover no-repeat` : (tpl.background || '#FFE8A3'),
+                background: tpl.thumbnailUrl ? `url(${tpl.thumbnailUrl}) center/contain no-repeat` : (tpl.background || '#FFE8A3'),
                 borderColor: tpl.id === frameStyle.id ? '#2F5BEA' : (tpl.border || '#E0A100')
               }"
               :title="tpl.name"
@@ -616,9 +616,9 @@ async function goToStage(stage) {
               v-for="tpl in savedTemplates"
               :key="tpl.id"
               class="swatch"
-              :class="[tpl.shape, { active: tpl.id === frameStyle.id }]"
+              :class="[tpl.shape, { active: tpl.id === frameStyle.id, 'picture-swatch': !!tpl.thumbnailUrl }]"
               :style="{
-                background: tpl.thumbnailUrl ? `url(${tpl.thumbnailUrl}) center/cover no-repeat` : tpl.background,
+                background: tpl.thumbnailUrl ? `url(${tpl.thumbnailUrl}) center/contain no-repeat` : tpl.background,
                 borderColor: tpl.id === frameStyle.id ? '#2F5BEA' : tpl.border
               }"
               :title="tpl.name"
@@ -767,8 +767,11 @@ async function goToStage(stage) {
 }
 
 .canvas-area {
+  /* The same space for every frame: the strip is never taller than --stage-h (see PhotoStrip.vue),
+     and the area is always at least that tall, so it does not grow or shrink when a different frame is chosen */
+  --stage-h: min(72vh, 680px);
   background: #EEF0F6;
-  min-height: 420px;
+  min-height: calc(var(--stage-h) + 32px); /* + the panel's padding */
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -905,6 +908,21 @@ async function goToStage(stage) {
   box-shadow: 0 0 0 2px #E8EEFF;
 }
 
+/* A saved template shown as its own picture: the picture already has its rounded border, so the swatch adds
+   no border or corner of its own. The chosen one is marked with a blue ring around it instead. */
+.swatch.picture-swatch {
+  border: none;
+  border-radius: 0;
+  background-color: transparent;
+}
+
+.swatch.picture-swatch.active {
+  box-shadow: none;
+  outline: 2px solid #2F5BEA;
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
 
 /* "View all" next to the Mine title */
 .view-all-btn {
@@ -990,7 +1008,7 @@ async function goToStage(stage) {
 /* Tablets and phones: the panels stack, so the long lists get shorter scroll areas */
 @media (max-width: 991.98px) {
   .canvas-area {
-    min-height: 0;
+    --stage-h: min(62vh, 560px); /* a bit shorter, so the panels below are not far away */
     padding-top: 20px;
     padding-bottom: 20px;
   }
