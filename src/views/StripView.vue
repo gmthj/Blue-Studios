@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import { useAuth } from '../composables/useAuth.js'
-import { LAYOUTS, FRAME_STYLES, filterCss, saveFields, saveField, cropOf, cropSource, MAX_ZOOM } from '../stripData.js'
+import { LAYOUTS, FRAME_STYLES, saveFields, saveField, cropOf, MAX_ZOOM } from '../stripData.js'
 import { listMyItems, getFileUrl, templateFrameFields } from '../studio.js'
 import { getItem, listMySaved } from '../marketplace.js'
 import { loadSavedFramesFromDB } from '../utils/savedFrameEngine.js'
@@ -30,7 +30,6 @@ const draftZoom = ref(null)       // the zoom slider's value while it is being d
 const userTemplates = ref([])
 const savedTemplates = ref([]) // templates I saved from the marketplace (shown under "Saved")
 const loadingTemplates = ref(false)
-const exportingPng = ref(false)
 
 // What the room has chosen (the first layout / style if nothing is saved yet)
 const layout = computed(() => {
@@ -396,105 +395,6 @@ async function chooseCustomTemplate(tpl) {
   }
 }
 
-// Helper to load image for canvas export
-function loadImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.crossOrigin = 'anonymous'
-    img.onload = () => resolve(img)
-    img.onerror = reject
-    img.src = src
-  })
-}
-
-// Produce and download high-resolution strip PNG
-async function producePng() {
-  exportingPng.value = true
-  try {
-    const W = 900
-    const H = Math.round(W / layout.value.aspect)
-    const canvas = document.createElement('canvas')
-    canvas.width = W
-    canvas.height = H
-    const ctx = canvas.getContext('2d')
-
-    // Frame background / Template PNG
-    if (frameStyle.value.thumbnailUrl) {
-      try {
-        const bgImg = await loadImage(frameStyle.value.thumbnailUrl)
-        ctx.drawImage(bgImg, 0, 0, W, H)
-      } catch {
-        ctx.fillStyle = frameStyle.value.background || '#FFFFFF'
-        ctx.fillRect(0, 0, W, H)
-      }
-    } else {
-      ctx.fillStyle = frameStyle.value.background || '#FFFFFF'
-      ctx.fillRect(0, 0, W, H)
-    }
-
-    // Photos: % of the strip -> pixels, then crop to fill the slot
-    for (let i = 0; i < layout.value.slots.length; i++) {
-      const s = layout.value.slots[i]
-      const x = (s.x / 100) * W
-      const y = (s.y / 100) * H
-      const w = (s.w / 100) * W
-      const h = (s.h / 100) * H
-      const photo = photosById.value[slotPhotos.value[i]]
-      if (!photo) continue
-
-      const img = await loadImage(photo.image)
-      const r = cropSource(img.width, img.height, w, h, cropOf(room.value.stripCrops, i)) // the part of the photo that shows
-
-      ctx.save()
-      ctx.beginPath()
-      if (frameStyle.value.shape === 'circle') {
-        ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2)
-      } else if (frameStyle.value.shape === 'rounded') {
-        const radius = Math.min(w, h) * 0.08
-        ctx.roundRect ? ctx.roundRect(x, y, w, h, radius) : ctx.rect(x, y, w, h)
-      } else {
-        ctx.rect(x, y, w, h)
-      }
-      ctx.clip()
-      ctx.filter = filterCss(room.value.stripEdits?.[i]) || 'none'
-      ctx.drawImage(img, r.sx, r.sy, r.sw, r.sh, x, y, w, h)
-      ctx.restore()
-    }
-
-    // Stickers if any
-    const stickers = room.value.stripStickers || []
-    const ordered = [...stickers].filter((s) => s.visible).sort((a, b) => a.z - b.z)
-    for (const st of ordered) {
-      const img = await loadImage(st.src)
-      const w = (st.w / 100) * W
-      const h = w * (img.height / img.width)
-      ctx.save()
-      ctx.translate((st.x / 100) * W, (st.y / 100) * H)
-      ctx.rotate((st.rotate * Math.PI) / 180)
-      ctx.drawImage(img, -w / 2, -h / 2, w, h)
-      ctx.restore()
-    }
-
-    // Caption (only if not already baked into custom template PNG)
-    if (frameStyle.value.caption && !frameStyle.value.thumbnailUrl) {
-      ctx.fillStyle = frameStyle.value.captionColor || frameStyle.value.border || '#1A1A2E'
-      ctx.font = 'bold 34px sans-serif'
-      ctx.textAlign = 'center'
-      ctx.fillText(frameStyle.value.caption, W / 2, H - H * 0.03)
-    }
-
-    // Download PNG
-    const link = document.createElement('a')
-    link.href = canvas.toDataURL('image/png')
-    link.download = `photostrip-${room.value.id || 'strip'}.png`
-    link.click()
-  } catch (err) {
-    console.error('Error producing PNG:', err)
-  } finally {
-    exportingPng.value = false
-  }
-}
-
 // Change a saved edited video: it is loaded into the Video page's timeline, and everyone moves there
 async function editSaved(edit) {
   await updateDoc(roomRef(), { videoTimeline: edit.timeline, videoEditing: edit.id, stage: 'video' })
@@ -765,12 +665,8 @@ async function goToStage(stage) {
           {{ filledCount }} of {{ layout.slots.length }} slots filled · Slots: photo or clip
         </p>
 
-        <button
-          class="btn btn-outline-primary w-100 mb-2"
-          :disabled="filledCount === 0 || exportingPng"
-          @click="producePng"
-        >
-          {{ exportingPng ? 'Producing PNG...' : '📸 Produce Strip PNG' }}
+        <button class="btn btn-outline-primary w-100 mb-2" :disabled="filledCount === 0" @click="goToStage('export')">
+          Export
         </button>
 
         <!-- Opens the Video page, even before any photo is on the strip, as long as the room has photos or clips.

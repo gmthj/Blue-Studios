@@ -35,7 +35,8 @@ export function loadFfmpeg() {
 
 // Convert a recording (a webm or mp4 Blob) to an MP4 and give the result back as a Blob.
 // fps: the frame rate of the video. onProgress gets a number from 0 to 1 while it converts.
-export async function toMp4(recording, fps, onProgress) {
+// audio: optional, the music (a WAV Blob) to put under the video. The video is as long as the recording.
+export async function toMp4(recording, fps, onProgress, audio) {
   const ffmpeg = await loadFfmpeg()
   const inputName = recording.type.includes('mp4') ? 'in.mp4' : 'in.webm'
 
@@ -46,8 +47,10 @@ export async function toMp4(recording, fps, onProgress) {
   try {
     // The files live in FFmpeg's own memory, not on the disk
     await ffmpeg.writeFile(inputName, new Uint8Array(await recording.arrayBuffer()))
+    if (audio) await ffmpeg.writeFile('audio.wav', new Uint8Array(await audio.arrayBuffer()))
     const exitCode = await ffmpeg.exec([
       '-i', inputName,
+      ...(audio ? ['-i', 'audio.wav', '-map', '0:v:0', '-map', '1:a:0', '-c:a', 'aac', '-b:a', '128k', '-shortest'] : []),
       '-r', String(fps),                                 // the same number of frames every second
       '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2',        // MP4 needs an even width and height
       '-c:v', 'libx264',                                 // H.264, the video format everything can play
@@ -63,6 +66,7 @@ export async function toMp4(recording, fps, onProgress) {
     ffmpeg.off('progress', showProgress)
     // Free the memory
     await ffmpeg.deleteFile(inputName).catch(() => {})
+    await ffmpeg.deleteFile('audio.wav').catch(() => {})
     await ffmpeg.deleteFile('out.mp4').catch(() => {})
   }
 }
