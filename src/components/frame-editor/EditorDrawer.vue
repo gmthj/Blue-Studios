@@ -1,10 +1,15 @@
 <script setup>
+import { ref, watch } from "vue"
 import { useFrameEditorContext } from "../../composables/useFrameEditor.js"
 
 
 const editor = useFrameEditorContext()
 const {
+  FONT_CATEGORIES,
+  LAYOUTS,
   activeBgTab,
+  activeSelectedElement,
+  activeTextElement,
   activeTool,
   addElement,
   addTextElement,
@@ -17,13 +22,20 @@ const {
   borderColor,
   borderWidth,
   bringForward,
+  bringToFrontSelected,
   canvasElements,
   captionColor,
+  captionText,
   clearFrameTexture,
   closeDrawer,
+  currentLayoutDef,
+  debounceTextHistory,
+  decrementBorderWidth,
   deleteUpload,
   elementSearchQuery,
   filteredElementCategories,
+  flipElementH,
+  flipElementV,
   formatAspect,
   frameBg,
   getElementDisplayName,
@@ -34,33 +46,55 @@ const {
   getTextureBackgroundImage,
   handleFileUpload,
   handleFileUploadDrop,
+  incrementBorderWidth,
   isDrawerOpen,
   isUploading,
   onAssetDragStart,
   onAssetDragEnd,
+  onBorderWidthChange,
   onDropzoneDragOver,
   removeElementById,
+  removeSelectedElements,
   resetFrameBackground,
   reversedElements,
+  saveHistoryState,
   selectLayer,
   selectedBgColor,
   selectedElementIds,
   selectedElementTag,
   sendBackward,
+  sendToBackSelected,
   setFrameGradient,
   setFrameSolidColor,
   setFrameTexture,
+  setLayout,
+  setTextAlign,
   showCutouts,
+  slotShape,
+  stepFontSize,
   templateName,
   templatePresets,
   textPresets,
+  toggleBold,
   toggleHide,
+  toggleItalic,
   toggleLock,
+  toggleUnderline,
   triggerFileUpload,
   triggerFitToScreen,
   uploadInputRef,
   userUploads
 } = editor
+
+const templatesSubTab = ref('presets') // 'presets' | 'settings'
+const textSubTab = ref('add') // 'add' | 'edit'
+
+// Automatically focus edit sub-tab when user selects text on canvas
+watch(activeTextElement, (newEl) => {
+  if (newEl) {
+    textSubTab.value = 'edit'
+  }
+})
 </script>
 
 <template>
@@ -144,7 +178,28 @@ const {
 
         <!-- DRAWER CONTENT: TEMPLATES -->
         <div v-if="activeTool === 'templates'" class="drawer-content p-3 d-flex flex-column gap-3 overflow-y-auto flex-grow-1">
-          <div>
+          <!-- Segmented Sub-Tab Switcher: Presets vs Frame Settings -->
+          <div class="btn-group btn-group-sm w-100 p-1 bg-light border rounded-3 mb-1" role="group">
+            <button
+              type="button"
+              class="btn btn-sm py-1 px-2 fw-semibold"
+              :class="templatesSubTab === 'presets' ? 'btn-white bg-white text-dark shadow-sm' : 'btn-light text-secondary border-0'"
+              @click="templatesSubTab = 'presets'"
+            >
+              Presets
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm py-1 px-2 fw-semibold"
+              :class="templatesSubTab === 'settings' ? 'btn-white bg-white text-dark shadow-sm' : 'btn-light text-secondary border-0'"
+              @click="templatesSubTab = 'settings'"
+            >
+              Frame Settings
+            </button>
+          </div>
+
+          <!-- SUB-TAB 1: STARTER PRESETS -->
+          <div v-if="templatesSubTab === 'presets'">
             <div class="row row-cols-2 g-2">
               <div
                 v-for="tpl in templatePresets"
@@ -217,10 +272,233 @@ const {
               </div>
             </div>
           </div>
+
+          <!-- SUB-TAB 2: FRAME SETTINGS -->
+          <div v-else class="d-flex flex-column gap-3">
+            <!-- LAYOUT PRESETS -->
+            <div class="d-flex flex-column gap-1">
+              <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Layout Presets</label>
+              <div class="row g-1">
+                <div v-for="l in LAYOUTS" :key="l.id" class="col-6">
+                  <button
+                    type="button"
+                    class="btn btn-sm w-100 text-truncate px-1"
+                    :class="currentLayoutDef.id === l.id ? 'btn-primary' : 'btn-outline-secondary'"
+                    :title="l.name + ' (' + l.slots.length + ' slots)'"
+                    @click="setLayout(l.id)"
+                  >
+                    {{ l.name }}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- SHAPE -->
+            <div class="d-flex flex-column gap-1">
+              <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Shape of cutouts</label>
+              <div class="btn-group btn-group-sm w-100" role="group">
+                <button
+                  type="button"
+                  class="btn"
+                  :class="slotShape === 'Square' ? 'btn-primary' : 'btn-outline-secondary'"
+                  @click="slotShape = 'Square'"
+                >
+                  Square
+                </button>
+                <button
+                  type="button"
+                  class="btn"
+                  :class="slotShape === 'Rounded' ? 'btn-primary' : 'btn-outline-secondary'"
+                  @click="slotShape = 'Rounded'"
+                >
+                  Rounded
+                </button>
+                <button
+                  type="button"
+                  class="btn"
+                  :class="slotShape === 'Circle' ? 'btn-primary' : 'btn-outline-secondary'"
+                  @click="slotShape = 'Circle'"
+                >
+                  Circle
+                </button>
+              </div>
+            </div>
+
+            <!-- BORDER -->
+            <div class="d-flex flex-column gap-1">
+              <div class="d-flex align-items-center justify-content-between mb-1">
+                <label class="form-label small fw-bold text-secondary text-uppercase m-0">Border</label>
+                <span class="badge bg-primary rounded-pill">{{ borderWidth }}px</span>
+              </div>
+
+              <div class="d-flex gap-2">
+                <!-- Color Box -->
+                <div class="d-flex align-items-center gap-2" style="flex: 1.2;">
+                  <label
+                    class="rounded-circle border shadow-sm cursor-pointer position-relative d-flex align-items-center justify-content-center flex-shrink-0 m-0"
+                    style="width: 28px; height: 28px; aspect-ratio: 1; min-width: 28px; min-height: 28px; transition: transform 0.15s ease;"
+                    :style="{
+                      backgroundColor: borderColor,
+                      boxShadow: '0 0 0 2px #fff, 0 0 0 2.5px #cbd5e1'
+                    }"
+                    title="Pick border color"
+                  >
+                    <input
+                      type="color"
+                      v-model="borderColor"
+                      class="position-absolute opacity-0 pointer-events-none"
+                      style="width: 1px; height: 1px;"
+                      @change="saveHistoryState"
+                    />
+                  </label>
+                  <input
+                    type="text"
+                    v-model="borderColor"
+                    class="form-control form-control-sm text-uppercase font-monospace flex-grow-1"
+                    maxlength="7"
+                    spellcheck="false"
+                    placeholder="#2F5BEA"
+                    @change="saveHistoryState"
+                  />
+                </div>
+
+                <!-- Stepper Box -->
+                <div class="input-group input-group-sm" style="flex: 1;">
+                  <button class="btn btn-outline-secondary" title="Decrease border width" :disabled="borderWidth <= 0" @click="decrementBorderWidth">&minus;</button>
+                  <input
+                    type="number"
+                    v-model.number="borderWidth"
+                    min="0"
+                    max="10"
+                    class="form-control form-control-sm text-center px-1"
+                    title="Border width (px)"
+                    @change="onBorderWidthChange($event.target.value)"
+                  />
+                  <button class="btn btn-outline-secondary" title="Increase border width" :disabled="borderWidth >= 10" @click="incrementBorderWidth">&plus;</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- CAPTION -->
+            <div class="d-flex flex-column gap-2">
+              <div class="d-flex justify-content-between align-items-center">
+                <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Caption</label>
+                <button
+                  v-if="captionColor.toLowerCase() !== borderColor.toLowerCase()"
+                  type="button"
+                  class="btn btn-link btn-xs p-0 text-decoration-none small text-primary fw-medium"
+                  style="font-size: 0.72rem;"
+                  title="Match frame border color"
+                  @click="captionColor = borderColor; saveHistoryState()"
+                >
+                  Match Border
+                </button>
+                <span v-else class="badge bg-secondary-subtle text-secondary" style="font-size: 0.65rem;">
+                  Matches Border
+                </span>
+              </div>
+
+              <!-- Single Caption Input with Clear Button -->
+              <div class="input-group input-group-sm">
+                <input
+                  v-model="captionText"
+                  type="text"
+                  class="form-control form-control-sm"
+                  placeholder="Enter caption text (e.g. REUNION · 1998)"
+                  maxlength="50"
+                  @input="debounceTextHistory"
+                />
+                <button
+                  v-if="captionText"
+                  class="btn btn-outline-secondary border-start-0 py-0 px-2"
+                  type="button"
+                  title="Clear caption"
+                  @click="captionText = ''; debounceTextHistory()"
+                >
+                  &times;
+                </button>
+              </div>
+
+              <!-- Caption Color: Single Picker + Hex Input + Quick Swatches -->
+              <div class="d-flex align-items-center gap-2">
+                <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                  <label
+                    class="rounded-circle border shadow-sm cursor-pointer position-relative d-flex align-items-center justify-content-center flex-shrink-0 m-0"
+                    style="width: 26px; height: 26px; aspect-ratio: 1; transition: transform 0.15s ease;"
+                    :style="{
+                      backgroundColor: captionColor,
+                      boxShadow: '0 0 0 2px #fff, 0 0 0 2px #cbd5e1'
+                    }"
+                    title="Pick custom caption color"
+                  >
+                    <input
+                      type="color"
+                      v-model="captionColor"
+                      class="position-absolute opacity-0 pointer-events-none"
+                      style="width: 1px; height: 1px;"
+                      @input="debounceTextHistory"
+                      @change="saveHistoryState"
+                    />
+                  </label>
+
+                  <input
+                    type="text"
+                    v-model="captionColor"
+                    class="form-control form-control-sm text-uppercase font-monospace"
+                    style="width: 82px;"
+                    maxlength="7"
+                    spellcheck="false"
+                    placeholder="#033DFC"
+                    @input="debounceTextHistory"
+                    @change="saveHistoryState"
+                  />
+                </div>
+
+                <!-- Quick Swatches Palette -->
+                <div class="d-flex align-items-center gap-1 ms-auto flex-wrap justify-content-end">
+                  <button
+                    v-for="swatch in ['#2F5BEA', '#111827', '#64748B', '#FFFFFF', '#EF4444', '#EC4899', '#8B5CF6']"
+                    :key="swatch"
+                    type="button"
+                    class="btn p-0 rounded-circle border shadow-none flex-shrink-0"
+                    :style="{
+                      backgroundColor: swatch,
+                      width: '18px',
+                      height: '18px',
+                      boxShadow: captionColor.toLowerCase() === swatch.toLowerCase() ? '0 0 0 2px #fff, 0 0 0 2.5px #2563eb' : 'none'
+                    }"
+                    :title="swatch"
+                    @click="captionColor = swatch; saveHistoryState()"
+                  ></button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- DRAWER CONTENT: ELEMENTS (Stickers, Washi Tape, Shapes, Vectors) -->
         <div v-if="activeTool === 'elements'" class="drawer-content elements-drawer-content p-3 d-flex flex-column gap-3 overflow-y-auto flex-grow-1">
+          <!-- Selected Graphic/Sticker Quick Actions -->
+          <div v-if="activeSelectedElement && activeSelectedElement.type !== 'text'" class="card border rounded-3 p-2 bg-light mb-1">
+            <div class="d-flex align-items-center justify-content-between mb-2">
+              <span class="small fw-bold text-dark text-truncate">Edit {{ getElementDisplayName(activeSelectedElement) }}</span>
+              <button class="btn btn-xs btn-outline-danger py-0 px-2" style="font-size: 0.72rem;" @click="removeSelectedElements">Delete</button>
+            </div>
+            <!-- Opacity Slider -->
+            <div class="d-flex align-items-center gap-2 mb-2">
+              <label class="small text-muted mb-0" style="font-size: 0.72rem; min-width: 48px;">Opacity</label>
+              <input type="range" class="form-range flex-grow-1" min="0.1" max="1" step="0.05" v-model.number="activeSelectedElement.opacity" @change="saveHistoryState" />
+              <span class="small text-muted font-monospace" style="font-size: 0.7rem; min-width: 32px;">{{ Math.round((activeSelectedElement.opacity !== undefined ? activeSelectedElement.opacity : 1) * 100) }}%</span>
+            </div>
+            <!-- Quick Actions: Flip & Layer Order -->
+            <div class="d-flex gap-1">
+              <button class="btn btn-sm btn-white bg-white border flex-grow-1 py-1" style="font-size: 0.75rem;" title="Flip horizontally" @click="flipElementH">Flip H</button>
+              <button class="btn btn-sm btn-white bg-white border flex-grow-1 py-1" style="font-size: 0.75rem;" title="Flip vertically" @click="flipElementV">Flip V</button>
+              <button class="btn btn-sm btn-white bg-white border flex-grow-1 py-1" style="font-size: 0.75rem;" title="Bring to front" @click="bringToFrontSelected">To Front</button>
+              <button class="btn btn-sm btn-white bg-white border flex-grow-1 py-1" style="font-size: 0.75rem;" title="Send to back" @click="sendToBackSelected">To Back</button>
+            </div>
+          </div>
+
           <!-- Instant Search Box & Category Filter Chips -->
           <div class="d-flex flex-column gap-2 mb-2">
             <div class="input-group input-group-sm">
@@ -400,7 +678,28 @@ const {
 
         <!-- DRAWER CONTENT: TEXT -->
         <div v-if="activeTool === 'text'" class="drawer-content p-3 d-flex flex-column gap-3 overflow-y-auto flex-grow-1">
-          <div class="d-flex flex-column gap-2">
+          <!-- Text Sub-Tabs when text element is active -->
+          <div v-if="activeTextElement" class="btn-group btn-group-sm w-100 p-1 bg-light border rounded-3 mb-1" role="group">
+            <button
+              type="button"
+              class="btn btn-sm py-1 px-2 fw-semibold"
+              :class="textSubTab === 'add' ? 'btn-white bg-white text-dark shadow-sm' : 'btn-light text-secondary border-0'"
+              @click="textSubTab = 'add'"
+            >
+              Add Text
+            </button>
+            <button
+              type="button"
+              class="btn btn-sm py-1 px-2 fw-semibold"
+              :class="textSubTab === 'edit' ? 'btn-white bg-white text-dark shadow-sm' : 'btn-light text-secondary border-0'"
+              @click="textSubTab = 'edit'"
+            >
+              Format Selected
+            </button>
+          </div>
+
+          <!-- SUB-TAB 1: ADD TEXT PRESETS -->
+          <div v-if="textSubTab === 'add' || !activeTextElement" class="d-flex flex-column gap-2">
             <button
               v-for="preset in textPresets"
               :key="preset.label"
@@ -419,6 +718,110 @@ const {
                 {{ preset.text }}
               </span>
             </button>
+          </div>
+
+          <!-- SUB-TAB 2: FORMAT SELECTED TEXT -->
+          <div v-else-if="activeTextElement" class="d-flex flex-column gap-3">
+            <div class="d-flex flex-column gap-1">
+              <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Text Content</label>
+              <textarea
+                v-model="activeTextElement.text"
+                rows="2"
+                class="form-control form-control-sm"
+                placeholder="Enter text..."
+                @input="debounceTextHistory"
+              ></textarea>
+            </div>
+
+            <!-- Font Family Select -->
+            <div class="d-flex flex-column gap-1">
+              <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Font Family</label>
+              <select
+                v-model="activeTextElement.fontFamily"
+                class="form-select form-select-sm"
+                @change="debounceTextHistory"
+              >
+                <optgroup v-for="cat in FONT_CATEGORIES" :key="cat.name" :label="cat.name">
+                  <option
+                    v-for="f in cat.fonts"
+                    :key="f.family"
+                    :value="f.family"
+                    :style="{ fontFamily: f.family }"
+                  >
+                    {{ f.label.split('(')[0].trim() }}
+                  </option>
+                </optgroup>
+              </select>
+            </div>
+
+            <!-- Font Size -->
+            <div class="d-flex justify-content-between align-items-center">
+              <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Font Size</label>
+              <div class="input-group input-group-sm" style="width: 120px;">
+                <button class="btn btn-outline-secondary" @click="stepFontSize(-2)">&minus;</button>
+                <input
+                  type="number"
+                  v-model.number="activeTextElement.fontSize"
+                  class="form-control form-control-sm text-center"
+                  min="8"
+                  max="120"
+                  @change="debounceTextHistory"
+                />
+                <button class="btn btn-outline-secondary" @click="stepFontSize(2)">&plus;</button>
+              </div>
+            </div>
+
+            <!-- Bold, Italic, Underline, Alignment -->
+            <div class="btn-group btn-group-sm w-100" role="group">
+              <button
+                type="button"
+                class="btn"
+                :class="activeTextElement.fontWeight === 'bold' ? 'btn-primary' : 'btn-outline-secondary'"
+                @click="toggleBold"
+              >
+                <strong>B</strong>
+              </button>
+              <button
+                type="button"
+                class="btn"
+                :class="activeTextElement.fontStyle === 'italic' ? 'btn-primary' : 'btn-outline-secondary'"
+                @click="toggleItalic"
+              >
+                <em>I</em>
+              </button>
+              <button
+                type="button"
+                class="btn"
+                :class="activeTextElement.textDecoration === 'underline' ? 'btn-primary' : 'btn-outline-secondary'"
+                @click="toggleUnderline"
+              >
+                <u>U</u>
+              </button>
+              <button
+                type="button"
+                class="btn"
+                :class="activeTextElement.textAlign === 'left' ? 'btn-primary' : 'btn-outline-secondary'"
+                @click="setTextAlign('left')"
+              >
+                Left
+              </button>
+              <button
+                type="button"
+                class="btn"
+                :class="activeTextElement.textAlign === 'center' ? 'btn-primary' : 'btn-outline-secondary'"
+                @click="setTextAlign('center')"
+              >
+                Center
+              </button>
+              <button
+                type="button"
+                class="btn"
+                :class="activeTextElement.textAlign === 'right' ? 'btn-primary' : 'btn-outline-secondary'"
+                @click="setTextAlign('right')"
+              >
+                Right
+              </button>
+            </div>
           </div>
         </div>
 

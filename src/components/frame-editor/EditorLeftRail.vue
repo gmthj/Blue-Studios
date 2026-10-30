@@ -7,10 +7,7 @@ const {
   activeTool,
   canvasElements,
   isDrawerOpen,
-  isMobileEditSheetOpen,
-  selectedElementIds,
   toggleDrawer,
-  toggleMobileEditSheet,
   userUploads
 } = editor
 </script>
@@ -117,33 +114,6 @@ const {
             >{{ canvasElements.length }}</span>
           </div>
           <span style="font-size: 0.68rem;">Layers</span>
-        </button>
-
-        <!-- Mobile-Only 'Edit' Tool Button (Opens properties sheet for selected element) -->
-        <button
-          type="button"
-          class="btn btn-sm d-flex flex-column align-items-center justify-content-center p-2 rounded border-0 position-relative w-100 d-lg-none"
-          :class="isMobileEditSheetOpen ? 'text-primary bg-primary bg-opacity-10 fw-bold' : 'text-secondary'"
-          @click="toggleMobileEditSheet"
-          title="Edit Properties"
-          aria-label="Edit Properties"
-        >
-          <div class="mb-1 position-relative">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <line x1="4" y1="21" x2="4" y2="14" /><line x1="4" y1="10" x2="4" y2="3" />
-              <line x1="12" y1="21" x2="12" y2="12" /><line x1="12" y1="8" x2="12" y2="3" />
-              <line x1="20" y1="21" x2="20" y2="16" /><line x1="20" y1="12" x2="20" y2="3" />
-              <line x1="1" y1="14" x2="7" y2="14" />
-              <line x1="9" y1="8" x2="15" y2="8" />
-              <line x1="17" y1="16" x2="23" y2="16" />
-            </svg>
-            <span
-              v-if="selectedElementIds && selectedElementIds.length > 0"
-              class="position-absolute top-0 start-100 translate-middle p-1 bg-primary border border-light rounded-circle"
-              style="transform: translate(-30%, -30%) !important;"
-            ></span>
-          </div>
-          <span style="font-size: 0.68rem;">Edit</span>
         </button>
       </aside>
 </template>
