@@ -2152,14 +2152,6 @@ label[for],
     overflow: hidden;
   }
 
-  .fe-subheader {
-    min-height: 44px;
-    height: 44px;
-    padding-left: 8px !important;
-    padding-right: 8px !important;
-    flex-shrink: 0;
-  }
-
   .template-name-group {
     max-width: 140px;
   }

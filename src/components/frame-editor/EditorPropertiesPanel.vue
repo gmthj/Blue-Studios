@@ -75,10 +75,11 @@ const {
 </script>
 
 <template>
-      <!-- Right Properties Panel (Desktop: side panel; Mobile: slide-up bottom sheet) -->
+      <!-- Right Properties Panel (Bootstrap 5 - Shown on lg+ screens; slide-up sheet on mobile) -->
       <aside
-        class="properties-panel bg-white border-start p-3 flex-column gap-3 overflow-y-auto flex-shrink-0"
+        class="properties-panel d-none d-lg-flex bg-white border-start p-3 flex-column gap-3 overflow-y-auto flex-shrink-0"
         :class="{ 'is-mobile-open': isMobileEditSheetOpen }"
+        style="width: 320px;"
       >
         <!-- Mobile Bottom Sheet Grabber & Header -->
         <div class="mobile-sheet-header d-lg-none d-flex flex-column pt-1 pb-2 border-bottom mb-2 flex-shrink-0">

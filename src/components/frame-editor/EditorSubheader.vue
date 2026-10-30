@@ -41,20 +41,20 @@ const {
 </script>
 
 <template>
-  <div class="fe-subheader d-flex align-items-center justify-content-between px-2 px-md-3 py-1 bg-white border-bottom position-relative">
-    <!-- Left: Navigation & Template Title -->
-    <div class="d-flex align-items-center gap-1 gap-md-2 small">
-      <router-link to="/studio" class="btn btn-sm btn-light border-0 d-flex align-items-center gap-1 text-decoration-none px-2 py-1 text-muted" title="Back to My Studio">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+  <!-- 2. Subheader Toolbar -->
+  <div class="d-flex align-items-center justify-content-between px-3 py-1 bg-white border-bottom position-relative" style="min-height: 44px; z-index: 100;">
+    <div class="d-flex align-items-center gap-2 small">
+      <router-link to="/studio" class="text-decoration-none text-muted d-flex align-items-center gap-1 me-1 text-nowrap" title="Back to My Studio">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <line x1="19" y1="12" x2="5" y2="12" />
           <polyline points="12 19 5 12 12 5" />
         </svg>
-        <span class="fw-medium d-none d-sm-inline">My Studio</span>
+        <span class="fw-medium">My Studio</span>
       </router-link>
-      <span class="text-muted d-none d-sm-inline">/</span>
-      <div class="input-group input-group-sm template-name-group">
-        <span class="input-group-text border-end-0 px-2 py-0 bg-transparent text-secondary" title="Frame Title (Click to edit)">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <span class="text-muted">/</span>
+      <div class="input-group input-group-sm template-name-group" style="width: auto;">
+        <span class="input-group-text border-end-0 px-2 py-0" title="Frame Title (Click to edit)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
           </svg>
@@ -63,16 +63,16 @@ const {
           v-model="templateName"
           type="text"
           class="form-control form-control-sm border-start-0 template-name-field ps-1"
-          placeholder="my-frame-1"
+          style="width: 185px; font-size: 0.875rem;"
+          placeholder="my-templates-1"
           title="Frame Title (Click to edit)"
           maxlength="40"
         />
       </div>
     </div>
 
-    <!-- Center: Desktop Zoom & Canvas Controls (Hidden on Mobile) -->
     <div class="d-none d-lg-flex align-items-center gap-2">
-      <!-- Undo & Redo (Desktop) -->
+      <!-- Undo & Redo -->
       <div class="btn-group btn-group-sm">
         <button class="btn btn-outline-secondary" :title="`Undo (${shortcuts.undo})`" :disabled="historyIndex <= 0" @click="undo">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -220,17 +220,16 @@ const {
       </button>
     </div>
 
-    <!-- Right: Undo/Redo (Mobile) + My Templates + Save Action -->
-    <div class="d-flex align-items-center gap-1 gap-md-2">
-      <!-- Undo & Redo (Mobile only, on desktop they are in center) -->
+    <div class="d-flex align-items-center gap-2">
+      <!-- Undo & Redo (Mobile only) -->
       <div class="btn-group btn-group-sm d-lg-none">
-        <button class="btn btn-outline-secondary p-1" style="width: 32px; height: 32px;" :title="`Undo (${shortcuts.undo})`" :disabled="historyIndex <= 0" @click="undo" aria-label="Undo">
+        <button class="btn btn-outline-secondary" :title="`Undo (${shortcuts.undo})`" :disabled="historyIndex <= 0" @click="undo">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 7v6h6" />
             <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
           </svg>
         </button>
-        <button class="btn btn-outline-secondary p-1" style="width: 32px; height: 32px;" :title="`Redo (${shortcuts.redo})`" :disabled="historyIndex >= history.length - 1" @click="redo" aria-label="Redo">
+        <button class="btn btn-outline-secondary" :title="`Redo (${shortcuts.redo})`" :disabled="historyIndex >= history.length - 1" @click="redo">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 7v6h-6" />
             <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7" />
@@ -238,40 +237,38 @@ const {
         </button>
       </div>
 
-      <!-- My Templates Drawer Action Button -->
+      <!-- My Templates Drawer Action Button (Opens saved templates overlay drawer) -->
       <button
         type="button"
-        class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1 px-2"
+        class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"
         title="View all your saved templates"
         @click="openMyTemplatesDrawer"
       >
         <IconFolder :size="14" :stroke-width="2.2" />
-        <span class="d-none d-sm-inline">Templates</span>
+        <span>My Templates</span>
         <span v-if="allUserTemplatesCount > 0" class="badge rounded-pill bg-primary ms-1">{{ allUserTemplatesCount }}</span>
       </button>
 
-      <!-- Save Frame Button -->
+      <!-- Save Frame Button (Shows 'Save Frame' if logged in, 'Login to save' if guest) -->
       <button
         v-if="isAccount"
-        class="btn btn-sm btn-primary d-flex align-items-center gap-1 fw-bold shadow-sm px-2 px-md-3"
+        class="btn btn-sm btn-primary d-flex align-items-center gap-1 fw-bold shadow-sm"
         :disabled="isSavingFrame"
         @click="saveFrame"
         :title="cloudId ? (isOwner ? `Save Frame to My Studio (${shortcuts.save})` : `Save a Copy to My Studio (${shortcuts.save})`) : `Save Frame to My Studio (${shortcuts.save})`"
       >
         <IconSave :size="14" :stroke-width="2.3" />
-        <span class="d-none d-sm-inline">{{ isSavingFrame ? 'Saving...' : (cloudId ? (isOwner ? 'Save Frame' : 'Save a Copy') : 'Save Frame') }}</span>
-        <span class="d-sm-none">{{ isSavingFrame ? '...' : 'Save' }}</span>
+        <span>{{ isSavingFrame ? 'Saving...' : (cloudId ? (isOwner ? 'Save Frame' : 'Save a Copy') : 'Save Frame') }}</span>
       </button>
 
       <router-link
         v-else
         :to="'/login?redirect=' + encodeURIComponent($route.fullPath)"
-        class="btn btn-sm btn-primary d-flex align-items-center gap-1 fw-bold shadow-sm text-decoration-none px-2 px-md-3"
+        class="btn btn-sm btn-primary d-flex align-items-center gap-1 fw-bold shadow-sm text-decoration-none"
         :title="`Log in to save your template to My Studio (${shortcuts.save})`"
       >
         <IconSave :size="14" :stroke-width="2.3" />
-        <span class="d-none d-sm-inline">Login to save</span>
-        <span class="d-sm-none">Login</span>
+        <span>Login to save</span>
       </router-link>
     </div>
   </div>
