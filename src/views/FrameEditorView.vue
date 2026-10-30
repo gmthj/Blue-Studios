@@ -108,10 +108,5 @@ const {
         </div>
       </div>
     </transition>
-
-    <!-- Toast Notification -->
-    <div v-if="showNotification" class="toast-toast">
-      {{ notificationMessage }}
-    </div>
   </div>
 </template>

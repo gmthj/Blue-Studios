@@ -2168,7 +2168,12 @@ function startEditingText(el) {
   if (el.type !== 'text') return
   editingTextId.value = el.id
   selectedElementId.value = el.id
+  selectedElementIds.value = [el.id]
   isPositionPopoverOpen.value = false
+  if (typeof window !== 'undefined' && window.innerWidth < 992) {
+    activeTool.value = 'text'
+    isDrawerOpen.value = true
+  }
   nextTick(() => {
     const domEl = textInputRefs.value[el.id]
     if (domEl) {

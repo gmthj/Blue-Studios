@@ -362,6 +362,9 @@ onMounted(() => {
                   @keydown.enter.prevent="finishEditingText(el)"
                   @keydown.esc.prevent="finishEditingText(el)"
                   @mousedown.stop
+                  @touchstart.stop
+                  @touchend.stop
+                  @pointerdown.stop
                   @click.stop
                 ></div>
 
@@ -443,7 +446,14 @@ onMounted(() => {
               <template v-if="selectedElementIds.length === 1 && selectedElementIds[0] === el.id">
                 <div class="element-bounding-box" :class="{ 'is-editing-text': editingTextId === el.id }">
                   <!-- Canva-Style Floating Action Toolbar above selected element (hidden during direct text typing) -->
-                  <div v-if="editingTextId !== el.id" class="element-floating-bar" @mousedown.stop>
+                  <div
+                    v-if="editingTextId !== el.id"
+                    class="element-floating-bar"
+                    @mousedown.stop
+                    @touchstart.stop
+                    @touchend.stop
+                    @pointerdown.stop
+                  >
                     <!-- Quick Edit Text Button if text type -->
                     <button
                       v-if="el.type === 'text'"
@@ -494,7 +504,15 @@ onMounted(() => {
                       </button>
 
                       <!-- Position Popover Menu -->
-                      <div v-if="isPositionPopoverOpen" class="position-popover" @click.stop>
+                      <div
+                        v-if="isPositionPopoverOpen"
+                        class="position-popover"
+                        @click.stop
+                        @mousedown.stop
+                        @touchstart.stop
+                        @touchend.stop
+                        @pointerdown.stop
+                      >
                         <div class="popover-header">Layer Ordering</div>
                         <button class="popover-item" @click="bringForward(el.id)">
                           <span class="item-icon">▲</span>
@@ -616,7 +634,13 @@ onMounted(() => {
               @dblclick.stop="onCollectiveDblClick($event)"
             >
               <!-- Collective Floating Action Toolbar -->
-              <div class="element-floating-bar collective-floating-bar" @mousedown.stop>
+              <div
+                class="element-floating-bar collective-floating-bar"
+                @mousedown.stop
+                @touchstart.stop
+                @touchend.stop
+                @pointerdown.stop
+              >
                 <!-- Group / Ungroup Button -->
                 <button
                   v-if="canUngroupSelected"
@@ -669,7 +693,15 @@ onMounted(() => {
                   </button>
 
                   <!-- Position Popover Menu -->
-                  <div v-if="isPositionPopoverOpen" class="position-popover" @click.stop>
+                  <div
+                    v-if="isPositionPopoverOpen"
+                    class="position-popover"
+                    @click.stop
+                    @mousedown.stop
+                    @touchstart.stop
+                    @touchend.stop
+                    @pointerdown.stop
+                  >
                     <div class="popover-header">Layer Ordering</div>
                     <button class="popover-item" @click="bringToFrontSelected">
                       <span class="item-icon">⇪▲</span>

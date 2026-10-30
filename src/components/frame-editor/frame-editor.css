@@ -1343,24 +1343,9 @@ label[for],
   transform: scale(0.97);
 }
 
-/* Toast Notification (Frosted glass with subtle border and spring pop) */
+/* Toast Notification (Hidden per user request) */
 .toast-toast {
-  position: fixed;
-  bottom: 24px;
-  left: 50%;
-  transform: translateX(-50%);
-  background: rgba(15, 23, 42, 0.88);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: #ffffff;
-  font-size: 0.9rem;
-  font-weight: 500;
-  padding: 10px 22px;
-  border-radius: 9999px;
-  box-shadow: 0 16px 32px -4px rgba(0, 0, 0, 0.28), 0 4px 8px -2px rgba(0, 0, 0, 0.12);
-  z-index: 1000;
-  animation: toastPop 220ms var(--ease-spring);
+  display: none !important;
 }
 
 @keyframes toastPop {
@@ -1553,6 +1538,9 @@ label[for],
   z-index: 120;
   white-space: nowrap;
   pointer-events: auto;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
   animation: floatingBarPop 180ms var(--ease-spring) forwards;
 }
 
@@ -1577,6 +1565,10 @@ label[for],
   font-weight: 600;
   color: #334155;
   cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
   transition: background-color 140ms ease, color 140ms ease, transform 120ms var(--ease-out);
   height: 26px;
 }
@@ -2337,6 +2329,29 @@ label[for],
   .template-presets-grid {
     grid-template-columns: repeat(2, 1fr) !important;
     gap: 8px !important;
+  }
+
+  /* Floating Action Toolbar on Mobile */
+  .element-floating-bar {
+    padding: 3px 6px !important;
+    gap: 4px !important;
+    z-index: 125 !important;
+  }
+
+  .floating-tool-btn {
+    height: 30px !important;
+    padding: 4px 8px !important;
+    font-size: 12px !important;
+  }
+
+  .floating-tool-btn.icon-only {
+    width: 30px !important;
+    height: 30px !important;
+  }
+
+  .floating-tool-btn.icon-only svg {
+    width: 14px !important;
+    height: 14px !important;
   }
 }
 
