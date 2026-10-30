@@ -1,8 +1,8 @@
 <script setup>
-import { useTemplateEditorContext } from "../../composables/useTemplateEditor.js"
+import { useFrameEditorContext } from "../../composables/useFrameEditor.js"
 
 
-const editor = useTemplateEditorContext()
+const editor = useFrameEditorContext()
 const {
   bringForward,
   bringToFrontSelected,
@@ -17,6 +17,7 @@ const {
   selectedElementIds,
   sendBackward,
   sendToBackSelected,
+  shortcuts,
   showCutouts,
   startEditingText,
   toggleCutouts,
@@ -48,7 +49,7 @@ const {
             <rect x="3" y="14" width="7" height="7" />
           </svg>
           <span class="context-label">Group Elements</span>
-          <span class="context-shortcut">⌘G</span>
+          <span class="context-shortcut">{{ shortcuts.group }}</span>
         </button>
         <button v-if="canUngroupSelected" class="context-item" @click="ungroupSelectedElements(); closeContextMenu()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="context-icon-svg">
@@ -56,29 +57,29 @@ const {
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
           </svg>
           <span class="context-label">Ungroup</span>
-          <span class="context-shortcut">⇧⌘G</span>
+          <span class="context-shortcut">{{ shortcuts.ungroup }}</span>
         </button>
         <div v-if="canGroupSelected || canUngroupSelected" class="context-divider"></div>
 
         <button class="context-item" @click="bringForward(); closeContextMenu()">
           <span class="context-icon">▲</span>
           <span class="context-label">Bring Forward</span>
-          <span class="context-shortcut">⌘]</span>
+          <span class="context-shortcut">{{ shortcuts.bringForward }}</span>
         </button>
         <button class="context-item" @click="bringToFrontSelected(); closeContextMenu()">
           <span class="context-icon">⇪▲</span>
           <span class="context-label">Bring to Front</span>
-          <span class="context-shortcut">⇧⌘]</span>
+          <span class="context-shortcut">{{ shortcuts.bringToFront }}</span>
         </button>
         <button class="context-item" @click="sendBackward(); closeContextMenu()">
           <span class="context-icon">▼</span>
           <span class="context-label">Send Backward</span>
-          <span class="context-shortcut">⌘[</span>
+          <span class="context-shortcut">{{ shortcuts.sendBackward }}</span>
         </button>
         <button class="context-item" @click="sendToBackSelected(); closeContextMenu()">
           <span class="context-icon">⇪▼</span>
           <span class="context-label">Send to Back</span>
-          <span class="context-shortcut">⇧⌘[</span>
+          <span class="context-shortcut">{{ shortcuts.sendToBack }}</span>
         </button>
         <div class="context-divider"></div>
         <button
@@ -99,7 +100,7 @@ const {
             <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
           </svg>
           <span class="context-label">Duplicate</span>
-          <span class="context-shortcut">⌘D</span>
+          <span class="context-shortcut">{{ shortcuts.duplicate }}</span>
         </button>
         <button class="context-item" @click="toggleLock(); closeContextMenu()">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="context-icon-svg">

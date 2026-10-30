@@ -5,11 +5,14 @@ import { useRoute, useRouter } from "vue-router"
 import { useSmartGuides } from "./useSmartGuides.js"
 import { useCanvasViewport } from "./useCanvasViewport.js"
 import { useAuth, getUid } from "./useAuth.js"
+import { askConfirm } from "./useDialog.js"
 
 // Studio & Marketplace Integrations
 import {
   saveTemplate,
   loadTemplateProject,
+  listMyItems,
+  deleteItem,
   CATEGORIES,
   MAX_CATEGORIES,
   categoryLabel
@@ -18,7 +21,6 @@ import { getItem } from "../marketplace.js"
 
 // Utilities & Engines
 import {
-  exportPhotostrip,
   MOCK_PORTRAIT_PHOTOS,
   sanitizeFilename
 } from "../utils/exportEngine.js"
@@ -47,12 +49,13 @@ import {
   BACKGROUND_PATTERNS,
   getTextureBackgroundImage,
   getTextureBackgroundSize
-} from "../constants/templateEditorData.js"
+} from "../constants/frameEditorData.js"
 
-export const TEMPLATE_EDITOR_KEY = Symbol("TEMPLATE_EDITOR_KEY")
+export const FRAME_EDITOR_KEY = Symbol("FRAME_EDITOR_KEY")
+export const TEMPLATE_EDITOR_KEY = FRAME_EDITOR_KEY
 
 
-export function useTemplateEditor() {
+export function useFrameEditor() {
 const templatePresets = TEMPLATE_PRESETS
 const elementCategories = ELEMENT_CATEGORIES
 const textPresets = TEXT_PRESETS
@@ -60,6 +63,38 @@ const bgColors = BACKGROUND_COLORS
 const bgGradients = BACKGROUND_GRADIENTS
 const bgTextures = BACKGROUND_TEXTURES
 const bgPatterns = BACKGROUND_PATTERNS
+
+// Cross-platform OS detection (Mac vs Windows / Linux)
+const isMac = typeof navigator !== 'undefined' && (
+  /Mac|iPod|iPhone|iPad/.test(navigator.userAgent || navigator.platform || '') ||
+  (navigator.userAgentData?.platform === 'macOS')
+)
+
+// Platform-appropriate keyboard shortcut labels
+const shortcuts = {
+  isMac,
+  mod: isMac ? '⌘' : 'Ctrl+',
+  shiftMod: isMac ? '⇧⌘' : 'Ctrl+Shift+',
+  undo: isMac ? '⌘Z' : 'Ctrl+Z',
+  redo: isMac ? '⌘Y' : 'Ctrl+Y',
+  save: isMac ? '⌘S' : 'Ctrl+S',
+  duplicate: isMac ? '⌘D' : 'Ctrl+D',
+  group: isMac ? '⌘G' : 'Ctrl+G',
+  ungroup: isMac ? '⇧⌘G' : 'Ctrl+Shift+G',
+  selectAll: isMac ? '⌘A' : 'Ctrl+A',
+  zoomIn: isMac ? '⌘+' : 'Ctrl++',
+  zoomOut: isMac ? '⌘-' : 'Ctrl+-',
+  fit: isMac ? '⌘0' : 'Ctrl+0',
+  actualSize: isMac ? '⌘1' : 'Ctrl+1',
+  bold: isMac ? '⌘B' : 'Ctrl+B',
+  italic: isMac ? '⌘I' : 'Ctrl+I',
+  underline: isMac ? '⌘U' : 'Ctrl+U',
+  bringForward: isMac ? '⌘]' : 'Ctrl+]',
+  bringToFront: isMac ? '⇧⌘]' : 'Ctrl+Shift+]',
+  sendBackward: isMac ? '⌘[' : 'Ctrl+[',
+  sendToBack: isMac ? '⇧⌘[' : 'Ctrl+Shift+[',
+  delete: isMac ? 'Delete / ⌫' : 'Delete / Backspace'
+}
 
 // =============================================================================
 // 2. Core Reactive State & Model Definitions
@@ -82,8 +117,32 @@ const cloudId = ref(null) // Firestore document ID if saved to account or loaded
 const loadedTemplateOwnerId = ref(null) // ownerId of template loaded from Firestore
 const chosenCategories = ref(['other']) // 1 to 3 categories from CATEGORIES
 const isSaveModalOpen = ref(false)
+const isSavingFrame = ref(false)
+const isSaveSuccess = ref(false)
 const cloudErrorMessage = ref('')
 const alsoDownloadPng = ref(true)
+
+// --- My Saved Templates Drawer & Template Switching State ---
+const isMyTemplatesDrawerOpen = ref(false)
+const userCloudTemplates = ref([])
+const isLoadingUserTemplates = ref(false)
+const pendingSwitchTemplate = ref(null)
+const isSwitchPromptOpen = ref(false)
+const isSwitchingWorkspace = ref(false)
+
+// --- Workspace Loading State (prevents stock design flash when opening saved template) ---
+const getInitialTemplateQuery = () => {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('template') || null
+  }
+  return null
+}
+const initialTemplateParam = getInitialTemplateQuery()
+const isWorkspaceLoading = ref(Boolean(initialTemplateParam || route?.query?.template))
+const workspaceLoadingMessage = ref(
+  (initialTemplateParam || route?.query?.template) ? 'Loading saved template...' : ''
+)
 
 const isOwner = computed(() => {
   if (!cloudId.value || !loadedTemplateOwnerId.value) return true
@@ -144,7 +203,7 @@ const {
 
 
 // --- Editor Navigation & Toolbar State ---
-const templateName = ref('Retro 4-cut')
+const templateName = ref('my-templates-1')
 const activeLayout = ref('retro-4-cut') // 'retro-4-cut' | 'polaroid-2x2' | 'film-3-cut'
 const slotShape = ref('Rounded') // 'Square' | 'Rounded' | 'Circle'
 const activeTool = ref('elements') // 'templates' | 'elements' | 'text' | 'background' | 'layers'
@@ -260,7 +319,6 @@ const isUploading = ref(false)
 // --- Saved Frames & Workspace Persistence ---
 const isSavedFramesModalOpen = ref(false)
 const savedFramesList = ref([])
-const isSavingFrame = ref(false)
 const currentSavedFrameId = ref(null)
 
 // --- Export Configuration Fallbacks ---
@@ -862,13 +920,40 @@ function setFrameGradient(val) {
 }
 
 function setFrameTexture(id) {
-  frameBg.value.texture = id
+  if (frameBg.value.texture === id) {
+    frameBg.value.texture = null
+  } else {
+    frameBg.value.texture = id
+  }
   saveHistoryState()
 }
 
 function clearFrameTexture() {
   frameBg.value.texture = null
   saveHistoryState()
+}
+
+function resetFrameBackground() {
+  selectedBgColor.value = '#FFFFFF'
+  frameBg.value = {
+    type: 'color',
+    value: '#FFFFFF',
+    baseColor: '#FFFFFF',
+    texture: null,
+    opacity: 0.85,
+    blendMode: 'multiply',
+    scale: 1
+  }
+  customGradient.value = {
+    type: 'linear',
+    color1: '#FFFFFF',
+    color2: '#F1F5F9',
+    color3: '',
+    angle: 180
+  }
+  activeBgTab.value = 'colors'
+  saveHistoryState()
+  notify('Background reset to clean white')
 }
 
 function getFrameStyle() {
@@ -1593,7 +1678,7 @@ function groupSelectedElements() {
       el.groupId = newGroupId
     }
   })
-  notify(`Grouped ${selectedElementIds.value.length} elements (⌘G)`)
+  notify(`Grouped ${selectedElementIds.value.length} elements (${shortcuts.group})`)
   saveHistoryState()
 }
 
@@ -1607,7 +1692,7 @@ function ungroupSelectedElements() {
     }
   })
   editingGroupId.value = null
-  notify(`Ungrouped ${count} elements (⇧⌘G)`)
+  notify(`Ungrouped ${count} elements (${shortcuts.ungroup})`)
   saveHistoryState()
 }
 
@@ -2305,16 +2390,17 @@ async function loadUploadsFromDB() {
 
 async function saveUploadToDB(item) {
   try {
+    const cleanItem = JSON.parse(JSON.stringify(item))
     const db = await openUploadsDB()
     if (!db) {
       const cached = localStorage.getItem('blue_studios_uploads')
       const arr = cached ? JSON.parse(cached) : []
-      arr.unshift(item)
+      arr.unshift(cleanItem)
       localStorage.setItem('blue_studios_uploads', JSON.stringify(arr.slice(0, 15)))
       return
     }
     const tx = db.transaction(STORE_NAME, 'readwrite')
-    tx.objectStore(STORE_NAME).put(item)
+    tx.objectStore(STORE_NAME).put(cleanItem)
   } catch (err) {
     console.warn('Error saving upload:', err)
   }
@@ -2541,16 +2627,52 @@ function toggleCategory(id) {
   }
 }
 
+function getNextDefaultTemplateName() {
+  let highestNum = 0
+  const sources = [
+    ...(allUserTemplates.value || []),
+    ...(savedFramesList.value || []),
+    ...(userCloudTemplates.value || [])
+  ]
+
+  for (const item of sources) {
+    const name = (item.name || item.templateName || '').trim()
+    const match = name.match(/^my-templates-(\d+)$/i) || name.match(/^my-template-(\d+)$/i)
+    if (match) {
+      const num = parseInt(match[1], 10)
+      if (!isNaN(num) && num > highestNum) {
+        highestNum = num
+      }
+    }
+  }
+
+  return `my-templates-${highestNum + 1}`
+}
+
 function saveFrame() {
   if (!isAccount.value) {
     router.push('/login?redirect=' + encodeURIComponent(route.fullPath))
     return
   }
   cloudErrorMessage.value = ''
-  executeSave()
+
+  // If first time saving (no cloudId yet, or not owner of loaded template),
+  // prompt user with "Save Frame As" dialog so they can name their frame
+  if (!cloudId.value || !isOwner.value) {
+    if (!templateName.value || templateName.value.trim() === '' || templateName.value === 'Untitled frame' || templateName.value === 'Retro 4-cut') {
+      templateName.value = getNextDefaultTemplateName()
+    }
+    isSaveModalOpen.value = true
+    return
+  }
+
+  // If already saved to cloud and owned by user:
+  // Open save modal and save, which triggers the loading animation -> success animation -> redirect
+  isSaveModalOpen.value = true
+  executeSave({ asCopy: false, redirectOnSuccess: true })
 }
 
-async function executeSave({ asCopy = false } = {}) {
+async function executeSave({ asCopy = false, redirectOnSuccess = true } = {}) {
   if (isSavingFrame.value || !stripRef.value) return
   if (!isAccount.value) {
     isSaveModalOpen.value = false
@@ -2558,6 +2680,7 @@ async function executeSave({ asCopy = false } = {}) {
     return
   }
   isSavingFrame.value = true
+  isSaveSuccess.value = false
   cloudErrorMessage.value = ''
 
   const prevSelected = [...selectedElementIds.value]
@@ -2590,7 +2713,7 @@ async function executeSave({ asCopy = false } = {}) {
     const isGradient = frameBg.value.type === 'gradient'
     const bgVal = isGradient ? frameBg.value.value : (frameBg.value.baseColor || selectedBgColor.value)
 
-    const projectData = {
+    const projectData = JSON.parse(JSON.stringify({
       id: frameId,
       templateName: safeName,
       updatedAt: Date.now(),
@@ -2610,14 +2733,14 @@ async function executeSave({ asCopy = false } = {}) {
       captionText: captionText.value,
       captionColor: captionColor.value,
       selectedBgColor: selectedBgColor.value,
-      frameBg: { ...frameBg.value },
+      frameBg: frameBg.value,
       borderColor: borderColor.value,
       borderWidth: borderWidth.value,
       cutoutsLayerPosition: cutoutsLayerPosition.value,
       showCutouts: false,
-      canvasElements: JSON.parse(JSON.stringify(canvasElements.value)),
-      customGuides: JSON.parse(JSON.stringify(customGuides.value))
-    }
+      canvasElements: canvasElements.value,
+      customGuides: customGuides.value
+    }))
 
     const { blob, rawBlob, thumbnail } = await captureEditablePng(stripRef.value, projectData)
 
@@ -2648,56 +2771,319 @@ async function executeSave({ asCopy = false } = {}) {
       loadedTemplateOwnerId.value = getUid()
     }
 
-    // Always update local IndexedDB record for offline / browser backup
-    const record = {
-      id: frameId,
-      cloudId: cloudId.value,
-      name: safeName,
-      updatedAt: Date.now(),
-      slotCount: slotCount.value,
-      elementCount: canvasElements.value.length,
-      thumbnail: thumbnail,
-      projectData: projectData
+    // Always update local IndexedDB record for offline / browser backup (isolated in try/catch)
+    try {
+      const record = {
+        id: frameId,
+        cloudId: cloudId.value,
+        name: safeName,
+        updatedAt: Date.now(),
+        slotCount: slotCount.value,
+        elementCount: canvasElements.value.length,
+        thumbnail: thumbnail,
+        projectData: projectData
+      }
+      await saveFrameToDB(record)
+      savedFramesList.value = await loadSavedFramesFromDB()
+    } catch (idbErr) {
+      console.warn('Local IndexedDB backup skipped/failed:', idbErr)
     }
-    await saveFrameToDB(record)
-    savedFramesList.value = await loadSavedFramesFromDB()
 
     if (alsoDownloadPng.value || !isAccount.value) {
       const filename = `${sanitizeFilename(safeName)}.png`
       triggerFileDownload(blob, filename)
     }
 
-    isSaveModalOpen.value = false
+    isSavingFrame.value = false
+    isSaveSuccess.value = true
 
-    // Redirect to templates homepage where user can see all their saved frames
-    if (isAccount.value) {
+    // If redirectOnSuccess: show success animation, then redirect back to My Studio
+    if (redirectOnSuccess && isAccount.value) {
+      await new Promise((resolve) => setTimeout(resolve, 1100))
+      isSaveModalOpen.value = false
+      isSaveSuccess.value = false
       router.push('/studio')
     }
   } catch (err) {
     console.error('Failed to save frame:', err)
     cloudErrorMessage.value = err.message || 'Failed to save frame. Please try again.'
+    isSavingFrame.value = false
+    isSaveSuccess.value = false
   } finally {
     selectedElementIds.value = prevSelected
     showCutouts.value = prevShowCutouts
-    isSavingFrame.value = false
   }
+}
+
+const allUserTemplates = computed(() => {
+  const list = []
+  const seenIds = new Set()
+
+  // 1. Cloud templates from My Studio (newest first)
+  for (const t of userCloudTemplates.value) {
+    seenIds.add(t.id)
+    list.push({
+      id: t.id,
+      cloudId: t.id,
+      name: t.name || 'Untitled Template',
+      slotCount: t.slotCount || 4,
+      updatedAt: t.updatedAt || t.createdAt || Date.now(),
+      cardUrl: t.cardUrl || null,
+      thumbnailPath: t.thumbnailPath || null,
+      dataPath: t.dataPath || null,
+      thumbnail: null,
+      isCloud: true,
+      isLocal: false,
+      categories: t.categories || [],
+      ownerId: t.ownerId || null,
+      raw: t
+    })
+  }
+
+  // 2. Locally saved frames in IndexedDB
+  for (const f of savedFramesList.value) {
+    if (f.cloudId && seenIds.has(f.cloudId)) {
+      const existing = list.find((item) => item.id === f.cloudId)
+      if (existing) {
+        if (!existing.thumbnail && f.thumbnail) existing.thumbnail = f.thumbnail
+        if (!existing.projectData && f.projectData) existing.projectData = f.projectData
+        existing.isLocal = true
+      }
+      continue
+    }
+    if (seenIds.has(f.id)) continue
+    seenIds.add(f.id)
+
+    list.push({
+      id: f.id,
+      cloudId: f.cloudId || null,
+      name: f.name || 'Untitled Frame',
+      slotCount: f.slotCount || 4,
+      updatedAt: f.updatedAt || Date.now(),
+      cardUrl: null,
+      thumbnailPath: null,
+      thumbnail: f.thumbnail || null,
+      isCloud: !!f.cloudId,
+      isLocal: true,
+      projectData: f.projectData || null,
+      raw: f
+    })
+  }
+
+  return list
+})
+
+const allUserTemplatesCount = computed(() => allUserTemplates.value.length)
+
+async function loadAllUserTemplates() {
+  isLoadingUserTemplates.value = true
+  try {
+    const localFrames = await loadSavedFramesFromDB()
+    savedFramesList.value = localFrames || []
+
+    if (isAccount.value) {
+      try {
+        const cloudItems = await listMyItems('templates')
+        userCloudTemplates.value = cloudItems || []
+      } catch (err) {
+        console.warn('Could not load user cloud templates:', err)
+        userCloudTemplates.value = []
+      }
+    } else {
+      userCloudTemplates.value = []
+    }
+  } catch (err) {
+    console.error('Failed to load user templates:', err)
+  } finally {
+    isLoadingUserTemplates.value = false
+  }
+}
+
+function openMyTemplatesDrawer() {
+  isMyTemplatesDrawerOpen.value = true
+  loadAllUserTemplates()
+}
+
+function closeMyTemplatesDrawer() {
+  isMyTemplatesDrawerOpen.value = false
+}
+
+function promptSwitchTemplate(template) {
+  if (!template) return
+  const isActive = (
+    (cloudId.value && (cloudId.value === template.id || cloudId.value === template.cloudId)) ||
+    (currentSavedFrameId.value && currentSavedFrameId.value === template.id)
+  )
+  if (isActive) {
+    notify(`"${template.name}" is already open in your editor.`)
+    return
+  }
+
+  pendingSwitchTemplate.value = template
+  isSwitchPromptOpen.value = true
+}
+
+async function confirmSaveAndSwitch() {
+  if (!pendingSwitchTemplate.value) return
+  const target = pendingSwitchTemplate.value
+  isSwitchingWorkspace.value = true
+
+  try {
+    // Save current frame without leaving the editor
+    await executeSave({ redirectOnSuccess: false })
+  } catch (err) {
+    console.error('Error saving current frame prior to template switch:', err)
+  }
+
+  isSwitchPromptOpen.value = false
+  await loadTemplateWorkspace(target)
+  isSwitchingWorkspace.value = false
+}
+
+async function confirmSwitchWithoutSaving() {
+  if (!pendingSwitchTemplate.value) return
+  const target = pendingSwitchTemplate.value
+  isSwitchingWorkspace.value = true
+  isSwitchPromptOpen.value = false
+  await loadTemplateWorkspace(target)
+  isSwitchingWorkspace.value = false
+}
+
+async function loadTemplateWorkspace(targetTemplate) {
+  if (!targetTemplate) return
+  isWorkspaceLoading.value = true
+  workspaceLoadingMessage.value = `Loading "${targetTemplate.name || 'template'}"...`
+  try {
+    notify(`Loading "${targetTemplate.name}"...`)
+    let project = targetTemplate.projectData
+
+    if (!project && targetTemplate.dataPath) {
+      project = await loadTemplateProject(targetTemplate.raw || targetTemplate)
+    }
+
+    if (!project && targetTemplate.id) {
+      const localFrames = await loadSavedFramesFromDB()
+      const match = (localFrames || []).find((f) => f.id === targetTemplate.id || f.cloudId === targetTemplate.id)
+      if (match?.projectData) {
+        project = match.projectData
+      }
+    }
+
+    if (!project) {
+      const cloudItem = await getItem('templates', targetTemplate.id)
+      if (cloudItem) {
+        project = await loadTemplateProject(cloudItem)
+      }
+    }
+
+    if (project) {
+      applySnapshot(project)
+      templateName.value = targetTemplate.name || project.templateName || 'Untitled frame'
+      currentSavedFrameId.value = targetTemplate.id || project.id
+      cloudId.value = targetTemplate.cloudId || (targetTemplate.isCloud ? targetTemplate.id : null)
+      loadedTemplateOwnerId.value = targetTemplate.ownerId || (targetTemplate.isCloud ? getUid() : null)
+
+      if (targetTemplate.categories && targetTemplate.categories.length) {
+        chosenCategories.value = [...targetTemplate.categories]
+      }
+
+      history.value = [JSON.stringify(project)]
+      historyIndex.value = 0
+
+      // Update URL query param so it redirects to the new workspace route
+      const targetQueryId = targetTemplate.cloudId || targetTemplate.id
+      router.replace({ path: '/frame-editor', query: { template: targetQueryId } })
+
+      await nextTick()
+      triggerFitToScreen()
+      await new Promise((r) => setTimeout(r, 120))
+      isMyTemplatesDrawerOpen.value = false
+      pendingSwitchTemplate.value = null
+      notify(`Loaded "${targetTemplate.name}"!`)
+    } else {
+      notify('Could not load template data.')
+    }
+  } catch (err) {
+    console.error('Error switching to template workspace:', err)
+    notify('Failed to load template')
+  } finally {
+    isWorkspaceLoading.value = false
+  }
+}
+
+async function deleteUserTemplate(template) {
+  if (!template) return
+  try {
+    if (template.isCloud && template.cloudId) {
+      await deleteItem(template.raw || template)
+      userCloudTemplates.value = userCloudTemplates.value.filter((t) => t.id !== template.id)
+    }
+    if (template.isLocal || template.id) {
+      await deleteSavedFrameFromDB(template.id)
+      savedFramesList.value = savedFramesList.value.filter((f) => f.id !== template.id)
+    }
+    if (currentSavedFrameId.value === template.id || cloudId.value === template.id) {
+      currentSavedFrameId.value = null
+      cloudId.value = null
+    }
+    notify(`Deleted "${template.name}"`)
+  } catch (err) {
+    console.error('Failed to delete template:', err)
+    notify('Could not delete template')
+  }
+}
+
+async function startNewBlankFrame() {
+  cloudId.value = null
+  loadedTemplateOwnerId.value = null
+  currentSavedFrameId.value = null
+  templateName.value = getNextDefaultTemplateName()
+  chosenCategories.value = ['other']
+  canvasElements.value = []
+  selectedElementIds.value = []
+  router.replace({ path: '/frame-editor' })
+  saveHistoryState()
+  nextTick(() => {
+    triggerFitToScreen()
+  })
+  isMyTemplatesDrawerOpen.value = false
+  isSwitchPromptOpen.value = false
+  pendingSwitchTemplate.value = null
+  notify('Started new blank frame')
 }
 
 function openSavedFrame(frameRecord) {
   if (!frameRecord || !frameRecord.projectData) return
-  applySnapshot(frameRecord.projectData)
-  currentSavedFrameId.value = frameRecord.id
-  if (frameRecord.cloudId) {
-    cloudId.value = frameRecord.cloudId
+  isWorkspaceLoading.value = true
+  workspaceLoadingMessage.value = `Opening "${frameRecord.name || 'template'}"...`
+  try {
+    applySnapshot(frameRecord.projectData)
+    currentSavedFrameId.value = frameRecord.id
+    if (frameRecord.cloudId) {
+      cloudId.value = frameRecord.cloudId
+    }
+    templateName.value = frameRecord.name || templateName.value
+    history.value = [JSON.stringify(frameRecord.projectData)]
+    historyIndex.value = 0
+    isSavedFramesModalOpen.value = false
+    nextTick(() => {
+      triggerFitToScreen()
+      setTimeout(() => {
+        isWorkspaceLoading.value = false
+      }, 100)
+    })
+    notify(`Loaded "${frameRecord.name || 'Template'}"!`)
+  } catch (err) {
+    console.error('Failed to open saved frame:', err)
+    isWorkspaceLoading.value = false
   }
-  isSavedFramesModalOpen.value = false
-  notify(`Loaded "${frameRecord.name || 'Template'}"!`)
 }
 
 async function loadTemplateFromQuery(templateId) {
   if (!templateId) return
+  isWorkspaceLoading.value = true
+  workspaceLoadingMessage.value = 'Loading saved template...'
   try {
-    notify('Loading template...')
     let projectData = null
     let template = null
 
@@ -2736,9 +3122,9 @@ async function loadTemplateFromQuery(templateId) {
       currentSavedFrameId.value = projectData.id || templateId
       history.value = [JSON.stringify(projectData)]
       historyIndex.value = 0
-      nextTick(() => {
-        triggerFitToScreen()
-      })
+      await nextTick()
+      triggerFitToScreen()
+      await new Promise((r) => setTimeout(r, 120))
       notify(`Loaded template "${template?.name || templateName.value}"!`)
     } else {
       notify('Template not found or private.')
@@ -2746,6 +3132,8 @@ async function loadTemplateFromQuery(templateId) {
   } catch (err) {
     console.error('Error loading template from cloud:', err)
     notify('Could not load template from cloud.')
+  } finally {
+    isWorkspaceLoading.value = false
   }
 }
 
@@ -2763,8 +3151,16 @@ async function deleteFrame(id) {
   }
 }
 
-function confirmDeleteFrame(frame) {
-  if (confirm(`Are you sure you want to delete "${frame.name || 'this template'}" from your saved frames?`)) {
+async function confirmDeleteFrame(frame) {
+  if (!frame) return
+  const sure = await askConfirm({
+    title: `Delete "${frame.name || 'this template'}"?`,
+    message: 'This will remove the template from your saved browser frames.',
+    confirmLabel: 'Delete',
+    danger: true,
+    icon: 'trash'
+  })
+  if (sure) {
     deleteFrame(frame.id)
   }
 }
@@ -2814,6 +3210,7 @@ async function importFrameFromFile(file) {
     }
 
     const frameId = project.id || `frame_${Date.now()}`
+    const cleanProject = JSON.parse(JSON.stringify({ ...project, showCutouts: false }))
     const record = {
       id: frameId,
       name: project.templateName || file.name.replace(/\.[^/.]+$/, ''),
@@ -2821,10 +3218,14 @@ async function importFrameFromFile(file) {
       slotCount: project.slotCount || slotCount.value || 4,
       elementCount: project.canvasElements ? project.canvasElements.length : 0,
       thumbnail: thumbnail,
-      projectData: { ...project, showCutouts: false }
+      projectData: cleanProject
     }
-    await saveFrameToDB(record)
-    savedFramesList.value = await loadSavedFramesFromDB()
+    try {
+      await saveFrameToDB(record)
+      savedFramesList.value = await loadSavedFramesFromDB()
+    } catch (idbErr) {
+      console.warn('Local save failed during import:', idbErr)
+    }
     applySnapshot(record.projectData)
     currentSavedFrameId.value = frameId
     isSavedFramesModalOpen.value = false
@@ -3068,6 +3469,27 @@ function onKeydown(e) {
 
   const isCmdOrCtrl = e.metaKey || e.ctrlKey
 
+  // Undo: Cmd+Z (Mac) or Ctrl+Z (Windows)
+  if (isCmdOrCtrl && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+    e.preventDefault()
+    if (historyIndex.value > 0) {
+      undo()
+    }
+    return
+  }
+
+  // Redo: Cmd+Shift+Z or Cmd+Y (Mac), Ctrl+Y or Ctrl+Shift+Z (Windows)
+  if (
+    isCmdOrCtrl &&
+    ((e.shiftKey && e.key.toLowerCase() === 'z') || e.key.toLowerCase() === 'y')
+  ) {
+    e.preventDefault()
+    if (historyIndex.value < history.value.length - 1) {
+      redo()
+    }
+    return
+  }
+
   // Cmd/Ctrl + S: Save Frame & Download Editable PNG
   if (isCmdOrCtrl && e.key.toLowerCase() === 's') {
     e.preventDefault()
@@ -3218,19 +3640,49 @@ onMounted(async () => {
     fitToScreen(canvasWorkspaceRef.value, stripRef.value)
   })
 
-  const stored = await loadUploadsFromDB()
-  if (stored && stored.length > 0) {
-    userUploads.value = stored
-  }
+  const templateToLoad = route?.query?.template || initialTemplateParam
 
-  const frames = await loadSavedFramesFromDB()
-  if (frames && frames.length > 0) {
-    savedFramesList.value = frames
-  }
+  if (templateToLoad) {
+    isWorkspaceLoading.value = true
+    workspaceLoadingMessage.value = 'Loading saved template...'
 
-  // Check if opening a saved template from My Studio or Marketplace via ?template={id}
-  if (route.query.template) {
-    await loadTemplateFromQuery(route.query.template)
+    // Prioritize loading the target template, running uploads & saved frames loads in parallel
+    await Promise.all([
+      loadTemplateFromQuery(templateToLoad),
+      (async () => {
+        try {
+          const [stored, frames] = await Promise.all([
+            loadUploadsFromDB(),
+            loadSavedFramesFromDB()
+          ])
+          if (stored && stored.length > 0) userUploads.value = stored
+          if (frames && frames.length > 0) savedFramesList.value = frames
+          await loadAllUserTemplates()
+        } catch (bgErr) {
+          console.warn('Background data preload error:', bgErr)
+        }
+      })()
+    ])
+  } else {
+    const stored = await loadUploadsFromDB()
+    if (stored && stored.length > 0) {
+      userUploads.value = stored
+    }
+
+    const frames = await loadSavedFramesFromDB()
+    if (frames && frames.length > 0) {
+      savedFramesList.value = frames
+    }
+
+    // Load all user templates (cloud + local) for My Templates drawer & counter
+    await loadAllUserTemplates()
+
+    // If opening fresh without a loaded template, ensure frame title reflects the next sequence
+    if (!cloudId.value && !currentSavedFrameId.value) {
+      if (!templateName.value || templateName.value === 'Retro 4-cut' || templateName.value === 'my-templates-1') {
+        templateName.value = getNextDefaultTemplateName()
+      }
+    }
   }
 })
 
@@ -3257,6 +3709,8 @@ onBeforeUnmount(() => {
 
   
     return {
+    isWorkspaceLoading,
+    workspaceLoadingMessage,
     templatePresets,
     elementCategories,
     textPresets,
@@ -3373,6 +3827,15 @@ onBeforeUnmount(() => {
     isSavedFramesModalOpen,
     savedFramesList,
     isSavingFrame,
+    isSaveSuccess,
+    isMyTemplatesDrawerOpen,
+    userCloudTemplates,
+    isLoadingUserTemplates,
+    allUserTemplates,
+    allUserTemplatesCount,
+    pendingSwitchTemplate,
+    isSwitchPromptOpen,
+    isSwitchingWorkspace,
     currentSavedFrameId,
     isExporting,
     exportConfig,
@@ -3425,6 +3888,7 @@ onBeforeUnmount(() => {
     setFrameGradient,
     setFrameTexture,
     clearFrameTexture,
+    resetFrameBackground,
     getFrameStyle,
     getFrameTextureStyle,
     incrementBorderWidth,
@@ -3532,6 +3996,16 @@ onBeforeUnmount(() => {
     toggleCategory,
     saveFrame,
     executeSave,
+    loadAllUserTemplates,
+    openMyTemplatesDrawer,
+    closeMyTemplatesDrawer,
+    promptSwitchTemplate,
+    confirmSaveAndSwitch,
+    confirmSwitchWithoutSaving,
+    loadTemplateWorkspace,
+    deleteUserTemplate,
+    startNewBlankFrame,
+    getNextDefaultTemplateName,
     openSavedFrame,
     loadTemplateFromQuery,
     deleteFrame,
@@ -3561,24 +4035,32 @@ onBeforeUnmount(() => {
     ELEMENT_TAG_FILTERS,
     FONT_CATEGORIES,
     getTextureBackgroundImage,
-    getTextureBackgroundSize
+    getTextureBackgroundSize,
+    isMac,
+    shortcuts
   }
 
 
 
 }
 
-export function provideTemplateEditor() {
-  const editor = useTemplateEditor()
-  provide(TEMPLATE_EDITOR_KEY, editor)
+export function provideFrameEditor() {
+  const editor = useFrameEditor()
+  provide(FRAME_EDITOR_KEY, editor)
+  provide("frameEditor", editor)
   provide("templateEditor", editor)
   return editor
 }
 
-export function useTemplateEditorContext() {
-  const context = inject(TEMPLATE_EDITOR_KEY) || inject("templateEditor")
+export function useFrameEditorContext() {
+  const context = inject(FRAME_EDITOR_KEY) || inject("frameEditor") || inject("templateEditor")
   if (!context) {
-    throw new Error("useTemplateEditorContext must be used within a templateEditor provider")
+    throw new Error("useFrameEditorContext must be used within a frameEditor provider")
   }
   return context
 }
+
+// Backwards compatibility aliases
+export const useTemplateEditor = useFrameEditor
+export const provideTemplateEditor = provideFrameEditor
+export const useTemplateEditorContext = useFrameEditorContext

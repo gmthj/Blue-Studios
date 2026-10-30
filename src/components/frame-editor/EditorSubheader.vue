@@ -1,8 +1,8 @@
 <script setup>
-import { useTemplateEditorContext } from "../../composables/useTemplateEditor.js"
+import { useFrameEditorContext } from "../../composables/useFrameEditor.js"
 import { IconFolder, IconSave } from "../icons/index.js"
 
-const editor = useTemplateEditorContext()
+const editor = useFrameEditorContext()
 const {
   activeSelectedElement,
   activeTextElement,
@@ -10,6 +10,7 @@ const {
   activeVectorElement,
   alignElementCenterH,
   alignElementCenterV,
+  allUserTemplatesCount,
   canvasScale,
   canvasWorkspaceRef,
   clearAllGuides,
@@ -40,6 +41,7 @@ const {
   isTextSpacingOpen,
   isVectorColorPickerOpen,
   isZoomMenuOpen,
+  openMyTemplatesDrawer,
   openVectorColorPicker,
   redo,
   removeSelectedElements,
@@ -48,12 +50,12 @@ const {
   router,
   saveFrame,
   saveHistoryState,
-  savedFramesList,
   selectFontFamily,
   setTextAlign,
   setTextColor,
   setVectorColor,
   setZoom,
+  shortcuts,
   showCutouts,
   showRulers,
     stepFontSize,
@@ -105,7 +107,12 @@ const {
           <div v-if="isFontDropdownOpen" class="card shadow-lg position-absolute border overflow-hidden" style="top: calc(100% + 6px); left: 0; width: 280px; z-index: 1050;" @click.stop @mousedown.stop>
             <div class="p-2 border-bottom bg-light">
               <div class="input-group input-group-sm">
-                <span class="input-group-text bg-white border-end-0">🔍</span>
+                <span class="input-group-text bg-white border-end-0 text-secondary">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8" />
+                    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                  </svg>
+                </span>
                 <input
                   v-model="fontSearchQuery"
                   type="text"
@@ -145,8 +152,8 @@ const {
         <div class="vr mx-1"></div>
 
         <!-- Font Size Stepper -->
-        <div class="input-group input-group-sm" style="width: 100px;">
-          <button class="btn btn-outline-secondary px-2" title="Decrease font size" @click="stepFontSize(-2)">−</button>
+        <div class="input-group input-group-sm font-size-stepper-group" style="width: 100px;">
+          <button class="btn btn-outline-secondary px-2 font-size-btn-minus" title="Decrease font size" @click="stepFontSize(-2)">−</button>
           <input
             v-model.number="activeTextElement.fontSize"
             type="number"
@@ -156,7 +163,7 @@ const {
             title="Font size (px)"
             @input="debounceTextHistory"
           />
-          <button class="btn btn-outline-secondary px-2" title="Increase font size" @click="stepFontSize(2)">+</button>
+          <button class="btn btn-outline-secondary px-2 font-size-btn-plus" title="Increase font size" @click="stepFontSize(2)">+</button>
         </div>
 
         <div class="vr mx-1"></div>
@@ -211,7 +218,7 @@ const {
           <button
             class="btn"
             :class="activeTextElement.fontWeight === 'bold' || activeTextElement.fontWeight >= 700 ? 'btn-primary' : 'btn-outline-secondary'"
-            title="Bold (⌘B)"
+            :title="`Bold (${shortcuts.bold})`"
             @click="toggleBold"
           >
             <strong>B</strong>
@@ -219,7 +226,7 @@ const {
           <button
             class="btn"
             :class="activeTextElement.fontStyle === 'italic' ? 'btn-primary' : 'btn-outline-secondary'"
-            title="Italic (⌘I)"
+            :title="`Italic (${shortcuts.italic})`"
             @click="toggleItalic"
           >
             <em>I</em>
@@ -227,7 +234,7 @@ const {
           <button
             class="btn"
             :class="activeTextElement.textDecoration === 'underline' ? 'btn-primary' : 'btn-outline-secondary'"
-            title="Underline (⌘U)"
+            :title="`Underline (${shortcuts.underline})`"
             @click="toggleUnderline"
           >
             <u>U</u>
@@ -389,7 +396,7 @@ const {
 
         <!-- Duplicate, Lock, Delete -->
         <div class="btn-group btn-group-sm">
-          <button class="btn btn-outline-secondary" title="Duplicate (⌘D)" @click="duplicateSelectedElements">
+          <button class="btn btn-outline-secondary" :title="`Duplicate (${shortcuts.duplicate})`" @click="duplicateSelectedElements">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
@@ -401,7 +408,14 @@ const {
             :title="activeTextElement.isLocked ? 'Unlock Element' : 'Lock Element'"
             @click="toggleLock(activeTextElement.id)"
           >
-            {{ activeTextElement.isLocked ? '🔒' : '🔓' }}
+            <svg v-if="activeTextElement.isLocked" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+            <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+            </svg>
           </button>
           <button class="btn btn-outline-danger" title="Delete (Del)" @click="removeSelectedElements">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -602,7 +616,7 @@ const {
 
         <!-- Quick actions: Duplicate, Lock, Delete -->
         <div class="btn-group btn-group-sm">
-          <button class="btn btn-outline-secondary" title="Duplicate (⌘D)" @click="duplicateSelectedElements">
+          <button class="btn btn-outline-secondary" :title="`Duplicate (${shortcuts.duplicate})`" @click="duplicateSelectedElements">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
               <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
@@ -614,7 +628,14 @@ const {
             :title="activeSelectedElement.isLocked ? 'Unlock Element' : 'Lock Element'"
             @click="toggleLock(activeSelectedElement.id)"
           >
-            {{ activeSelectedElement.isLocked ? '🔒' : '🔓' }}
+            <svg v-if="activeSelectedElement.isLocked" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+            </svg>
+            <svg v-else width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+              <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+            </svg>
           </button>
           <button class="btn btn-outline-danger" title="Delete (Del)" @click="removeSelectedElements">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -644,29 +665,43 @@ const {
       <!-- Otherwise: Standard Subheader Toolbar (Bootstrap 5) -->
       <template v-else>
         <div class="d-flex align-items-center gap-2 small">
-          <router-link to="/studio" class="text-decoration-none text-muted d-flex align-items-center gap-1" title="Back to My Studio">
-            <span>&larr;</span> <span>Templates</span>
+          <router-link to="/studio" class="text-decoration-none text-muted d-flex align-items-center gap-1 me-1" title="Back to My Studio">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="19" y1="12" x2="5" y2="12" />
+              <polyline points="12 19 5 12 12 5" />
+            </svg>
+            <span class="fw-medium">My Studio</span>
           </router-link>
           <span class="text-muted">/</span>
-          <input
-            v-model="templateName"
-            class="form-control form-control-sm border-0 fw-bold px-1 py-0 bg-transparent text-dark"
-            style="width: 170px; font-size: 0.95rem;"
-            placeholder="Untitled frame"
-            title="Click to rename template"
-          />
+          <div class="input-group input-group-sm template-name-group" style="width: auto;">
+            <span class="input-group-text border-end-0 px-2 py-0" title="Frame Title (Click to edit)">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+              </svg>
+            </span>
+            <input
+              v-model="templateName"
+              type="text"
+              class="form-control form-control-sm border-start-0 template-name-field ps-1"
+              style="width: 185px; font-size: 0.875rem;"
+              placeholder="my-templates-1"
+              title="Frame Title (Click to edit)"
+              maxlength="40"
+            />
+          </div>
         </div>
 
         <div class="d-flex align-items-center gap-2">
           <!-- Undo & Redo -->
           <div class="btn-group btn-group-sm">
-            <button class="btn btn-outline-secondary" title="Undo (⌘Z)" :disabled="historyIndex <= 0" @click="undo">
+            <button class="btn btn-outline-secondary" :title="`Undo (${shortcuts.undo})`" :disabled="historyIndex <= 0" @click="undo">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M3 7v6h6" />
                 <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
               </svg>
             </button>
-            <button class="btn btn-outline-secondary" title="Redo (⌘Y)" :disabled="historyIndex >= history.length - 1" @click="redo">
+            <button class="btn btn-outline-secondary" :title="`Redo (${shortcuts.redo})`" :disabled="historyIndex >= history.length - 1" @click="redo">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21 7v6h-6" />
                 <path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 2.7" />
@@ -677,11 +712,11 @@ const {
           <div class="vr my-1 mx-1"></div>
 
           <!-- Zoom Stepper Controls -->
-          <div class="input-group input-group-sm" style="width: auto;">
+          <div class="input-group input-group-sm zoom-stepper-group" style="width: auto;">
             <!-- Zoom Out (-) -->
             <button
-              class="btn btn-outline-secondary"
-              title="Zoom Out (⌘-)"
+              class="btn btn-outline-secondary zoom-btn-minus"
+              :title="`Zoom Out (${shortcuts.zoomOut})`"
               :disabled="canvasScale <= 0.25"
               @click="zoomOut(canvasWorkspaceRef)"
             >
@@ -691,7 +726,7 @@ const {
             <!-- Zoom Readout & Dropdown Menu -->
             <div class="zoom-dropdown-wrapper position-relative">
               <button
-                class="btn btn-outline-secondary rounded-0 px-2 d-flex align-items-center gap-1 border-start-0 border-end-0"
+                class="btn btn-outline-secondary zoom-readout-btn rounded-0 px-2 d-flex align-items-center gap-1 border-start-0 border-end-0"
                 :class="{ active: isZoomMenuOpen }"
                 title="Zoom Options"
                 @click.stop="isZoomMenuOpen = !isZoomMenuOpen"
@@ -708,7 +743,7 @@ const {
 
                 <button class="menu-item" @click="fitToScreen(canvasWorkspaceRef, stripRef); isZoomMenuOpen = false">
                   <span class="item-name">Fit to Screen</span>
-                  <span class="item-shortcut">⌘0</span>
+                  <span class="item-shortcut">{{ shortcuts.fit }}</span>
                 </button>
 
                 <button class="menu-item" @click="fillScreen(canvasWorkspaceRef, stripRef); isZoomMenuOpen = false">
@@ -718,7 +753,7 @@ const {
 
                 <button class="menu-item" @click="resetToActualSize(canvasWorkspaceRef, stripRef); isZoomMenuOpen = false">
                   <span class="item-name">100% Actual Size</span>
-                  <span class="item-shortcut">⌘1</span>
+                  <span class="item-shortcut">{{ shortcuts.actualSize }}</span>
                 </button>
 
                 <div class="menu-divider"></div>
@@ -748,8 +783,8 @@ const {
 
             <!-- Zoom In (+) -->
             <button
-              class="btn btn-outline-secondary"
-              title="Zoom In (⌘+)"
+              class="btn btn-outline-secondary zoom-btn-plus"
+              :title="`Zoom In (${shortcuts.zoomIn})`"
               :disabled="canvasScale >= 5.0"
               @click="zoomIn(canvasWorkspaceRef)"
             >
@@ -760,7 +795,7 @@ const {
           <!-- Fit to Screen Quick Action Button -->
           <button
             class="btn btn-sm btn-outline-secondary"
-            title="Fit to Screen (⌘0)"
+            :title="`Fit to Screen (${shortcuts.fit})`"
             @click="fitToScreen(canvasWorkspaceRef, stripRef)"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
@@ -807,16 +842,17 @@ const {
         </div>
 
         <div class="d-flex align-items-center gap-2">
-          <!-- Saved Frames Action Button (Links to /studio templates homepage) -->
-          <router-link
-            to="/studio"
-            class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1 text-decoration-none"
-            title="Go to My Templates in My Studio"
+          <!-- My Templates Drawer Action Button (Opens saved templates overlay drawer) -->
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-1"
+            title="View all your saved templates"
+            @click="openMyTemplatesDrawer"
           >
             <IconFolder :size="14" :stroke-width="2.2" />
             <span>My Templates</span>
-            <span v-if="savedFramesList.length > 0" class="badge rounded-pill bg-primary ms-1">{{ savedFramesList.length }}</span>
-          </router-link>
+            <span v-if="allUserTemplatesCount > 0" class="badge rounded-pill bg-primary ms-1">{{ allUserTemplatesCount }}</span>
+          </button>
 
           <!-- Save Frame Button (Shows 'Save Frame' if logged in, 'Login to save' if guest) -->
           <button
@@ -824,7 +860,7 @@ const {
             class="btn btn-sm btn-primary d-flex align-items-center gap-1 fw-bold shadow-sm"
             :disabled="isSavingFrame"
             @click="saveFrame"
-            :title="cloudId ? (isOwner ? 'Save Frame to My Studio (⌘S)' : 'Save a Copy to My Studio (⌘S)') : 'Save Frame to My Studio (⌘S)'"
+            :title="cloudId ? (isOwner ? `Save Frame to My Studio (${shortcuts.save})` : `Save a Copy to My Studio (${shortcuts.save})`) : `Save Frame to My Studio (${shortcuts.save})`"
           >
             <IconSave :size="14" :stroke-width="2.3" />
             <span>{{ isSavingFrame ? 'Saving...' : (cloudId ? (isOwner ? 'Save Frame' : 'Save a Copy') : 'Save Frame') }}</span>
@@ -834,7 +870,7 @@ const {
             v-else
             :to="'/login?redirect=' + encodeURIComponent($route.fullPath)"
             class="btn btn-sm btn-primary d-flex align-items-center gap-1 fw-bold shadow-sm text-decoration-none"
-            title="Log in to save your template to My Studio (⌘S)"
+            :title="`Log in to save your template to My Studio (${shortcuts.save})`"
           >
             <IconSave :size="14" :stroke-width="2.3" />
             <span>Login to save</span>

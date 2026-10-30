@@ -690,11 +690,11 @@ async function goToStage(stage) {
             @click="chooseStyle(s.id)"
           ></button>
 
-          <!-- Add new template button linking to Template Editor -->
+          <!-- Add new template button linking to Frame Editor -->
           <router-link
-            to="/template-editor"
+            to="/frame-editor"
             class="swatch add-swatch text-decoration-none d-flex align-items-center justify-content-center"
-            title="Design a new frame in Template Editor"
+            title="Design a new frame in Frame Editor"
           >+</router-link>
         </div>
 
@@ -732,9 +732,9 @@ async function goToStage(stage) {
             </div>
           </div>
           <router-link
-            :to="'/template-editor?template=' + room.stripCustomTemplate.id"
+            :to="'/frame-editor?template=' + room.stripCustomTemplate.id"
             class="btn btn-sm btn-outline-primary py-0 px-2 text-decoration-none flex-shrink-0"
-            title="Re-edit this template in Template Editor (retains full workspace)"
+            title="Re-edit this template in Frame Editor (retains full workspace)"
           >
             ✏️ Re-edit
           </router-link>

@@ -1,8 +1,8 @@
 <script setup>
-import { useTemplateEditorContext } from "../../composables/useTemplateEditor.js"
+import { useFrameEditorContext } from "../../composables/useFrameEditor.js"
 
 
-const editor = useTemplateEditorContext()
+const editor = useFrameEditorContext()
 const {
   FONT_CATEGORIES,
   LAYOUTS,
@@ -22,6 +22,7 @@ const {
   canvasElements,
   captionColor,
   captionText,
+  clearFrameTexture,
   currentLayoutDef,
   customGradient,
   debounceTextHistory,
@@ -31,6 +32,7 @@ const {
   flipElementV,
   frameBg,
   getElementDisplayName,
+  getTextureBackgroundImage,
   getVectorBarTitle,
   getVectorSwatches,
   incrementBorderWidth,
@@ -38,6 +40,7 @@ const {
   onBorderWidthChange,
   removeGradientStop,
   removeSelectedElements,
+  resetFrameBackground,
   saveHistoryState,
   selectedBgColor,
   selectedElementIds,
@@ -51,13 +54,13 @@ const {
   setTextAlign,
   setTextColor,
   setVectorColor,
+  shortcuts,
   showCutouts,
   slotShape,
     stepFontSize,
   swapGradientColors,
   switchToColorMode,
   switchToGradientMode,
-  templateName,
   toggleBold,
   toggleHide,
   toggleItalic,
@@ -80,17 +83,6 @@ const {
           <div class="d-flex align-items-center justify-content-between border-bottom pb-2">
             <h6 class="fw-bold text-dark m-0 fs-6">Frame Properties</h6>
             <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25">Templates</span>
-          </div>
-
-          <!-- TEMPLATE NAME -->
-          <div class="d-flex flex-column gap-1">
-            <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Template Name</label>
-            <input
-              v-model="templateName"
-              type="text"
-              class="form-control form-control-sm"
-              placeholder="Template name"
-            />
           </div>
 
           <!-- LAYOUT PRESETS -->
@@ -202,112 +194,94 @@ const {
           <div class="d-flex flex-column gap-2">
             <div class="d-flex justify-content-between align-items-center">
               <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Caption</label>
-              <!-- Live Color Status Indicator Bubble (Strictly Round) -->
-              <label
-                class="rounded-circle border shadow-sm cursor-pointer position-relative d-inline-flex align-items-center justify-content-center flex-shrink-0 m-0"
-                style="width: 22px; height: 22px; aspect-ratio: 1; min-width: 22px; min-height: 22px; transition: transform 0.15s ease;"
-                :style="{
-                  backgroundColor: captionColor,
-                  boxShadow: '0 0 0 2px #fff, 0 0 0 3px ' + captionColor
-                }"
-                title="Click to pick caption color"
-              >
-                <input
-                  type="color"
-                  v-model="captionColor"
-                  class="position-absolute opacity-0 pointer-events-none"
-                  style="width: 1px; height: 1px;"
-                  @input="debounceTextHistory"
-                  @change="saveHistoryState"
-                />
-              </label>
-            </div>
-
-            <!-- Text Input -->
-            <input
-              v-model="captionText"
-              type="text"
-              class="form-control form-control-sm"
-              placeholder="Enter caption text"
-              @input="debounceTextHistory"
-            />
-
-            <!-- Live Caption Preview Display Pill -->
-            <div
-              class="p-2 rounded-2 border bg-light text-center d-flex align-items-center justify-content-center overflow-hidden"
-              style="min-height: 34px;"
-            >
-              <span
-                class="fw-semibold text-truncate font-monospace"
-                style="font-size: 0.85rem;"
-                :style="{ color: captionColor }"
-              >
-                {{ (captionText && captionText.trim()) ? captionText : 'Caption Preview' }}
-              </span>
-            </div>
-
-            <!-- Caption Color Selector Row (Round picker + Hex input + Match Border) -->
-            <div class="d-flex align-items-center gap-2">
-              <label
-                class="rounded-circle border shadow-sm cursor-pointer position-relative d-flex align-items-center justify-content-center flex-shrink-0 m-0"
-                style="width: 28px; height: 28px; aspect-ratio: 1; min-width: 28px; min-height: 28px; transition: transform 0.15s ease;"
-                :style="{
-                  backgroundColor: captionColor,
-                  boxShadow: '0 0 0 2px #fff, 0 0 0 2.5px #cbd5e1'
-                }"
-                title="Pick custom caption color"
-              >
-                <input
-                  type="color"
-                  v-model="captionColor"
-                  class="position-absolute opacity-0 pointer-events-none"
-                  style="width: 1px; height: 1px;"
-                  @input="debounceTextHistory"
-                  @change="saveHistoryState"
-                />
-              </label>
-
-              <input
-                type="text"
-                v-model="captionColor"
-                class="form-control form-control-sm text-uppercase font-monospace flex-grow-1"
-                maxlength="7"
-                spellcheck="false"
-                placeholder="#2F5BEA"
-                @input="debounceTextHistory"
-                @change="saveHistoryState"
-              />
-
               <button
+                v-if="captionColor.toLowerCase() !== borderColor.toLowerCase()"
                 type="button"
-                class="btn btn-sm btn-outline-secondary px-2 py-1 flex-shrink-0"
-                style="font-size: 0.72rem; white-space: nowrap;"
-                title="Match photostrip border color"
+                class="btn btn-link btn-xs p-0 text-decoration-none small text-primary fw-medium"
+                style="font-size: 0.72rem;"
+                title="Match frame border color"
                 @click="captionColor = borderColor; saveHistoryState()"
               >
                 Match Border
               </button>
+              <span v-else class="badge bg-secondary-subtle text-secondary" style="font-size: 0.65rem;">
+                Matches Border
+              </span>
             </div>
 
-            <!-- Quick Palette Swatches (Guaranteed 1:1 round circles) -->
-            <div class="d-flex align-items-center gap-1 flex-wrap">
+            <!-- Single Caption Input with Clear Button -->
+            <div class="input-group input-group-sm">
+              <input
+                v-model="captionText"
+                type="text"
+                class="form-control form-control-sm"
+                placeholder="Enter caption text (e.g. REUNION · 1998)"
+                maxlength="50"
+                @input="debounceTextHistory"
+              />
               <button
-                v-for="swatch in ['#2F5BEA', '#111827', '#64748B', '#FFFFFF', '#EF4444', '#EC4899', '#8B5CF6', '#10B981', '#F59E0B']"
-                :key="swatch"
+                v-if="captionText"
+                class="btn btn-outline-secondary border-start-0 py-0 px-2"
                 type="button"
-                class="btn p-0 rounded-circle border shadow-none flex-shrink-0"
-                :style="{
-                  backgroundColor: swatch,
-                  width: '20px',
-                  height: '20px',
-                  minWidth: '20px',
-                  minHeight: '20px',
-                  aspectRatio: '1',
-                  boxShadow: captionColor.toLowerCase() === swatch.toLowerCase() ? '0 0 0 2px #fff, 0 0 0 3.5px #2563eb' : 'none'
-                }"
-                :title="swatch"
-                @click="captionColor = swatch; saveHistoryState()"
-              ></button>
+                title="Clear caption"
+                @click="captionText = ''; debounceTextHistory()"
+              >
+                &times;
+              </button>
+            </div>
+
+            <!-- Caption Color: Single Picker + Hex Input + Quick Swatches -->
+            <div class="d-flex align-items-center gap-2">
+              <div class="d-flex align-items-center gap-2 flex-shrink-0">
+                <label
+                  class="rounded-circle border shadow-sm cursor-pointer position-relative d-flex align-items-center justify-content-center flex-shrink-0 m-0"
+                  style="width: 26px; height: 26px; aspect-ratio: 1; transition: transform 0.15s ease;"
+                  :style="{
+                    backgroundColor: captionColor,
+                    boxShadow: '0 0 0 2px #fff, 0 0 0 2px #cbd5e1'
+                  }"
+                  title="Pick custom caption color"
+                >
+                  <input
+                    type="color"
+                    v-model="captionColor"
+                    class="position-absolute opacity-0 pointer-events-none"
+                    style="width: 1px; height: 1px;"
+                    @input="debounceTextHistory"
+                    @change="saveHistoryState"
+                  />
+                </label>
+
+                <input
+                  type="text"
+                  v-model="captionColor"
+                  class="form-control form-control-sm text-uppercase font-monospace"
+                  style="width: 82px;"
+                  maxlength="7"
+                  spellcheck="false"
+                  placeholder="#033DFC"
+                  @input="debounceTextHistory"
+                  @change="saveHistoryState"
+                />
+              </div>
+
+              <!-- Quick Swatches Palette -->
+              <div class="d-flex align-items-center gap-1 ms-auto flex-wrap justify-content-end">
+                <button
+                  v-for="swatch in ['#2F5BEA', '#111827', '#64748B', '#FFFFFF', '#EF4444', '#EC4899', '#8B5CF6']"
+                  :key="swatch"
+                  type="button"
+                  class="btn p-0 rounded-circle border shadow-none flex-shrink-0"
+                  :style="{
+                    backgroundColor: swatch,
+                    width: '18px',
+                    height: '18px',
+                    boxShadow: captionColor.toLowerCase() === swatch.toLowerCase() ? '0 0 0 2px #fff, 0 0 0 2.5px #2563eb' : 'none'
+                  }"
+                  :title="swatch"
+                  @click="captionColor = swatch; saveHistoryState()"
+                ></button>
+              </div>
             </div>
           </div>
         </template>
@@ -323,7 +297,13 @@ const {
 
           <!-- Empty State: No Element Selected -->
           <div v-if="!activeSelectedElement" class="card border-dashed p-4 text-center my-auto bg-light rounded-3">
-            <div class="fs-1 mb-2">🎀</div>
+            <div class="d-inline-flex align-items-center justify-content-center p-3 rounded-circle bg-white border text-secondary mx-auto mb-2" style="width: 52px; height: 52px;">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="8" cy="8" r="4" />
+                <rect x="13" y="4" width="7" height="7" rx="1.5" />
+                <polygon points="12 14 16 21 8 21" />
+              </svg>
+            </div>
             <h6 class="fw-bold text-dark mb-1">Select an Element</h6>
             <p class="small text-muted mb-0">
               Click on any element, shape, or tape on the canvas to customize its colors, size, opacity, and rotation.
@@ -335,7 +315,21 @@ const {
             <!-- Selected Element Header -->
             <div class="d-flex align-items-center justify-content-between p-2 bg-light border rounded-3">
               <div class="d-flex align-items-center gap-2 text-truncate">
-                <span class="fs-5">✨</span>
+                <div class="p-1 rounded-2 bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center flex-shrink-0" style="width: 28px; height: 28px;">
+                  <svg v-if="activeSelectedElement.isSvg || activeSelectedElement.type === 'shape'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                  </svg>
+                  <svg v-else-if="activeSelectedElement.type === 'tape'" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="2" y="7" width="20" height="10" rx="1"/>
+                    <line x1="6" y1="7" x2="6" y2="17"/>
+                    <line x1="18" y1="7" x2="18" y2="17"/>
+                  </svg>
+                  <svg v-else width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="8" cy="8" r="4" />
+                    <rect x="13" y="4" width="7" height="7" rx="1.5" />
+                    <polygon points="12 14 16 21 8 21" />
+                  </svg>
+                </div>
                 <div class="text-truncate">
                   <span class="small fw-bold text-dark d-block text-truncate">
                     {{ activeVectorElement ? getVectorBarTitle(activeVectorElement) : getElementDisplayName(activeSelectedElement) }}
@@ -424,9 +418,14 @@ const {
               </div>
             </div>
 
-            <!-- If Emoji Note -->
-            <div v-else-if="activeSelectedElement.type === 'sticker' && !activeSelectedElement.isSvg" class="alert alert-light border small text-muted p-2 mb-0">
-              💡 Emoji graphics use standard emoji artwork. You can scale, rotate, flip, and adjust opacity below.
+            <!-- If Sticker Note -->
+            <div v-else-if="activeSelectedElement.type === 'sticker' && !activeSelectedElement.isSvg" class="alert alert-light border small text-muted p-2 mb-0 d-flex align-items-start gap-2">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary flex-shrink-0 mt-0.5">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+              <span>Standard stickers artwork can be scaled, rotated, flipped, and have opacity adjusted below.</span>
             </div>
 
             <!-- OPACITY ADJUSTMENT -->
@@ -584,7 +583,13 @@ const {
 
           <!-- Empty State: No Text Selected -->
           <div v-if="!activeTextElement" class="card border-dashed p-4 text-center my-auto bg-light rounded-3">
-            <div class="fs-1 mb-2">✍️</div>
+            <div class="d-inline-flex align-items-center justify-content-center p-3 rounded-circle bg-white border text-secondary mx-auto mb-2" style="width: 52px; height: 52px;">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="4 7 4 4 20 4 20 7" />
+                <line x1="9" y1="20" x2="15" y2="20" />
+                <line x1="12" y1="4" x2="12" y2="20" />
+              </svg>
+            </div>
             <h6 class="fw-bold text-dark mb-1">Select a Text Layer</h6>
             <p class="small text-muted mb-3">
               Click on any text on the canvas to customize font size, typeface, alignment, color, and curved arch.
@@ -943,7 +948,7 @@ const {
                 style="width: 36px; height: 36px;"
                 :style="{
                   background: frameBg.type === 'gradient' ? frameBg.value : (frameBg.baseColor || '#FFFFFF'),
-                  backgroundImage: frameBg.texture ? `url(${frameBg.texture})` : (frameBg.type === 'gradient' ? frameBg.value : 'none'),
+                  backgroundImage: frameBg.texture ? getTextureBackgroundImage(frameBg.texture) : (frameBg.type === 'gradient' ? frameBg.value : 'none'),
                   backgroundSize: (frameBg.scale || 1) * 60 + 'px'
                 }"
               ></div>
@@ -961,7 +966,7 @@ const {
               class="btn btn-sm btn-outline-secondary py-0 px-2 flex-shrink-0"
               style="font-size: 0.75rem; height: 26px; line-height: 24px;"
               title="Reset to clean white background"
-              @click="setFrameSolidColor('#FFFFFF')"
+              @click="resetFrameBackground"
             >
               Reset
             </button>
@@ -1159,12 +1164,16 @@ const {
                 </button>
                 <button
                   type="button"
-                  class="btn btn-sm py-1"
+                  class="btn btn-sm py-1 d-inline-flex align-items-center justify-content-center gap-1"
                   :class="customGradient.type === 'radial' ? 'btn-primary fw-bold' : 'btn-outline-secondary'"
                   title="Radial Bloom"
                   @click="setGradientType('radial')"
                 >
-                  ☀️ Radial
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <circle cx="12" cy="12" r="4" />
+                  </svg>
+                  <span>Radial</span>
                 </button>
               </div>
 
@@ -1262,7 +1271,18 @@ const {
           <div v-if="frameBg.texture" class="card p-3 bg-light border rounded-3 d-flex flex-column gap-3">
             <div class="d-flex justify-content-between align-items-center">
               <span class="small fw-bold text-secondary text-uppercase">Texture Adjustments</span>
-              <span class="badge bg-primary rounded-pill">Active</span>
+              <div class="d-flex align-items-center gap-1">
+                <span class="badge bg-primary rounded-pill">Active</span>
+                <button
+                  type="button"
+                  class="btn btn-xs btn-outline-danger py-0 px-2"
+                  style="font-size: 0.7rem;"
+                  title="Remove pattern or texture overlay"
+                  @click="clearFrameTexture"
+                >
+                  Remove
+                </button>
+              </div>
             </div>
 
             <!-- Opacity / Intensity Slider -->
@@ -1333,7 +1353,14 @@ const {
 
           <!-- If No Texture Active -->
           <div v-else class="alert alert-light border small text-muted p-3 rounded-3 mb-0">
-            <span class="fw-bold d-block text-dark mb-1">💡 Tactile Paper Textures</span>
+            <div class="d-flex align-items-center gap-1 mb-1">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary flex-shrink-0">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+              <span class="fw-bold text-dark">Tactile Paper Textures</span>
+            </div>
             Pick a texture (Polka Dots, Notebook Grid, Checkerboard) in the left Background drawer to adjust grain opacity, scale, and blend modes here.
           </div>
         </template>
@@ -1488,7 +1515,13 @@ const {
 
           <!-- CASE B: No Media Selected -->
           <div v-else class="card border-dashed p-4 text-center my-auto bg-light rounded-3">
-            <div class="fs-1 mb-2">🖼️</div>
+            <div class="d-inline-flex align-items-center justify-content-center p-3 rounded-circle bg-white border text-secondary mx-auto mb-2" style="width: 52px; height: 52px;">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <circle cx="8.5" cy="8.5" r="1.5" />
+                <polyline points="21 15 16 10 5 21" />
+              </svg>
+            </div>
             <p class="small text-muted mb-0 fw-medium">Click on media to edit features</p>
           </div>
         </template>
@@ -1505,7 +1538,13 @@ const {
           <!-- When a layer is selected -->
           <div v-if="activeSelectedElement" class="d-flex flex-column gap-3">
             <div class="card p-2 bg-light border rounded-3 d-flex flex-row align-items-center gap-2">
-              <span class="fs-4">📑</span>
+              <div class="p-1 rounded-2 bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center flex-shrink-0" style="width: 28px; height: 28px;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                  <polyline points="2 17 12 22 22 17" />
+                  <polyline points="2 12 12 17 22 12" />
+                </svg>
+              </div>
               <div class="min-w-0 flex-grow-1">
                 <span class="small fw-bold text-dark d-block text-truncate">{{ getElementDisplayName(activeSelectedElement) }}</span>
                 <span class="badge bg-primary bg-opacity-10 text-primary" style="font-size: 0.65rem;">Active Layer</span>
@@ -1516,7 +1555,14 @@ const {
                 :title="activeSelectedElement.isLocked ? 'Unlock layer' : 'Lock layer'"
                 @click="toggleLock(activeSelectedElement.id)"
               >
-                {{ activeSelectedElement.isLocked ? '🔒' : '🔓' }}
+                <svg v-if="activeSelectedElement.isLocked" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+                <svg v-else width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                  <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+                </svg>
               </button>
             </div>
 
@@ -1524,16 +1570,16 @@ const {
             <div class="d-flex flex-column gap-1">
               <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Stacking Depth</label>
               <div class="btn-group btn-group-sm w-100">
-                <button class="btn btn-outline-secondary" title="Bring to Front (⇧⌘])" @click="bringToFrontSelected">
+                <button class="btn btn-outline-secondary" :title="`Bring to Front (${shortcuts.bringToFront})`" @click="bringToFrontSelected">
                   ⇪▲ Front
                 </button>
-                <button class="btn btn-outline-secondary" title="Bring Forward (⌘])" @click="bringForward(activeSelectedElement.id)">
+                <button class="btn btn-outline-secondary" :title="`Bring Forward (${shortcuts.bringForward})`" @click="bringForward(activeSelectedElement.id)">
                   ▲ Forward
                 </button>
-                <button class="btn btn-outline-secondary" title="Send Backward (⌘[)" @click="sendBackward(activeSelectedElement.id)">
+                <button class="btn btn-outline-secondary" :title="`Send Backward (${shortcuts.sendBackward})`" @click="sendBackward(activeSelectedElement.id)">
                   ▼ Backward
                 </button>
-                <button class="btn btn-outline-secondary" title="Send to Back (⇧⌘[)" @click="sendToBackSelected">
+                <button class="btn btn-outline-secondary" :title="`Send to Back (${shortcuts.sendToBack})`" @click="sendToBackSelected">
                   ⇪▼ Back
                 </button>
               </div>
@@ -1583,7 +1629,13 @@ const {
           <!-- When no layer is selected -->
           <div v-else class="d-flex flex-column gap-3">
             <div class="card p-3 bg-light border rounded-3 text-center">
-              <div class="fs-1 mb-1">📑</div>
+              <div class="d-inline-flex align-items-center justify-content-center p-3 rounded-circle bg-white border text-secondary mx-auto mb-2" style="width: 52px; height: 52px;">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="12 2 2 7 12 12 22 7 12 2" />
+                  <polyline points="2 17 12 22 22 17" />
+                  <polyline points="2 12 12 17 22 12" />
+                </svg>
+              </div>
               <h6 class="fw-bold text-dark mb-1">Layers Overview</h6>
               <p class="small text-muted mb-2">Total {{ canvasElements.length }} elements on photostrip.</p>
               <div class="d-flex justify-content-center gap-1">
@@ -1595,18 +1647,26 @@ const {
             <div class="d-flex flex-column gap-2">
               <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Bulk Layer Actions</label>
               <button
-                class="btn btn-sm btn-outline-secondary w-100"
+                class="btn btn-sm btn-outline-secondary w-100 d-flex align-items-center justify-content-center gap-2"
                 :disabled="canvasElements.length === 0"
                 @click="lockAllElements"
               >
-                🔒 Lock All Elements
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+                </svg>
+                <span>Lock All Elements</span>
               </button>
               <button
-                class="btn btn-sm btn-outline-secondary w-100"
+                class="btn btn-sm btn-outline-secondary w-100 d-flex align-items-center justify-content-center gap-2"
                 :disabled="canvasElements.length === 0"
                 @click="unlockAllElements"
               >
-                🔓 Unlock All Elements
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+                  <path d="M7 11V7a5 5 0 0 1 9.9-1"/>
+                </svg>
+                <span>Unlock All Elements</span>
               </button>
               <button
                 class="btn btn-sm btn-outline-secondary w-100"
@@ -1617,8 +1677,13 @@ const {
               </button>
             </div>
 
-            <div class="alert alert-light border small text-muted p-2 rounded-3 mb-0">
-              💡 Reorder layers by dragging or using the arrow buttons in the left Layers Stack drawer.
+            <div class="alert alert-light border small text-muted p-2 rounded-3 mb-0 d-flex align-items-start gap-2">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-primary flex-shrink-0 mt-0.5">
+                <circle cx="12" cy="12" r="10" />
+                <line x1="12" y1="16" x2="12" y2="12" />
+                <line x1="12" y1="8" x2="12.01" y2="8" />
+              </svg>
+              <span>Reorder layers by dragging or using the arrow buttons in the left Layers Stack drawer.</span>
             </div>
           </div>
         </template>

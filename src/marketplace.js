@@ -24,7 +24,7 @@ export const PAGE_SIZE = 24
 
 // Where a click on an item goes: this same page, with ?item= added
 export function itemLink(route, type, itemId) {
-  return { path: route.path, query: { ...route.query, item: type + ':' + itemId } }
+  return { path: route ? route.path : '', query: { ...(route ? route.query : {}), item: type + ':' + itemId } }
 }
 
 // ?item=templates:aZ3kQ9 -> { type: 'templates', id: 'aZ3kQ9' } (null if missing or not like that)

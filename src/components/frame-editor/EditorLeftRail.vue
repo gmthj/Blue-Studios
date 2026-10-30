@@ -1,8 +1,8 @@
 <script setup>
-import { useTemplateEditorContext } from "../../composables/useTemplateEditor.js"
+import { useFrameEditorContext } from "../../composables/useFrameEditor.js"
 
 
-const editor = useTemplateEditorContext()
+const editor = useFrameEditorContext()
 const {
   activeTool,
   canvasElements,

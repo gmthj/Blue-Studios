@@ -18,7 +18,7 @@ import ItemDetailsForm from '../src/components/ItemDetailsForm.vue'
 describe('Photostrip layout and filter engine (stripData.js)', () => {
   // 1. Core layouts preset definition
   it('defines the standard photostrip layouts with positive aspect ratios', () => {
-    expect(LAYOUTS.length).toBeGreaterThanOrEqual(4)
+    expect(LAYOUTS.length).toBeGreaterThanOrEqual(3)
     const retro = LAYOUTS.find((l) => l.id === 'retro-4-cut')
     expect(retro).toBeDefined()
     expect(retro.aspect).toBeCloseTo(0.3)

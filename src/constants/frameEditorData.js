@@ -523,15 +523,15 @@ export const BACKGROUND_GRADIENTS = [
 ]
 
 export const BACKGROUND_TEXTURES = [
-  { id: 'kraft', name: 'Kraft Cardboard', desc: 'Warm speckled paper fiber', icon: '📦', baseSize: 160 },
-  { id: 'watercolor', name: 'Watercolor Tooth', desc: 'Cold press textured tooth', icon: '🎨', baseSize: 100 },
-  { id: 'noise', name: 'Film Grain', desc: 'Photobooth film grain overlay', icon: '🎞️', baseSize: 120 }
+  { id: 'kraft', name: 'Kraft Cardboard', desc: 'Warm speckled paper fiber', baseSize: 160 },
+  { id: 'watercolor', name: 'Watercolor Tooth', desc: 'Cold press textured tooth', baseSize: 100 },
+  { id: 'noise', name: 'Film Grain', desc: 'Photobooth film grain overlay', baseSize: 120 }
 ]
 
 export const BACKGROUND_PATTERNS = [
-  { id: 'polka', name: 'Polka Dots', desc: 'Aesthetic dotted pattern', icon: '⚪', baseSize: 18 },
-  { id: 'grid', name: 'Notebook Grid', desc: 'Precise graph paper ruling', icon: '📐', baseSize: 20 },
-  { id: 'checkerboard', name: 'Y2K Checkerboard', desc: 'Trendy 2-tone checkerboard', icon: '🏁', baseSize: 24 }
+  { id: 'polka', name: 'Polka Dots', desc: 'Aesthetic dotted pattern', baseSize: 18 },
+  { id: 'grid', name: 'Notebook Grid', desc: 'Precise graph paper ruling', baseSize: 20 },
+  { id: 'checkerboard', name: 'Y2K Checkerboard', desc: 'Trendy 2-tone checkerboard', baseSize: 24 }
 ]
 
 export const KRAFT_TEXTURE = `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cfilter id='f'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='matrix' values='0 0 0 0 0.55  0 0 0 0 0.45  0 0 0 0 0.35  0 0 0 0 0.25 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23f)' opacity='0.7'/%3E%3Ccircle cx='20' cy='40' r='1.2' fill='%236B4F3A' opacity='0.45'/%3E%3Ccircle cx='80' cy='120' r='1.4' fill='%236B4F3A' opacity='0.35'/%3E%3Ccircle cx='140' cy='60' r='1' fill='%236B4F3A' opacity='0.5'/%3E%3Ccircle cx='50' cy='150' r='1.6' fill='%234A3525' opacity='0.4'/%3E%3C/svg%3E")`

@@ -34,8 +34,8 @@ const loading = ref(true)
 const errorMessage = ref('')
 const busyId = ref('') // the item being changed right now (its buttons are disabled)
 
-// The template editor and sticker maker are teammates' pages; only link to them once they are part of the app
-const hasTemplateEditor = router.resolve('/template-editor').matched.length > 0
+// The frame editor and sticker maker are teammates' pages; only link to them once they are part of the app
+const hasFrameEditor = router.resolve('/frame-editor').matched.length > 0
 const hasStickerMaker = router.resolve('/sticker-maker').matched.length > 0
 
 const me = computed(() => profileOf(user.value.uid))
@@ -182,10 +182,10 @@ function formatDate(time) {
             <span class="shortcut-icon"><AppIcon name="layout" :size="20" /></span>
             <h2 class="shortcut-title">Make a frame</h2>
             <p class="shortcut-text flex-grow-1">Build a strip template with drag and drop slots.</p>
-            <router-link v-if="hasTemplateEditor" to="/template-editor" class="btn btn-primary">
+            <router-link v-if="hasFrameEditor" to="/frame-editor" class="btn btn-primary">
               <AppIcon name="plus" :size="16" /> New frame
             </router-link>
-            <button v-else class="btn btn-primary" disabled>Template editor coming soon</button>
+            <button v-else class="btn btn-primary" disabled>Frame editor coming soon</button>
           </div>
         </div>
       </div>
@@ -286,7 +286,7 @@ function formatDate(time) {
                       <div class="item-actions">
                         <router-link :to="templateRoomLink(template.id)" class="btn btn-sm btn-link px-0 fw-semibold">Use</router-link>
                         <button class="btn btn-sm btn-link px-0" @click="editingId = template.id">Edit</button>
-                        <router-link :to="'/template-editor?template=' + template.id" class="btn btn-sm btn-link px-0">Open in editor</router-link>
+                        <router-link :to="'/frame-editor?template=' + template.id" class="btn btn-sm btn-link px-0">Open in editor</router-link>
                         <router-link v-if="isListed(template)" :to="itemLink(route, 'templates', template.id)" class="btn btn-sm btn-link px-0">View</router-link>
                         <button class="btn btn-sm btn-link text-danger px-0" :disabled="busyId === template.id" @click="remove(template)">Delete</button>
                       </div>

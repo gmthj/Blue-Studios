@@ -5,7 +5,7 @@ import RoomLayout from './views/RoomLayout.vue'
 import RoomView from './views/RoomView.vue'
 import StripView from './views/StripView.vue'
 import MusicView from './views/MusicView.vue'
-import TemplateEditorView from './views/TemplateEditorView.vue'
+import FrameEditorView from './views/FrameEditorView.vue'
 import DecorateView from './views/DecorateView.vue'
 import VideoView from './views/VideoView.vue'
 import ExportView from './views/ExportView.vue'
@@ -19,7 +19,7 @@ import StickerMakerView from './views/StickerMakerView.vue'
 const routes = [
   { path: '/', component: HomeView },
   { path: '/sticker-maker', component: StickerMakerView },
-  { path: '/template-editor', component: TemplateEditorView },
+  { path: '/frame-editor', name: 'frame-editor', component: FrameEditorView, meta: { requiresAccount: true } },
   { path: '/login', component: LoginView }, // /login?mode=signup shows the sign up tab
   // meta.requiresAccount: guests are sent to the log in page first (see beforeEach below)
   { path: '/studio', component: StudioView, meta: { requiresAccount: true } },

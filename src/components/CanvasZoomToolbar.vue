@@ -37,6 +37,10 @@ const emit = defineEmits([
 ])
 
 const isMenuOpen = ref(false)
+const isMac = typeof navigator !== 'undefined' && (
+  /Mac|iPod|iPhone|iPad/.test(navigator.userAgent || navigator.platform || '') ||
+  (navigator.userAgentData?.platform === 'macOS')
+)
 
 function onSelectPreset(val) {
   emit('setZoom', val)
@@ -120,7 +124,7 @@ function onClearGuides() {
 
         <button class="menu-item" @click="onFitScreen">
           <span class="item-name">Fit to Screen</span>
-          <span class="item-shortcut">⌘0</span>
+          <span class="item-shortcut">{{ isMac ? '⌘0' : 'Ctrl+0' }}</span>
         </button>
 
         <button class="menu-item" @click="onFillScreen">
@@ -130,7 +134,7 @@ function onClearGuides() {
 
         <button class="menu-item" @click="onActualSize">
           <span class="item-name">100% Actual Size</span>
-          <span class="item-shortcut">⌘1</span>
+          <span class="item-shortcut">{{ isMac ? '⌘1' : 'Ctrl+1' }}</span>
         </button>
 
         <div class="menu-divider"></div>

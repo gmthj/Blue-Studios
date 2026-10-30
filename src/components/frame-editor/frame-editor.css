@@ -1,12 +1,440 @@
 /* ============================================================
-   DESIGN ENGINEERING: MOTION TOKENS & TRANSITIONS
+   DESIGN ENGINEERING: MOTION TOKENS & BLUE STUDIOS TOKENS
    ============================================================ */
 :root,
-.editor-container {
+.editor-container,
+.canva-editor,
+.canva-editor.app-page {
+  --brand: #2F5BEA;
+  --brand-dark: #2449C4;
+  --brand-tint: #E8EEFF;
+  --ink: #14172B;
+  --muted: #6B7080;
+  --line: #E3E6EE;
+  --soft: #F4F6FA;
+  --danger: #E5484D;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+
+  --bs-primary: var(--brand);
+  --bs-primary-rgb: 47, 91, 234;
+  --bs-link-color: var(--brand);
+  --bs-link-color-rgb: 47, 91, 234;
+  --bs-link-hover-color: var(--brand-dark);
+  --bs-link-hover-color-rgb: 36, 73, 196;
+  --bs-secondary-color: var(--muted);
+  --bs-border-color: var(--line);
+  --bs-body-color: var(--ink);
+
+  font-family: 'Plus Jakarta Sans', var(--bs-body-font-family);
+  color: var(--ink);
+}
+
+.canva-editor.app-page {
+  padding-bottom: 0 !important;
+  background-color: #f8fafc;
+}
+
+/* Tabular numbers for counters, zoom %, and slider values */
+.canva-editor .badge,
+.canva-editor .zoom-btn,
+.canva-editor .section-count,
+.canva-editor .font-size-btn,
+.canva-editor [data-tabular-num],
+.canva-editor .tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================================================
+   SLIDERS (input[type="range"] & .form-range)
+   ============================================================ */
+.canva-editor input[type="range"],
+.canva-editor .form-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  background: var(--line);
+  border-radius: 999px;
+  outline: none;
+  border: none;
+  padding: 0;
+  margin: 6px 0;
+  cursor: pointer;
+  transition: background-color 150ms ease;
+}
+
+.canva-editor input[type="range"]:hover,
+.canva-editor .form-range:hover {
+  background: #D3D7E2;
+}
+
+.canva-editor input[type="range"]:focus-visible,
+.canva-editor .form-range:focus-visible {
+  outline: none;
+}
+
+/* Chrome, Safari, Edge, Opera Track */
+.canva-editor input[type="range"]::-webkit-slider-runnable-track,
+.canva-editor .form-range::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 6px;
+  cursor: pointer;
+  background: var(--line);
+  border-radius: 999px;
+  border: none;
+  transition: background-color 150ms ease;
+}
+
+.canva-editor input[type="range"]:hover::-webkit-slider-runnable-track,
+.canva-editor .form-range:hover::-webkit-slider-runnable-track {
+  background: #D3D7E2;
+}
+
+/* Chrome, Safari, Edge, Opera Thumb */
+.canva-editor input[type="range"]::-webkit-slider-thumb,
+.canva-editor .form-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 18px;
+  width: 18px;
+  border-radius: 999px;
+  background: var(--brand);
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 3px rgba(20, 23, 43, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  margin-top: -6px; /* (track 6px - thumb 18px) / 2 */
+  transition: transform 140ms var(--ease-out), background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.canva-editor input[type="range"]::-webkit-slider-thumb:hover,
+.canva-editor .form-range::-webkit-slider-thumb:hover {
+  background: var(--brand-dark);
+  transform: scale(1.12);
+  box-shadow: 0 2px 6px rgba(47, 91, 234, 0.35);
+}
+
+.canva-editor input[type="range"]::-webkit-slider-thumb:active,
+.canva-editor .form-range::-webkit-slider-thumb:active {
+  background: var(--brand-dark);
+  transform: scale(1.22);
+  box-shadow: 0 0 0 4px rgba(47, 91, 234, 0.22);
+}
+
+/* Firefox Track */
+.canva-editor input[type="range"]::-moz-range-track,
+.canva-editor .form-range::-moz-range-track {
+  width: 100%;
+  height: 6px;
+  cursor: pointer;
+  background: var(--line);
+  border-radius: 999px;
+  border: none;
+  transition: background-color 150ms ease;
+}
+
+.canva-editor input[type="range"]:hover::-moz-range-track,
+.canva-editor .form-range:hover::-moz-range-track {
+  background: #D3D7E2;
+}
+
+/* Firefox Thumb */
+.canva-editor input[type="range"]::-moz-range-thumb,
+.canva-editor .form-range::-moz-range-thumb {
+  height: 18px;
+  width: 18px;
+  border-radius: 999px;
+  background: var(--brand);
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 3px rgba(20, 23, 43, 0.18), 0 0 0 1px rgba(0, 0, 0, 0.04);
+  cursor: pointer;
+  transition: transform 140ms var(--ease-out), background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.canva-editor input[type="range"]::-moz-range-thumb:hover,
+.canva-editor .form-range::-moz-range-thumb:hover {
+  background: var(--brand-dark);
+  transform: scale(1.12);
+  box-shadow: 0 2px 6px rgba(47, 91, 234, 0.35);
+}
+
+.canva-editor input[type="range"]::-moz-range-thumb:active,
+.canva-editor .form-range::-moz-range-thumb:active {
+  background: var(--brand-dark);
+  transform: scale(1.22);
+  box-shadow: 0 0 0 4px rgba(47, 91, 234, 0.22);
+}
+
+/* Firefox Progress Fill */
+.canva-editor input[type="range"]::-moz-range-progress,
+.canva-editor .form-range::-moz-range-progress {
+  background-color: var(--brand);
+  border-radius: 999px;
+  height: 6px;
+}
+
+/* ============================================================
+   BUTTONS (Blue Studios Design Standards)
+   ============================================================ */
+.canva-editor .btn {
+  --bs-btn-font-weight: 600;
+  --bs-btn-border-radius: 10px;
+  --bs-btn-focus-box-shadow: 0 0 0 4px rgba(47, 91, 234, 0.2);
+  font-family: 'Plus Jakarta Sans', var(--bs-body-font-family);
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease,
+    transform 160ms var(--ease-out);
+}
+
+.canva-editor .btn-sm {
+  --bs-btn-border-radius: 8px;
+}
+
+.canva-editor .btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.canva-editor .btn-primary {
+  --bs-btn-bg: var(--brand);
+  --bs-btn-border-color: var(--brand);
+  --bs-btn-hover-bg: var(--brand-dark);
+  --bs-btn-hover-border-color: var(--brand-dark);
+  --bs-btn-active-bg: var(--brand-dark);
+  --bs-btn-active-border-color: var(--brand-dark);
+  --bs-btn-disabled-bg: var(--brand);
+  --bs-btn-disabled-border-color: var(--brand);
+}
+
+.canva-editor .btn-outline-secondary {
+  --bs-btn-color: var(--ink);
+  --bs-btn-bg: #ffffff;
+  --bs-btn-border-color: var(--line);
+  --bs-btn-hover-color: var(--ink);
+  --bs-btn-hover-bg: var(--soft);
+  --bs-btn-hover-border-color: #D3D7E2;
+  --bs-btn-active-color: var(--ink);
+  --bs-btn-active-bg: #ECEFF5;
+  --bs-btn-active-border-color: #D3D7E2;
+  --bs-btn-disabled-color: var(--muted);
+  --bs-btn-disabled-border-color: var(--line);
+}
+
+/* Tool icon buttons (undo, redo, zoom, bold, italic, text-align, etc.) */
+.canva-editor .tool-btn,
+.canva-editor .btn-icon,
+.canva-editor .zoom-btn {
+  border-radius: 8px;
+  font-weight: 600;
+  transition: background-color 140ms ease, color 140ms ease, transform 140ms var(--ease-out);
+}
+
+.canva-editor .tool-btn:hover,
+.canva-editor .btn-icon:hover,
+.canva-editor .zoom-btn:hover {
+  background-color: var(--soft);
+}
+
+.canva-editor .tool-btn:active,
+.canva-editor .btn-icon:active,
+.canva-editor .zoom-btn:active {
+  transform: scale(0.94);
+  background-color: #ECEFF5;
+}
+
+/* ============================================================
+   STEPPER CONTROLS (ZOOM & FONT SIZE CORNER RADIUS REPAIR)
+   ============================================================ */
+.zoom-stepper-group,
+.canva-editor .zoom-stepper-group {
+  display: inline-flex !important;
+  align-items: stretch !important;
+  border-radius: 8px !important;
+}
+
+.zoom-stepper-group .zoom-btn-minus,
+.canva-editor .zoom-stepper-group .zoom-btn-minus,
+.zoom-stepper-group > .btn:first-child,
+.canva-editor .zoom-stepper-group > .btn:first-child {
+  border-top-left-radius: 8px !important;
+  border-bottom-left-radius: 8px !important;
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  border-right: 1px solid var(--line) !important;
+}
+
+.zoom-stepper-group .zoom-dropdown-wrapper,
+.canva-editor .zoom-stepper-group .zoom-dropdown-wrapper,
+.zoom-stepper-group .zoom-dropdown-wrapper > .btn,
+.canva-editor .zoom-stepper-group .zoom-dropdown-wrapper > .btn,
+.zoom-stepper-group .zoom-readout-btn,
+.canva-editor .zoom-stepper-group .zoom-readout-btn {
+  border-radius: 0 !important;
+  border-left: 0 !important;
+  border-right: 0 !important;
+  font-variant-numeric: tabular-nums !important;
+  font-weight: 600 !important;
+}
+
+.zoom-stepper-group .zoom-btn-plus,
+.canva-editor .zoom-stepper-group .zoom-btn-plus,
+.zoom-stepper-group > .btn:last-child,
+.canva-editor .zoom-stepper-group > .btn:last-child {
+  border-top-right-radius: 8px !important;
+  border-bottom-right-radius: 8px !important;
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+  border-left: 1px solid var(--line) !important;
+}
+
+/* Font Size Stepper */
+.font-size-stepper-group,
+.canva-editor .font-size-stepper-group {
+  display: inline-flex !important;
+  align-items: stretch !important;
+  border-radius: 8px !important;
+}
+
+.font-size-stepper-group .font-size-btn-minus,
+.canva-editor .font-size-stepper-group .font-size-btn-minus,
+.font-size-stepper-group > .btn:first-child,
+.canva-editor .font-size-stepper-group > .btn:first-child {
+  border-top-left-radius: 8px !important;
+  border-bottom-left-radius: 8px !important;
+  border-top-right-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+}
+
+.font-size-stepper-group input.form-control,
+.canva-editor .font-size-stepper-group input.form-control {
+  border-radius: 0 !important;
+  border-left: 0 !important;
+  border-right: 0 !important;
+  font-variant-numeric: tabular-nums !important;
+}
+
+.font-size-stepper-group .font-size-btn-plus,
+.canva-editor .font-size-stepper-group .font-size-btn-plus,
+.font-size-stepper-group > .btn:last-child,
+.canva-editor .font-size-stepper-group > .btn:last-child {
+  border-top-right-radius: 8px !important;
+  border-bottom-right-radius: 8px !important;
+  border-top-left-radius: 0 !important;
+  border-bottom-left-radius: 0 !important;
+}
+
+/* Active tool state (e.g. bold is active, or left rail active tab) */
+.canva-editor .tool-btn.active,
+.canva-editor .btn-icon.active {
+  background-color: var(--brand-tint) !important;
+  color: var(--brand) !important;
+  border-color: var(--brand-tint) !important;
+}
+
+/* Inputs and Selects */
+.canva-editor .form-control,
+.canva-editor .form-select {
+  border-color: var(--line);
+  border-radius: 10px;
+  color: var(--ink);
+  font-family: 'Plus Jakarta Sans', var(--bs-body-font-family);
+  transition: border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.canva-editor .form-control-sm,
+.canva-editor .form-select-sm {
+  border-radius: 8px;
+}
+
+.canva-editor .form-control:focus,
+.canva-editor .form-select:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px rgba(47, 91, 234, 0.15);
+}
+
+/* Checkbox & Radio */
+.canva-editor .form-check-input {
+  border-color: var(--line);
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
+}
+
+.canva-editor .form-check-input:checked {
+  background-color: var(--brand);
+  border-color: var(--brand);
+}
+
+.canva-editor .form-check-input:focus {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px rgba(47, 91, 234, 0.15);
+}
+
+/* Popover Cards and Dropdowns */
+.canva-editor .card,
+.canva-editor .popover-card {
+  --bs-card-border-color: var(--line);
+  --bs-card-border-radius: 16px;
+  --bs-card-inner-border-radius: 15px;
+  border: 1px solid var(--line);
+  box-shadow: 0 12px 32px rgba(20, 23, 43, 0.08);
+}
+
+/* ============================================================
+   GLOBAL INTERACTIVE CURSOR POINTER DEFINITIONS
+   ============================================================ */
+button:not(:disabled),
+.btn:not(:disabled),
+[role="button"]:not([aria-disabled="true"]),
+.btn-close,
+.cursor-pointer,
+input[type="button"]:not(:disabled),
+input[type="submit"]:not(:disabled),
+input[type="reset"]:not(:disabled),
+input[type="checkbox"]:not(:disabled),
+input[type="radio"]:not(:disabled),
+input[type="color"]:not(:disabled),
+.form-check-input:not(:disabled),
+.form-check-label,
+label[for],
+.dropdown-item,
+.nav-link,
+.badge.cursor-pointer,
+.category-pill-btn,
+.tag-filter-btn,
+.template-preset-card,
+.template-card,
+.template-drawer-card,
+.element-item-hover,
+.text-preset-card,
+.upload-card,
+.upload-dropzone,
+.color-bubble,
+.swatch-btn,
+.left-rail .btn,
+.left-rail button,
+.zoom-btn,
+.font-item,
+.font-picker-item,
+.layer-item,
+.list-group-item.cursor-pointer,
+.my-templates-dialog button:not(:disabled),
+.my-templates-dialog .btn:not(:disabled),
+.my-templates-dialog .template-card,
+.save-modal-backdrop button:not(:disabled),
+.save-modal-backdrop .btn:not(:disabled),
+.switch-prompt-backdrop button:not(:disabled),
+.switch-prompt-backdrop .btn:not(:disabled) {
+  cursor: pointer !important;
+}
+
+/* Ensure child elements inside clickable cards and buttons inherit pointer cursor */
+.template-preset-card *,
+.template-card *,
+.template-drawer-card *,
+.element-item-hover *,
+.upload-dropzone *,
+.category-pill-btn * {
+  cursor: pointer;
 }
 
 /* Universal button active tactile feedback (sweet spot scale) */
@@ -141,11 +569,17 @@
   gap: 16px;
 }
 
+.cursor-pointer {
+  cursor: pointer !important;
+}
+
 .template-preset-card {
+  cursor: pointer;
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
 }
 
 .template-preset-card:hover {
+  cursor: pointer;
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
   border-color: #3b82f6 !important;
@@ -371,7 +805,7 @@
   pointer-events: none !important;
 }
 
-/* Empty Cutout Slots - Solid Opaque Photo Windows positioned by percentage */
+/* Empty Cutout Slots - Translucent Photo Windows positioned by percentage */
 .cutout-slot {
   position: absolute;
   box-sizing: border-box;
@@ -379,12 +813,14 @@
   align-items: center;
   justify-content: center;
   cursor: default;
-  background: #ffffff;
-  border: 1.5px dashed #94a3b8;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+  border: 1.5px dashed rgba(148, 163, 184, 0.85);
   pointer-events: none !important;
   transition: opacity 0.25s ease, background 0.25s ease, border-color 0.25s ease;
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 /* Toggled OFF: Cutouts disappear completely while preserving the full strip height & layout */
@@ -1542,6 +1978,161 @@
   display: block;
   pointer-events: none;
   border-radius: inherit;
+}
+
+/* Template Name Editable Title Field in Subheader */
+.template-name-group {
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  border-radius: 6px;
+  transition: all 0.15s ease-in-out;
+}
+
+.template-name-group .input-group-text {
+  background-color: #f8fafc !important;
+  border-color: #cbd5e1 !important;
+  color: #64748b;
+  border-top-left-radius: 6px !important;
+  border-bottom-left-radius: 6px !important;
+  transition: all 0.15s ease-in-out;
+}
+
+.template-name-group .template-name-field {
+  background-color: #f8fafc;
+  border-color: #cbd5e1;
+  color: #0f172a;
+  font-weight: 600;
+  border-top-right-radius: 6px !important;
+  border-bottom-right-radius: 6px !important;
+  transition: all 0.15s ease-in-out;
+}
+
+.template-name-group:hover .input-group-text,
+.template-name-group:hover .template-name-field {
+  background-color: #ffffff !important;
+  border-color: #94a3b8 !important;
+}
+
+.template-name-group:focus-within {
+  box-shadow: 0 0 0 3px rgba(47, 91, 234, 0.15);
+  border-radius: 6px;
+}
+
+.template-name-group:focus-within .input-group-text {
+  background-color: #ffffff !important;
+  border-color: #2f5bea !important;
+  color: #2f5bea !important;
+}
+
+.template-name-group:focus-within .template-name-field {
+  background-color: #ffffff;
+  border-color: #2f5bea !important;
+  color: #0f172a;
+  outline: none;
+  box-shadow: none;
+}
+
+/* ============================================================
+   WORKSPACE LOADING OVERLAY (PREVENTS STOCK DESIGN FLASH)
+   ============================================================ */
+.workspace-loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1060;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f8fafc;
+  user-select: none;
+}
+
+.workspace-loading-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.1), 0 0 0 1px rgba(0, 0, 0, 0.02);
+  padding: 2.25rem 2.5rem;
+  max-width: 420px;
+  width: 90vw;
+  text-align: center;
+  animation: workspaceCardPop 0.25s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes workspaceCardPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.workspace-loading-spinner-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.25rem;
+}
+
+.workspace-loading-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 0.35rem;
+  letter-spacing: -0.015em;
+}
+
+.workspace-loading-subtitle {
+  font-size: 0.85rem;
+  color: #64748b;
+  margin-bottom: 1.25rem;
+  line-height: 1.45;
+}
+
+.workspace-loading-progress-bar {
+  width: 100%;
+  height: 4px;
+  background: #e2e8f0;
+  border-radius: 9999px;
+  overflow: hidden;
+  position: relative;
+}
+
+.workspace-loading-progress-indeterminate {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  background: linear-gradient(90deg, #2563eb, #3b82f6);
+  border-radius: 9999px;
+  animation: workspaceLoadingBar 1.2s infinite cubic-bezier(0.65, 0, 0.35, 1);
+}
+
+@keyframes workspaceLoadingBar {
+  0% {
+    left: -40%;
+    width: 30%;
+  }
+  50% {
+    left: 30%;
+    width: 50%;
+  }
+  100% {
+    left: 100%;
+    width: 30%;
+  }
+}
+
+.workspace-loader-fade-enter-active,
+.workspace-loader-fade-leave-active {
+  transition: opacity 0.25s ease-out;
+}
+
+.workspace-loader-fade-enter-from,
+.workspace-loader-fade-leave-to {
+  opacity: 0;
 }
 
 /* Accessibility: Honor reduced motion preference */

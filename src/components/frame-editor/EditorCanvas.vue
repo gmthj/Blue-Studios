@@ -1,8 +1,8 @@
 <script setup>
-import { useTemplateEditorContext } from "../../composables/useTemplateEditor.js"
+import { useFrameEditorContext } from "../../composables/useFrameEditor.js"
 import CanvasRulerOverlay from "../CanvasRulerOverlay.vue"
 
-const editor = useTemplateEditorContext()
+const editor = useFrameEditorContext()
 const {
   activeDistanceBadges,
   activeGuides,
@@ -79,6 +79,7 @@ const {
   sendToBack,
   sendToBackSelected,
   setTextRef,
+  shortcuts,
   showCutouts,
   showRulers,
   slotShape,
@@ -429,7 +430,7 @@ const {
                     <button
                       v-if="el.groupId"
                       class="floating-tool-btn group-btn"
-                      title="Ungroup Element (⇧⌘G)"
+                      :title="`Ungroup Element (${shortcuts.ungroup})`"
                       @click.stop="ungroupSelectedElements"
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
@@ -465,22 +466,22 @@ const {
                         <button class="popover-item" @click="bringForward(el.id)">
                           <span class="item-icon">▲</span>
                           <span class="item-label">Bring Forward</span>
-                          <span class="item-shortcut">⌘]</span>
+                          <span class="item-shortcut">{{ shortcuts.bringForward }}</span>
                         </button>
                         <button class="popover-item" @click="bringToFront(el.id)">
                           <span class="item-icon">⇪▲</span>
                           <span class="item-label">Bring to Front</span>
-                          <span class="item-shortcut">⇧⌘]</span>
+                          <span class="item-shortcut">{{ shortcuts.bringToFront }}</span>
                         </button>
                         <button class="popover-item" @click="sendBackward(el.id)">
                           <span class="item-icon">▼</span>
                           <span class="item-label">Send Backward</span>
-                          <span class="item-shortcut">⌘[</span>
+                          <span class="item-shortcut">{{ shortcuts.sendBackward }}</span>
                         </button>
                         <button class="popover-item" @click="sendToBack(el.id)">
                           <span class="item-icon">⇪▼</span>
                           <span class="item-label">Send to Back</span>
-                          <span class="item-shortcut">⇧⌘[</span>
+                          <span class="item-shortcut">{{ shortcuts.sendToBack }}</span>
                         </button>
                       </div>
                     </div>
@@ -488,7 +489,7 @@ const {
                     <div class="floating-divider"></div>
 
                     <!-- Duplicate Button -->
-                    <button class="floating-tool-btn icon-only" title="Duplicate (⌘D)" @click.stop="duplicateElement(el.id)">
+                    <button class="floating-tool-btn icon-only" :title="`Duplicate (${shortcuts.duplicate})`" @click.stop="duplicateElement(el.id)">
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                         <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
@@ -587,7 +588,7 @@ const {
                 <button
                   v-if="canUngroupSelected"
                   class="floating-tool-btn group-btn"
-                  title="Ungroup Elements (⇧⌘G)"
+                  :title="`Ungroup Elements (${shortcuts.ungroup})`"
                   @click.stop="ungroupSelectedElements"
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
@@ -595,12 +596,12 @@ const {
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                   </svg>
                   <span>Ungroup</span>
-                  <span class="shortcut-tag">⇧⌘G</span>
+                  <span class="shortcut-tag">{{ shortcuts.ungroup }}</span>
                 </button>
                 <button
                   v-else
                   class="floating-tool-btn group-btn"
-                  title="Group Elements (⌘G)"
+                  :title="`Group Elements (${shortcuts.group})`"
                   @click.stop="groupSelectedElements"
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
@@ -610,7 +611,7 @@ const {
                     <rect x="3" y="14" width="7" height="7" />
                   </svg>
                   <span>Group</span>
-                  <span class="shortcut-tag">⌘G</span>
+                  <span class="shortcut-tag">{{ shortcuts.group }}</span>
                 </button>
 
                 <div class="floating-divider"></div>
@@ -640,12 +641,12 @@ const {
                     <button class="popover-item" @click="bringToFrontSelected">
                       <span class="item-icon">⇪▲</span>
                       <span class="item-label">Bring to Front</span>
-                      <span class="item-shortcut">⇧⌘]</span>
+                      <span class="item-shortcut">{{ shortcuts.bringToFront }}</span>
                     </button>
                     <button class="popover-item" @click="sendToBackSelected">
                       <span class="item-icon">⇪▼</span>
                       <span class="item-label">Send to Back</span>
-                      <span class="item-shortcut">⇧⌘[</span>
+                      <span class="item-shortcut">{{ shortcuts.sendToBack }}</span>
                     </button>
                   </div>
                 </div>
@@ -653,7 +654,7 @@ const {
                 <div class="floating-divider"></div>
 
                 <!-- Duplicate Multi-Selection -->
-                <button class="floating-tool-btn icon-only" title="Duplicate (⌘D)" @click.stop="duplicateSelectedElements">
+                <button class="floating-tool-btn icon-only" :title="`Duplicate (${shortcuts.duplicate})`" @click.stop="duplicateSelectedElements">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
