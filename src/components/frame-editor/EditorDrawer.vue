@@ -126,11 +126,7 @@ const {
 
         <!-- DRAWER CONTENT: TEMPLATES -->
         <div v-if="activeTool === 'templates'" class="drawer-content p-3 d-flex flex-column gap-3 overflow-y-auto flex-grow-1">
-
           <div>
-            <h6 class="fw-bold text-dark mb-1">Starter Layout Presets</h6>
-            <p class="small text-muted mb-3">Click to load fresh layout, frame, and styles.</p>
-
             <div class="row row-cols-2 g-2">
               <div
                 v-for="tpl in templatePresets"
@@ -296,11 +292,6 @@ const {
 
         <!-- DRAWER CONTENT: UPLOADS -->
         <div v-if="activeTool === 'uploads'" class="drawer-content uploads-drawer-content p-3 d-flex flex-column gap-3 overflow-y-auto flex-grow-1">
-          <div>
-            <h6 class="fw-bold text-dark mb-1">Upload Media</h6>
-            <p class="small text-muted mb-2">Add custom images, photos or SVGs to your photostrip.</p>
-          </div>
-
           <!-- Hidden File Input -->
           <input
             ref="uploadInputRef"
@@ -391,11 +382,6 @@ const {
 
         <!-- DRAWER CONTENT: TEXT -->
         <div v-if="activeTool === 'text'" class="drawer-content p-3 d-flex flex-column gap-3 overflow-y-auto flex-grow-1">
-          <div>
-            <h6 class="fw-bold text-dark mb-1">Add text to strip</h6>
-            <p class="small text-muted mb-2">Click to place typography anywhere on your frame.</p>
-          </div>
-
           <div class="d-flex flex-column gap-2">
             <button
               v-for="preset in textPresets"
@@ -427,11 +413,7 @@ const {
 
         <!-- DRAWER CONTENT: BACKGROUND (Colors, Gradients, Textures & Patterns) -->
         <div v-if="activeTool === 'background'" class="drawer-content p-3 d-flex flex-column gap-3 overflow-y-auto flex-grow-1">
-          <div class="d-flex align-items-center justify-content-between">
-            <div>
-              <h6 class="fw-bold text-dark mb-0">Strip Background</h6>
-              <p class="small text-muted mb-0">Solid colors, gradients, and paper grains.</p>
-            </div>
+          <div class="d-flex align-items-center justify-content-end mb-1">
             <button
               type="button"
               class="btn btn-sm btn-outline-secondary py-0 px-2 flex-shrink-0"
@@ -439,7 +421,7 @@ const {
               title="Reset to clean white background"
               @click="resetFrameBackground"
             >
-              Reset
+              Reset to White
             </button>
           </div>
 
@@ -658,11 +640,8 @@ const {
 
         <!-- DRAWER CONTENT: LAYERS -->
         <div v-if="activeTool === 'layers'" class="drawer-content layers-drawer-content p-3 d-flex flex-column gap-3 overflow-y-auto flex-grow-1">
-          <div class="d-flex align-items-center justify-content-between mb-1">
-            <div>
-              <h6 class="fw-bold text-dark mb-0">Layers Stack</h6>
-              <p class="small text-muted mb-0">Visual depth from top to bottom.</p>
-            </div>
+          <div v-if="canvasElements.length > 0" class="d-flex align-items-center justify-content-between mb-1">
+            <span class="small text-muted fw-medium">Stack Order (Top to Bottom)</span>
             <span class="badge bg-primary-subtle text-primary rounded-pill">{{ canvasElements.length }} items</span>
           </div>
 
