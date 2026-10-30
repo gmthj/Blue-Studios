@@ -1,5 +1,5 @@
 // filterCss turns a slot's saved filter and sliders into a CSS filter text (the same as on screen)
-import { filterCss, cropOf, cropSource } from './stripData.js'
+import { filterCss, cropOf, cropSource, isTrustedStickerSrc } from './stripData.js'
 // getClipUrl gives a local address of a clip's video. CLIP_SECONDS is how long a raw clip is.
 import { getClipUrl, CLIP_SECONDS } from './clips.js'
 
@@ -18,9 +18,6 @@ import { getClipUrl, CLIP_SECONDS } from './clips.js'
 
 // How many seconds before a clip's turn it is jumped to its start (so it is ready the moment it plays)
 const PREPARE_AHEAD = 0.4
-
-// Sticker images can be set by anyone in the room, so only these places are allowed (see Germaine's guide)
-const TRUSTED_STICKER_SOURCES = ['https://firebasestorage.googleapis.com/', 'data:image/', 'https://media.giphy.com/']
 
 // Turn an image address into an <img> element we can draw on a canvas.
 // crossOrigin is needed for images from other sites (e.g. Storage), or the canvas cannot be recorded.
@@ -146,7 +143,7 @@ export async function createScene({ layout, frameStyle, photosById, slotPhotos, 
   // Stickers, back to front. One that cannot be loaded (not allowed, or the other site refuses) is left out.
   const stickerList = []
   for (const sticker of [...stickers].filter((s) => s.visible).sort((a, b) => a.z - b.z)) {
-    if (!TRUSTED_STICKER_SOURCES.some((prefix) => sticker.src.startsWith(prefix))) continue
+    if (!isTrustedStickerSrc(sticker.src)) continue
     try {
       stickerList.push({ sticker: sticker, img: await loadImage(sticker.src) })
     } catch (error) {
