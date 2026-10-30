@@ -179,19 +179,19 @@ watch(activeTextElement, (newEl) => {
         <!-- DRAWER CONTENT: TEMPLATES -->
         <div v-if="activeTool === 'templates'" class="drawer-content p-3 d-flex flex-column gap-3 overflow-y-auto flex-grow-1">
           <!-- Segmented Sub-Tab Switcher: Presets vs Frame Settings -->
-          <div class="btn-group btn-group-sm w-100 p-1 bg-light border rounded-3 mb-1" role="group">
+          <div class="segmented-pills mb-1">
             <button
               type="button"
-              class="btn btn-sm py-1 px-2 fw-semibold"
-              :class="templatesSubTab === 'presets' ? 'btn-white bg-white text-dark shadow-sm' : 'btn-light text-secondary border-0'"
+              class="segmented-pill-btn"
+              :class="{ 'is-active': templatesSubTab === 'presets' }"
               @click="templatesSubTab = 'presets'"
             >
               Presets
             </button>
             <button
               type="button"
-              class="btn btn-sm py-1 px-2 fw-semibold"
-              :class="templatesSubTab === 'settings' ? 'btn-white bg-white text-dark shadow-sm' : 'btn-light text-secondary border-0'"
+              class="segmented-pill-btn"
+              :class="{ 'is-active': templatesSubTab === 'settings' }"
               @click="templatesSubTab = 'settings'"
             >
               Frame Settings
@@ -679,19 +679,19 @@ watch(activeTextElement, (newEl) => {
         <!-- DRAWER CONTENT: TEXT -->
         <div v-if="activeTool === 'text'" class="drawer-content p-3 d-flex flex-column gap-3 overflow-y-auto flex-grow-1">
           <!-- Text Sub-Tabs when text element is active -->
-          <div v-if="activeTextElement" class="btn-group btn-group-sm w-100 p-1 bg-light border rounded-3 mb-1" role="group">
+          <div v-if="activeTextElement" class="segmented-pills mb-1">
             <button
               type="button"
-              class="btn btn-sm py-1 px-2 fw-semibold"
-              :class="textSubTab === 'add' ? 'btn-white bg-white text-dark shadow-sm' : 'btn-light text-secondary border-0'"
+              class="segmented-pill-btn"
+              :class="{ 'is-active': textSubTab === 'add' }"
               @click="textSubTab = 'add'"
             >
               Add Text
             </button>
             <button
               type="button"
-              class="btn btn-sm py-1 px-2 fw-semibold"
-              :class="textSubTab === 'edit' ? 'btn-white bg-white text-dark shadow-sm' : 'btn-light text-secondary border-0'"
+              class="segmented-pill-btn"
+              :class="{ 'is-active': textSubTab === 'edit' }"
               @click="textSubTab = 'edit'"
             >
               Format Selected
@@ -835,27 +835,27 @@ watch(activeTextElement, (newEl) => {
         <!-- DRAWER CONTENT: BACKGROUND (Colors, Gradients, Textures & Patterns) -->
         <div v-if="activeTool === 'background'" class="drawer-content p-3 d-flex flex-column gap-3 overflow-y-auto flex-grow-1">
           <!-- Segmented Navigation Tabs (Single Row 3-Tab Segmented Control) -->
-          <div class="btn-group btn-group-sm w-100 mb-2 p-1 bg-light border rounded-3" role="group">
+          <div class="segmented-pills mb-2">
             <button
               type="button"
-              class="btn btn-sm py-1 px-1 fw-semibold text-truncate"
-              :class="activeBgTab === 'colors' ? 'btn-white bg-white text-dark shadow-sm' : 'btn-light text-secondary border-0'"
+              class="segmented-pill-btn"
+              :class="{ 'is-active': activeBgTab === 'colors' }"
               @click="activeBgTab = 'colors'"
             >
               Colors
             </button>
             <button
               type="button"
-              class="btn btn-sm py-1 px-1 fw-semibold text-truncate"
-              :class="activeBgTab === 'gradients' ? 'btn-white bg-white text-dark shadow-sm' : 'btn-light text-secondary border-0'"
+              class="segmented-pill-btn"
+              :class="{ 'is-active': activeBgTab === 'gradients' }"
               @click="activeBgTab = 'gradients'"
             >
               Gradients
             </button>
             <button
               type="button"
-              class="btn btn-sm py-1 px-1 fw-semibold text-truncate position-relative"
-              :class="activeBgTab === 'patterns' ? 'btn-white bg-white text-dark shadow-sm' : 'btn-light text-secondary border-0'"
+              class="segmented-pill-btn position-relative"
+              :class="{ 'is-active': activeBgTab === 'patterns' }"
               @click="activeBgTab = 'patterns'"
             >
               Textures
