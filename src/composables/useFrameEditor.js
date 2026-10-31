@@ -703,6 +703,14 @@ function setLayout(layout) {
   })
 }
 
+function setSlotShape(shape) {
+  slotShape.value = shape
+  if (!showCutouts.value) {
+    showCutouts.value = true
+  }
+  saveHistoryState()
+}
+
 function toggleCutouts() {
   showCutouts.value = !showCutouts.value
   notify(showCutouts.value ? 'Cutouts enabled' : 'Cutouts hidden')
@@ -4022,6 +4030,7 @@ onBeforeUnmount(() => {
     triggerFitToScreen,
     refitDuringTransition,
     setLayout,
+    setSlotShape,
     toggleCutouts,
     toggleCutoutsLayerPosition,
     applyTemplate,

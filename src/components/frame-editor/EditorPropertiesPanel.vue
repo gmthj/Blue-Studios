@@ -52,6 +52,7 @@ const {
   setGradientAngle,
   setGradientType,
   setLayout,
+  setSlotShape,
   setTextAlign,
   setTextColor,
   setVectorColor,
@@ -142,7 +143,7 @@ const {
                 type="button"
                 class="btn"
                 :class="slotShape === 'Square' ? 'btn-primary' : 'btn-outline-secondary'"
-                @click="slotShape = 'Square'"
+                @click="setSlotShape('Square')"
               >
                 Square
               </button>
@@ -150,7 +151,7 @@ const {
                 type="button"
                 class="btn"
                 :class="slotShape === 'Rounded' ? 'btn-primary' : 'btn-outline-secondary'"
-                @click="slotShape = 'Rounded'"
+                @click="setSlotShape('Rounded')"
               >
                 Rounded
               </button>
@@ -158,7 +159,7 @@ const {
                 type="button"
                 class="btn"
                 :class="slotShape === 'Circle' ? 'btn-primary' : 'btn-outline-secondary'"
-                @click="slotShape = 'Circle'"
+                @click="setSlotShape('Circle')"
               >
                 Circle
               </button>
