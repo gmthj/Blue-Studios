@@ -18,6 +18,7 @@ const props = defineProps({
   src: { type: String, default: '' },
   alt: { type: String, default: '' },
   priority: { type: Boolean, default: false },
+  video: { type: Boolean, default: false }, // the file is an MP4 (a saved strip with video): shown playing, without sound
 })
 
 const url = ref('')
@@ -40,8 +41,9 @@ watch(() => [props.path, props.src], load, { immediate: true })
 </script>
 
 <template>
+  <video v-if="url && video" :src="url" class="storage-image" autoplay loop muted playsinline></video>
   <img
-    v-if="url"
+    v-else-if="url"
     :src="url"
     :alt="alt"
     class="storage-image"

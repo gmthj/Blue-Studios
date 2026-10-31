@@ -29,6 +29,10 @@ const volumeA = ref(80)     // 0 to 100 (%)
 const speedB = ref(1)
 const volumeB = ref(55)
 const crossfade = ref(0.5)  // 0 = only Deck A, 1 = only Deck B
+// Simple mode = one song (Deck A only). DJ booth = both decks + crossfader. Shared with the room.
+const djMode = ref(false)
+// What you actually HEAR: in simple mode only Deck A, whatever the crossfader was left at
+const soundCrossfade = computed(() => (djMode.value ? crossfade.value : 0))
 const startA = ref(0)       // where Deck A's chosen part starts (seconds into the song)
 const startB = ref(0)
 const playingA = ref(false)
@@ -45,7 +49,7 @@ const saved = ref(false)    // true after the mix is saved to the room
 // playerA → gainA → crossFade.a ┐
 //                               ├→ crossFade → speakers
 // playerB → gainB → crossFade.b ┘
-const crossFadeNode = new Tone.CrossFade(0.5).toDestination()
+const crossFadeNode = new Tone.CrossFade(soundCrossfade.value).toDestination()
 const gainA = new Tone.Gain(0.8).connect(crossFadeNode.a)    // Gain 0 to 1 = volume 0% to 100%
 const gainB = new Tone.Gain(0.55).connect(crossFadeNode.b)
 
@@ -219,7 +223,24 @@ function setVolumeB(value) {
 // ----- Crossfader -----
 function setCrossfade(value) {
   crossfade.value = value
-  crossFadeNode.fade.value = value
+  crossFadeNode.fade.value = soundCrossfade.value   // simple mode keeps the sound on Deck A
+}
+
+// Switching between simple mode and the DJ booth
+function setDjMode(value) {
+  djMode.value = value
+  crossFadeNode.fade.value = soundCrossfade.value
+  // Deck B isn't shown in simple mode, so stop it if it was playing
+  if (!value && playerB && playingB.value) {
+    playerB.stop()
+    playingB.value = false
+  }
+}
+
+// The button: switch here, and save it so the whole room switches too
+function toggleDjMode() {
+  setDjMode(!djMode.value)
+  saveMixer('djMode', djMode.value)
 }
 
 // ----- Your mix -----
@@ -238,7 +259,7 @@ async function makeMix() {
     speedB: speedB.value,
     volumeA: volumeA.value,
     volumeB: volumeB.value,
-    crossfade: crossfade.value,
+    crossfade: soundCrossfade.value,   // what you hear (simple mode = only Deck A)
     startA: startA.value,
     startB: startB.value,
   })
@@ -306,8 +327,8 @@ const mixBars = computed(function () {
 
   for (let i = 0; i < 80; i++) {
     // || 0 means "use 0 if that deck has no song"
-    const a = (peaksA[i] || 0) * (volumeA.value / 100) * (1 - crossfade.value)
-    const b = (peaksB[i] || 0) * (volumeB.value / 100) * crossfade.value
+    const a = (peaksA[i] || 0) * (volumeA.value / 100) * (1 - soundCrossfade.value)
+    const b = (peaksB[i] || 0) * (volumeB.value / 100) * soundCrossfade.value
 
     let color = '#7c3aed'   // purple = Deck B is louder
     if (a >= b) {
@@ -325,6 +346,14 @@ const genre = ref('chillout')   // linked to the dropdown with v-model
 const tracks = ref([])          // the songs from Jamendo
 const loading = ref(false)
 const errorMessage = ref('')
+
+// Jamendo sends some characters as HTML codes, e.g. Love&#039;s → Love's
+function cleanText(text) {
+  return text
+    .replaceAll('&#039;', "'")
+    .replaceAll('&quot;', '"')
+    .replaceAll('&amp;', '&')
+}
 
 async function loadTracks() {
   loading.value = true
@@ -346,6 +375,11 @@ async function loadTracks() {
       },
     })
     tracks.value = response.data.results
+    // Clean every song's name and artist
+    for (const track of tracks.value) {
+      track.name = cleanText(track.name)
+      track.artist_name = cleanText(track.artist_name)
+    }
     if (tracks.value.length > 0) {
       break
     }
@@ -508,6 +542,7 @@ function applyRoomMixer(mixer) {
   if (mixer.volumeA !== undefined) setVolumeA(mixer.volumeA)
   if (mixer.volumeB !== undefined) setVolumeB(mixer.volumeB)
   if (mixer.crossfade !== undefined) setCrossfade(mixer.crossfade)
+  if (mixer.djMode !== undefined) setDjMode(mixer.djMode)
   // Before the songs below: a song that starts downloading uses the start that is set by then
   if (mixer.startA !== undefined) setStartA(mixer.startA)
   if (mixer.startB !== undefined) setStartB(mixer.startB)
@@ -533,19 +568,30 @@ onMounted(loadTracks)
 <template>
   <div class="app-page music-page">
     <StageBar current="music" />
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2 class="h4 mb-0">Music mixer</h2>
+    <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
+      <h2 class="h4 mb-0">{{ djMode ? 'DJ booth' : 'Music mixer' }}</h2>
+      <div class="d-flex gap-2">
+        <!-- Simple mode / DJ booth: shared, so the whole room switches together -->
+        <button class="btn btn-outline-secondary btn-sm" @click="toggleDjMode">
+          {{ djMode ? 'Simple mode' : 'DJ booth' }}
+        </button>
         <button class="btn btn-outline-secondary btn-sm" @click="goToStage('decorate')">&larr; Decorate</button>
+      </div>
     </div>
-    <p class="small text-muted mb-3">Everyone in the room shares this mixer. ▶ plays on your own device.</p>
+    <p class="small text-muted mb-3">
+      {{ djMode ? 'Mix two songs together.' : 'Pick a song and the part you like.' }}
+      Everyone in the room shares this. The play button plays on your own device only.
+    </p>
     <div class="row g-4">
     <!-- LEFT: decks, mixer and your mix -->
     <div class="col-12 col-lg-9">
       <div class="row g-3">
-        <!-- DECK A: each @event calls a function above with the value DeckCard emitted -->
-        <div class="col-12 col-md-5">
+        <!-- DECK A: each @event calls a function above with the value DeckCard emitted.
+             Full width in simple mode, 5 of 12 columns in the DJ booth (also on a sideways phone: see .deck-col). -->
+        <div class="col-12 deck-col" :class="{ 'col-md-5': djMode }">
           <DeckCard
             label="Deck A"
+            :simple="!djMode"
             color="#14a39a"
             :track="trackA"
             :speed="speedA"
@@ -563,8 +609,9 @@ onMounted(loadTracks)
             @cue="cueA"
           />
         </div>
-        <!-- MIXER (crossfader) -->
-        <div class="col-12 col-md-2">
+        <!-- MIXER (crossfader): DJ booth only. <Transition> slides it in and fades it out (see .deck-* styles) -->
+        <Transition name="deck">
+        <div v-if="djMode" class="col-12 col-md-2 mixer-col">
           <div class="card h-100">
             <div class="card-body d-flex flex-column justify-content-end text-center">
               <h2 class="h6">Mixer</h2>
@@ -585,8 +632,10 @@ onMounted(loadTracks)
             </div>
           </div>
         </div>
-        <!-- DECK B -->
-        <div class="col-12 col-md-5">
+        </Transition>
+        <!-- DECK B: DJ booth only -->
+        <Transition name="deck">
+        <div v-if="djMode" class="col-12 col-md-5 deck-col">
           <DeckCard
             label="Deck B"
             color="#7c3aed"
@@ -606,6 +655,7 @@ onMounted(loadTracks)
             @cue="cueB"
           />
         </div>
+        </Transition>
         <!-- YOUR MIX -->
         <div class="col-12">
           <div class="card">
@@ -682,14 +732,19 @@ onMounted(loadTracks)
             :key="track.id"
             class="track border rounded p-2 mb-2 d-flex align-items-center gap-2"
           >
-            <div class="track-icon bg-secondary">♫</div>
-            <div class="flex-grow-1">
+            <!-- flex-shrink-0: long names can't squash the icon. min-width 0 + text-break: long names wrap -->
+            <div class="track-icon bg-secondary flex-shrink-0">♫</div>
+            <div class="flex-grow-1 text-break" style="min-width: 0">
               <p class="mb-0 fw-semibold small">{{ track.name }}</p>
               <p class="mb-0 text-muted small">{{ track.artist_name }} · {{ formatTime(track.duration) }}</p>
             </div>
             <!-- Clicking A or B loads this song into that deck, for everyone in the room -->
-            <button class="btn btn-sm btn-deck-a" @click="pickTrack('A', track)">A</button>
-            <button class="btn btn-sm btn-deck-b" @click="pickTrack('B', track)">B</button>
+            <!-- Simple mode: one "Use" button. DJ booth: choose Deck A or Deck B -->
+            <button v-if="!djMode" class="btn btn-sm btn-deck-a flex-shrink-0" @click="pickTrack('A', track)">Use</button>
+            <template v-else>
+              <button class="btn btn-sm btn-deck-a flex-shrink-0" @click="pickTrack('A', track)">A</button>
+              <button class="btn btn-sm btn-deck-b flex-shrink-0" @click="pickTrack('B', track)">B</button>
+            </template>
           </div>
         </div>
       </div>
@@ -719,5 +774,65 @@ onMounted(loadTracks)
 .mixer-label {
   font-size: 0.65rem;
   letter-spacing: 0.05em;
+}
+
+/* Song rows lift a little on hover, so you can tell they can be picked */
+.track {
+  transition: background-color 150ms ease, transform 160ms var(--ease-out);
+}
+
+.track:hover {
+  background-color: var(--soft);
+  transform: translateY(-1px);
+}
+
+/* Not in syllabus: Vue's <Transition> adds these classes while the DJ booth columns appear (enter) or disappear (leave) */
+.deck-enter-active {
+  transition: opacity 250ms ease, transform 250ms var(--ease-out);
+}
+
+.deck-leave-active {
+  transition: opacity 150ms ease;   /* leaving is quicker, so it doesn't get in the way */
+}
+
+.deck-enter-from {
+  opacity: 0;
+  transform: translateX(16px);      /* starts a little to the right, then slides into place */
+}
+
+.deck-leave-to {
+  opacity: 0;
+}
+
+/* People who turned on "Reduce motion" on their device: no movement */
+@media (prefers-reduced-motion: reduce) {
+  .track,
+  .deck-enter-active,
+  .deck-leave-active {
+    transition: none;
+  }
+
+  .track:hover {
+    transform: none;
+  }
+}
+
+/* A phone turned sideways (short and wide). Safari leaves out the Dynamic Island, so the page is about
+   750px wide: under Bootstrap's md (768px), so col-md-5 would not apply and the decks would stack.
+   Put the DJ booth side by side anyway, like a laptop: Deck A 5 | mixer 2 | Deck B 5 (of 12 columns).
+   .deck-col.col-md-5 = only in the DJ booth (in simple mode Deck A has no col-md-5, so it stays full width). */
+@media (max-height: 500px) and (orientation: landscape) {
+  .deck-col.col-md-5 {
+    width: 41.66666667%; /* the same numbers Bootstrap uses (41.67% + 16.67% + 41.67% is over 100%, so Deck B wrapped) */
+  }
+
+  .mixer-col {
+    width: 16.66666667%;
+  }
+
+  /* The mixer is only about 125px wide here: no extra space between letters, so "CROSSFADER" fits on one line */
+  .mixer-label {
+    letter-spacing: 0;
+  }
 }
 </style>

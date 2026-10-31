@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import { useAuth } from '../composables/useAuth.js'
-import { LAYOUTS, FRAME_STYLES, filterCss, saveFields, saveField, cropOf, cropSource, MAX_ZOOM } from '../stripData.js'
+import { LAYOUTS, FRAME_STYLES, saveFields, saveField, cropOf, MAX_ZOOM } from '../stripData.js'
 import { listMyItems, getFileUrl, templateFrameFields } from '../studio.js'
 import { getItem, listMySaved } from '../marketplace.js'
 import { loadSavedFramesFromDB } from '../utils/savedFrameEngine.js'
@@ -30,7 +30,6 @@ const draftZoom = ref(null)       // the zoom slider's value while it is being d
 const userTemplates = ref([])
 const savedTemplates = ref([]) // templates I saved from the marketplace (shown under "Saved")
 const loadingTemplates = ref(false)
-const exportingPng = ref(false)
 
 // What the room has chosen (the first layout / style if nothing is saved yet)
 const layout = computed(() => {
@@ -93,6 +92,10 @@ const mineTemplates = computed(() => {
   if (!start || listed.some((tpl) => tpl.id === start.id)) return userTemplates.value
   return [start, ...userTemplates.value]
 })
+
+// Mine shows 2 rows of 4 frames. With more than 8, the rows scroll sideways until "View all" is opened.
+const MINE_VISIBLE = 8
+const showAllMine = ref(false)
 
 // A templates/{id} document (mine or saved from the marketplace) as a swatch in the list
 async function templateSwatch(item) {
@@ -392,105 +395,6 @@ async function chooseCustomTemplate(tpl) {
   }
 }
 
-// Helper to load image for canvas export
-function loadImage(src) {
-  return new Promise((resolve, reject) => {
-    const img = new Image()
-    img.crossOrigin = 'anonymous'
-    img.onload = () => resolve(img)
-    img.onerror = reject
-    img.src = src
-  })
-}
-
-// Produce and download high-resolution strip PNG
-async function producePng() {
-  exportingPng.value = true
-  try {
-    const W = 900
-    const H = Math.round(W / layout.value.aspect)
-    const canvas = document.createElement('canvas')
-    canvas.width = W
-    canvas.height = H
-    const ctx = canvas.getContext('2d')
-
-    // Frame background / Template PNG
-    if (frameStyle.value.thumbnailUrl) {
-      try {
-        const bgImg = await loadImage(frameStyle.value.thumbnailUrl)
-        ctx.drawImage(bgImg, 0, 0, W, H)
-      } catch {
-        ctx.fillStyle = frameStyle.value.background || '#FFFFFF'
-        ctx.fillRect(0, 0, W, H)
-      }
-    } else {
-      ctx.fillStyle = frameStyle.value.background || '#FFFFFF'
-      ctx.fillRect(0, 0, W, H)
-    }
-
-    // Photos: % of the strip -> pixels, then crop to fill the slot
-    for (let i = 0; i < layout.value.slots.length; i++) {
-      const s = layout.value.slots[i]
-      const x = (s.x / 100) * W
-      const y = (s.y / 100) * H
-      const w = (s.w / 100) * W
-      const h = (s.h / 100) * H
-      const photo = photosById.value[slotPhotos.value[i]]
-      if (!photo) continue
-
-      const img = await loadImage(photo.image)
-      const r = cropSource(img.width, img.height, w, h, cropOf(room.value.stripCrops, i)) // the part of the photo that shows
-
-      ctx.save()
-      ctx.beginPath()
-      if (frameStyle.value.shape === 'circle') {
-        ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2)
-      } else if (frameStyle.value.shape === 'rounded') {
-        const radius = Math.min(w, h) * 0.08
-        ctx.roundRect ? ctx.roundRect(x, y, w, h, radius) : ctx.rect(x, y, w, h)
-      } else {
-        ctx.rect(x, y, w, h)
-      }
-      ctx.clip()
-      ctx.filter = filterCss(room.value.stripEdits?.[i]) || 'none'
-      ctx.drawImage(img, r.sx, r.sy, r.sw, r.sh, x, y, w, h)
-      ctx.restore()
-    }
-
-    // Stickers if any
-    const stickers = room.value.stripStickers || []
-    const ordered = [...stickers].filter((s) => s.visible).sort((a, b) => a.z - b.z)
-    for (const st of ordered) {
-      const img = await loadImage(st.src)
-      const w = (st.w / 100) * W
-      const h = w * (img.height / img.width)
-      ctx.save()
-      ctx.translate((st.x / 100) * W, (st.y / 100) * H)
-      ctx.rotate((st.rotate * Math.PI) / 180)
-      ctx.drawImage(img, -w / 2, -h / 2, w, h)
-      ctx.restore()
-    }
-
-    // Caption (only if not already baked into custom template PNG)
-    if (frameStyle.value.caption && !frameStyle.value.thumbnailUrl) {
-      ctx.fillStyle = frameStyle.value.captionColor || frameStyle.value.border || '#1A1A2E'
-      ctx.font = 'bold 34px sans-serif'
-      ctx.textAlign = 'center'
-      ctx.fillText(frameStyle.value.caption, W / 2, H - H * 0.03)
-    }
-
-    // Download PNG
-    const link = document.createElement('a')
-    link.href = canvas.toDataURL('image/png')
-    link.download = `photostrip-${room.value.id || 'strip'}.png`
-    link.click()
-  } catch (err) {
-    console.error('Error producing PNG:', err)
-  } finally {
-    exportingPng.value = false
-  }
-}
-
 // Change a saved edited video: it is loaded into the Video page's timeline, and everyone moves there
 async function editSaved(edit) {
   await updateDoc(roomRef(), { videoTimeline: edit.timeline, videoEditing: edit.id, stage: 'video' })
@@ -508,7 +412,7 @@ async function goToStage(stage) {
   <!-- 3 columns from Bootstrap "lg" (992px) up. On phones: strip first, then gallery, then frames -->
   <div class="row g-3">
     <!-- LEFT: gallery -->
-    <div class="col-12 col-lg-3 order-2 order-lg-1">
+    <div class="col-12 col-md-6 col-lg-3 order-2 order-lg-1">
       <div class="panel">
         <div class="d-flex justify-content-between align-items-center mb-1">
           <h2 class="h5 fw-bold mb-0">Gallery</h2>
@@ -640,7 +544,7 @@ async function goToStage(stage) {
     </div>
 
     <!-- RIGHT: saved frames -->
-    <div class="col-12 col-lg-3 order-3">
+    <div class="col-12 col-md-6 col-lg-3 order-3">
       <div class="panel d-flex flex-column">
         <h2 class="h5 fw-bold">Saved frames</h2>
 
@@ -659,9 +563,21 @@ async function goToStage(stage) {
 
         <h3 class="h6 mt-3 d-flex justify-content-between align-items-center">
           <span>Mine</span>
-          <router-link to="/studio" class="small text-muted text-decoration-none" style="font-size: 0.75rem;">View all &rarr;</router-link>
+          <!-- View all: only when there are more than 8 (the 2 rows of 4 that fit). It opens the full list. -->
+          <button
+            v-if="mineTemplates.length > MINE_VISIBLE"
+            type="button"
+            class="view-all-btn"
+            :aria-expanded="showAllMine"
+            @click="showAllMine = !showAllMine"
+          >{{ showAllMine ? 'Show less' : 'View all \u2192' }}</button>
         </h3>
-        <div class="d-flex flex-wrap gap-2 align-items-center">
+        <!-- 8 or fewer: wrap as before. More than 8: 2 rows that scroll sideways (scroll bar at the bottom),
+             with the next column peeking in at the right, until View all opens the full list. -->
+        <div
+          class="d-flex flex-wrap gap-2 align-items-center"
+          :class="{ 'mine-scroll': mineTemplates.length > MINE_VISIBLE && !showAllMine }"
+        >
           <div
             v-for="tpl in mineTemplates"
             :key="tpl.id"
@@ -669,9 +585,9 @@ async function goToStage(stage) {
           >
             <button
               class="swatch"
-              :class="[tpl.shape || 'square', { active: tpl.id === frameStyle.id }]"
+              :class="[tpl.shape || 'square', { active: tpl.id === frameStyle.id, 'picture-swatch': !!tpl.thumbnailUrl }]"
               :style="{
-                background: tpl.thumbnailUrl ? `url(${tpl.thumbnailUrl}) center/cover no-repeat` : (tpl.background || '#FFE8A3'),
+                background: tpl.thumbnailUrl ? `url(${tpl.thumbnailUrl}) center/contain no-repeat` : (tpl.background || '#FFE8A3'),
                 borderColor: tpl.id === frameStyle.id ? '#2F5BEA' : (tpl.border || '#E0A100')
               }"
               :title="tpl.name"
@@ -706,9 +622,9 @@ async function goToStage(stage) {
               v-for="tpl in savedTemplates"
               :key="tpl.id"
               class="swatch"
-              :class="[tpl.shape, { active: tpl.id === frameStyle.id }]"
+              :class="[tpl.shape, { active: tpl.id === frameStyle.id, 'picture-swatch': !!tpl.thumbnailUrl }]"
               :style="{
-                background: tpl.thumbnailUrl ? `url(${tpl.thumbnailUrl}) center/cover no-repeat` : tpl.background,
+                background: tpl.thumbnailUrl ? `url(${tpl.thumbnailUrl}) center/contain no-repeat` : tpl.background,
                 borderColor: tpl.id === frameStyle.id ? '#2F5BEA' : tpl.border
               }"
               :title="tpl.name"
@@ -717,7 +633,7 @@ async function goToStage(stage) {
           </div>
         </template>
 
-        <!-- Re-edit banner when custom template is active -->
+        <!-- The template in use -->
         <div v-if="room.stripCustomTemplate" class="alert alert-light border p-2 mt-2 mb-0 d-flex align-items-center justify-content-between">
           <div class="d-flex align-items-center gap-2 overflow-hidden">
             <img
@@ -762,12 +678,8 @@ async function goToStage(stage) {
           {{ filledCount }} of {{ layout.slots.length }} slots filled · Slots: photo or clip
         </p>
 
-        <button
-          class="btn btn-outline-primary w-100 mb-2"
-          :disabled="filledCount === 0 || exportingPng"
-          @click="producePng"
-        >
-          {{ exportingPng ? 'Producing PNG...' : '📸 Produce Strip PNG' }}
+        <button class="btn btn-outline-primary w-100 mb-2" :disabled="filledCount === 0" @click="goToStage('export')">
+          Export
         </button>
 
         <!-- Opens the Video page, even before any photo is on the strip, as long as the room has photos or clips.
@@ -868,8 +780,11 @@ async function goToStage(stage) {
 }
 
 .canvas-area {
+  /* The same space for every frame: the strip is never taller than --stage-h (see PhotoStrip.vue),
+     and the area is always at least that tall, so it does not grow or shrink when a different frame is chosen */
+  --stage-h: min(72vh, 680px);
   background: #EEF0F6;
-  min-height: 420px;
+  min-height: calc(var(--stage-h) + 32px); /* + the panel's padding */
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -1006,11 +921,66 @@ async function goToStage(stage) {
   box-shadow: 0 0 0 2px #E8EEFF;
 }
 
-.add-swatch {
-  border: 2px dashed #B8BECC;
-  color: #8A90A0;
-  font-size: 1.3rem;
-  background: #F4F5F9;
+/* A saved template shown as its own picture: the picture already has its rounded border, so the swatch adds
+   no border or corner of its own. The chosen one is marked with a blue ring around it instead. */
+.swatch.picture-swatch {
+  border: none;
+  border-radius: 0;
+  background-color: transparent;
+}
+
+.swatch.picture-swatch.active {
+  box-shadow: none;
+  outline: 2px solid #2F5BEA;
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+
+/* "View all" next to the Mine title */
+.view-all-btn {
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 0.75rem;
+  color: #6B7080;
+}
+
+.view-all-btn:hover {
+  color: #2F5BEA;
+}
+
+/* More than 8 frames under Mine: 2 rows of the same 48px swatches, running sideways.
+   The box is a bit wider than 4 columns, so the 5th column peeks in at the right edge. */
+.mine-scroll {
+  display: grid !important;
+  grid-template-rows: repeat(2, 48px);
+  grid-auto-flow: column;
+  grid-auto-columns: 48px;
+  max-width: calc(4 * 48px + 4 * 8px + 22px);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding: 3px 3px 10px; /* room for the blue outline, and the scroll bar under the frames */
+  scrollbar-width: thin;
+  scrollbar-color: #B8C6F5 transparent;
+}
+
+.mine-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+
+.mine-scroll::-webkit-scrollbar-track {
+  background: #F1F2F6;
+  border-radius: 999px;
+}
+
+.mine-scroll::-webkit-scrollbar-thumb {
+  background: #B8C6F5;
+  border-radius: 999px;
+}
+
+.mine-scroll::-webkit-scrollbar-thumb:hover {
+  background: #2F5BEA;
 }
 
 .cut-list {
@@ -1045,5 +1015,27 @@ async function goToStage(stage) {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* ---------- Smaller screens ---------- */
+/* Tablets and phones: the panels stack, so the long lists get shorter scroll areas */
+@media (max-width: 991.98px) {
+  .canvas-area {
+    --stage-h: min(62vh, 560px); /* a bit shorter, so the panels below are not far away */
+    padding-top: 20px;
+    padding-bottom: 20px;
+  }
+
+  .gallery-scroll {
+    max-height: 55vh; /* leaves room to reach the frames below */
+  }
+}
+
+/* Phones: a little less padding so the content gets the room */
+@media (max-width: 575.98px) {
+  .panel {
+    padding: 12px;
+    border-radius: 12px;
+  }
 }
 </style>

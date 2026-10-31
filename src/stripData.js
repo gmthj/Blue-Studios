@@ -78,15 +78,47 @@ function makeBadge(text, background, colour) {
     '" text-anchor="middle">' + text + '</text></svg>'
   return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
 }
+// ---------- WHAT THE ROOM HAS CHOSEN ----------
+// The cut and the frame of a room's strip, the same as on the Pick and Decorate pages.
+// A template picked from My Studio or the marketplace is saved as room.stripCustomTemplate: it brings its own slots
+// and look, and takes the place of the built-in layout and style. Without one, the built-in ones are used.
 
-export const STICKERS = [
-  { id: 'm1', tab: 'mine', name: 'main character energy', src: makeBadge('main character energy', '#F0457A', '#FFFFFF') },
-  { id: 'm2', tab: 'mine', name: 'four-cut legends', src: makeBadge('four-cut legends', '#FFFFFF', '#1A1A2E') },
-  { id: 'm3', tab: 'mine', name: 'besties', src: makeBadge('♥ besties ♥', '#2F5BEA', '#FFFFFF') },
-  { id: 'g1', tab: 'giphy', name: 'yay', src: makeBadge('YAY!', '#7B61FF', '#FFFFFF') },                    // Rae: a GIPHY .gif URL
-  { id: 'd1', tab: 'dynamic', name: 'Weather', src: makeBadge('☀ 29°C · Singapore', '#FFE8A3', '#7A5200') }, // Rae: live weather
-  { id: 'd2', tab: 'dynamic', name: 'Time', src: makeBadge('🕘 9:02 PM', '#E8EEFF', '#2F5BEA') },           // Rae: live time
-]
+// The cut: { id, name, aspect, slots: [{ x, y, w, h }] }
+export function roomLayout(room) {
+  const custom = room.stripCustomTemplate
+  if (custom?.slots?.length) {
+    return { id: custom.id, name: custom.name, aspect: custom.aspect || (3 / 10), slots: custom.slots }
+  }
+  return LAYOUTS.find((l) => l.id === room.stripLayoutId) || LAYOUTS[0]
+}
+
+// The frame: { background, border, shape, caption, captionColor, thumbnailUrl }
+export function roomFrameStyle(room) {
+  const custom = room.stripCustomTemplate
+  if (custom) {
+    return {
+      id: custom.id,
+      group: 'mine',
+      background: custom.background || '#FFFFFF',
+      border: custom.border || '#1A1A2E',
+      shape: custom.shape || 'square',
+      caption: custom.caption || '',
+      captionColor: custom.captionColor || custom.border,
+      thumbnailUrl: custom.thumbnailUrl || null,
+    }
+  }
+  return FRAME_STYLES.find((s) => s.id === room.stripStyleId) || FRAME_STYLES[0]
+}
+
+// Sticker pictures can be set by anyone in the room, so only these places are allowed in a finished export (see Germaine's guide)
+const TRUSTED_STICKER_SOURCES = ['https://firebasestorage.googleapis.com/', 'data:image/', 'https://media.giphy.com/']
+
+export function isTrustedStickerSrc(src) {
+  return TRUSTED_STICKER_SOURCES.some((prefix) => src.startsWith(prefix))
+}
+
+// ---------- STICKER TRAY ----------
+// The Decorate page's stickers are in stickerTray.js (the Sticker Maker's library, live stickers, and the account's own and saved stickers).
 
 // ---------- FILTERS (Decorate page) ----------
 // Each filter is a CSS "filter" value. The same text also works on a canvas (ctx.filter) for the download.

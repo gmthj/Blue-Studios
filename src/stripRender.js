@@ -1,5 +1,8 @@
 // filterCss turns a slot's saved filter and sliders into a CSS filter text (the same as on screen)
-import { filterCss, cropOf, cropSource } from './stripData.js'
+import { filterCss, cropOf, cropSource, isTrustedStickerSrc } from './stripData.js'
+// isGifSrc: is this sticker a GIF? decodeGif / pickFrame: take a GIF apart, and pick the picture that is on at a moment
+import { isGifSrc } from './exportRules.js'
+import { decodeGif, pickFrame } from './gifFrames.js'
 // getClipUrl gives a local address of a clip's video. CLIP_SECONDS is how long a raw clip is.
 import { getClipUrl, CLIP_SECONDS } from './clips.js'
 
@@ -18,9 +21,6 @@ import { getClipUrl, CLIP_SECONDS } from './clips.js'
 
 // How many seconds before a clip's turn it is jumped to its start (so it is ready the moment it plays)
 const PREPARE_AHEAD = 0.4
-
-// Sticker images can be set by anyone in the room, so only these places are allowed (see Germaine's guide)
-const TRUSTED_STICKER_SOURCES = ['https://firebasestorage.googleapis.com/', 'data:image/', 'https://media.giphy.com/']
 
 // Turn an image address into an <img> element we can draw on a canvas.
 // crossOrigin is needed for images from other sites (e.g. Storage), or the canvas cannot be recorded.
@@ -146,11 +146,27 @@ export async function createScene({ layout, frameStyle, photosById, slotPhotos, 
   // Stickers, back to front. One that cannot be loaded (not allowed, or the other site refuses) is left out.
   const stickerList = []
   for (const sticker of [...stickers].filter((s) => s.visible).sort((a, b) => a.z - b.z)) {
-    if (!TRUSTED_STICKER_SOURCES.some((prefix) => sticker.src.startsWith(prefix))) continue
+    if (!isTrustedStickerSrc(sticker.src)) continue
     try {
-      stickerList.push({ sticker: sticker, img: await loadImage(sticker.src) })
+      // A GIF sticker moves: take it apart, and draw the picture that is on at each moment. If that cannot be done
+      // (this browser has no ImageDecoder), it stays a still picture.
+      let animation = null
+      if (await isGifSrc(sticker.src)) {
+        animation = await decodeGif(sticker.src).catch((error) => console.error('A GIF sticker could not be taken apart, so it stays still', error))
+      }
+      stickerList.push({ sticker: sticker, animation: animation, img: animation ? null : await loadImage(sticker.src) })
     } catch (error) {
       console.error('A sticker could not be loaded, so it is left out of the video', error)
+    }
+  }
+
+  // A custom template's artwork, drawn behind the photos (as on screen). If it cannot be loaded, the flat colour is used.
+  let frameArt = null
+  if (frameStyle.thumbnailUrl) {
+    try {
+      frameArt = await loadImage(frameStyle.thumbnailUrl)
+    } catch (error) {
+      console.error('The template artwork could not be loaded, so the plain frame colour is used', error)
     }
   }
 
@@ -227,6 +243,7 @@ export async function createScene({ layout, frameStyle, photosById, slotPhotos, 
     ctx.clearRect(0, 0, W, H)
     ctx.fillStyle = frameStyle.background
     ctx.fillRect(0, 0, W, H)
+    if (frameArt) ctx.drawImage(frameArt, 0, 0, W, H)
 
     for (let i = 0; i < slots.length; i++) {
       const s = slots[i]
@@ -268,21 +285,30 @@ export async function createScene({ layout, frameStyle, photosById, slotPhotos, 
     }
 
     // Stickers. Move to the sticker's centre, rotate (canvas uses radians), draw it centred.
-    for (const { sticker, img } of stickerList) {
+    for (const { sticker, img, animation } of stickerList) {
+      const picture = animation ? pickFrame(animation, t).bitmap : img
       const w = (sticker.w / 100) * W
-      const h = w * (img.height / img.width) // keep the sticker's own proportions
+      const h = w * (picture.height / picture.width) // keep the sticker's own proportions
       ctx.save()
       ctx.translate((sticker.x / 100) * W, (sticker.y / 100) * H)
       ctx.rotate((sticker.rotate * Math.PI) / 180)
-      ctx.drawImage(img, -w / 2, -h / 2, w, h)
+      ctx.drawImage(picture, -w / 2, -h / 2, w, h)
       ctx.restore()
     }
 
-    // Caption
-    ctx.fillStyle = frameStyle.border
-    ctx.font = 'bold ' + Math.round(W * 0.038) + 'px sans-serif'
-    ctx.textAlign = 'center'
-    ctx.fillText(frameStyle.caption, W / 2, H - H * 0.03)
+    // The frame's border (PhotoStrip draws a 4px border on a strip about 300px wide)
+    const borderWidth = (W * 4) / 300
+    ctx.strokeStyle = frameStyle.border
+    ctx.lineWidth = borderWidth
+    ctx.strokeRect(borderWidth / 2, borderWidth / 2, W - borderWidth, H - borderWidth)
+
+    // Caption (a template with artwork has its own, so the screen shows none)
+    if (frameStyle.caption && !frameStyle.thumbnailUrl) {
+      ctx.fillStyle = frameStyle.captionColor || frameStyle.border
+      ctx.font = 'bold ' + Math.round(W * 0.038) + 'px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText(frameStyle.caption, W / 2, H - H * 0.03)
+    }
   }
 
   return { aspect: layout.aspect, tick, stop, draw }
@@ -349,4 +375,47 @@ export async function recordScene(scene, { width, fps, seconds, onProgress, isCa
   await stopped
   if (cancelled) return null
   return new Blob(chunks, { type: recorder.mimeType || 'video/webm' })
+}
+
+// Play the scene on a hidden canvas in real time, and call onFrame(canvas) once for every 1 / fps seconds of it.
+// Used for the GIF: onFrame gets the finished picture of that moment (the same drawing the MP4 is recorded from).
+// The page must stay open and visible while it runs, as with recordScene. Gives back false if it was cancelled.
+export async function sampleScene(scene, { width, fps, seconds, onFrame, onProgress, isCancelled }) {
+  const W = width
+  const H = Math.round(W / scene.aspect)
+  const canvas = document.createElement('canvas')
+  canvas.width = W
+  canvas.height = H
+  const ctx = canvas.getContext('2d')
+  const total = Math.floor(seconds * fps) // how many pictures the GIF has
+  let sent = 0
+
+  const startedAt = performance.now()
+  let cancelled = false
+  await new Promise((resolve) => {
+    function frame() {
+      const t = (performance.now() - startedAt) / 1000
+      if (isCancelled && isCancelled()) {
+        cancelled = true
+        resolve()
+        return
+      }
+      scene.tick(t)
+      scene.draw(ctx, W, H, t)
+      // One picture for every 1 / fps seconds that went by (if the screen was slow, the same picture is used twice)
+      while (sent < total && t >= sent / fps) {
+        onFrame(canvas)
+        sent++
+      }
+      if (onProgress) onProgress(Math.min(1, sent / total))
+      if (sent >= total) {
+        resolve()
+      } else {
+        requestAnimationFrame(frame)
+      }
+    }
+    frame()
+  })
+  scene.stop()
+  return !cancelled
 }

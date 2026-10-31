@@ -1,6 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { useAuth } from '../composables/useAuth.js'
 import { listMyItems, setVisibility, deleteItem, categoryLabel, templateRoomLink } from '../studio.js'
 import { listMySaved, unsaveItem, itemLink, savedChanges } from '../marketplace.js'
@@ -230,9 +230,19 @@ function formatDate(time) {
         <div v-else class="row g-3">
           <div v-for="strip in strips" :key="strip.id" class="col-6 col-md-3 col-xl-2">
             <div class="card h-100 overflow-hidden">
-              <div class="preview strip-preview"><StorageImage :path="strip.imagePath" :alt="strip.title" /></div>
+              <!-- A strip saved from the Share page opens that page (its link and QR code). Older strips are only a picture. -->
+              <component
+                :is="strip.shareId ? RouterLink : 'div'"
+                v-bind="strip.shareId ? { to: '/s/' + strip.shareId, title: 'Open the share page' } : {}"
+                class="preview strip-preview d-block"
+              >
+                <StorageImage :path="strip.imagePath" :alt="strip.title" :video="strip.format === 'mp4'" />
+              </component>
               <div class="card-body item-body">
-                <p class="item-name text-truncate" :title="strip.title">{{ strip.title }}</p>
+                <p class="item-name text-truncate" :title="strip.title">
+                  <RouterLink v-if="strip.shareId" :to="'/s/' + strip.shareId" class="strip-title-link">{{ strip.title }}</RouterLink>
+                  <template v-else>{{ strip.title }}</template>
+                </p>
                 <p class="item-meta mb-2">{{ formatDate(strip.createdAt) }}</p>
                 <button class="btn btn-sm btn-outline-danger w-100" :disabled="busyId === strip.id" @click="remove(strip)">Delete</button>
               </div>
@@ -321,7 +331,11 @@ function formatDate(time) {
             @click="folderFilter = f.id"
           >{{ f.name }}</button>
         </div>
-        <div v-else class="row g-3">
+        <div v-if="stickers.length > 0 && filteredStickers.length === 0" class="empty-state">
+          <span class="empty-icon"><AppIcon name="sparkle" :size="22" /></span>
+          No stickers in this folder yet.
+        </div>
+        <div v-else-if="stickers.length > 0" class="row g-3">
           <div v-for="sticker in filteredStickers" :key="sticker.id" class="col-6 col-md-3 col-xl-2">
             <div class="card h-100 overflow-hidden">
               <div class="preview sticker-preview"><StorageImage :src="sticker.cardUrl" :path="sticker.imagePath" :alt="sticker.name" /></div>
@@ -446,6 +460,20 @@ function formatDate(time) {
 
 .strip-preview {
   height: 220px;
+}
+
+/* a strip that opens its share page: the picture is a link */
+a.strip-preview {
+  cursor: pointer;
+}
+
+.strip-title-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.strip-title-link:hover {
+  text-decoration: underline;
 }
 
 .template-preview {

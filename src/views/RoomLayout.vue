@@ -172,10 +172,58 @@ watch(() => route.path, followStage)
   </MessagePage>
 
   <template v-else>
-    <!-- The child page: RoomView (camera), StripView (photostrip) or DecorateView -->
-    <router-view />
+    <!-- The child page: RoomView (camera), StripView (photostrip) or DecorateView.
+         Moving to another step: the old page fades out, the new one drops in from above.
+         Not in syllabus: v-slot="{ Component }" gives us the page, <component :is> shows it.
+         The <div> is there because <Transition> can only animate ONE element, and most step pages
+         have two at the top (the StageBar and the page). :key = a new div for each step, so it animates.
+         Only the page under the StageBar moves (see the styles), so :duration tells Vue how long to wait:
+         100ms for the old page to fade out, 450ms for the new one to drop in.
+         appear = the first page after "Joining room..." drops in too (not in syllabus). -->
+    <router-view v-slot="{ Component }">
+      <Transition name="step" mode="out-in" appear :duration="{ enter: 450, leave: 100 }">
+        <div :key="route.path">
+          <component :is="Component" />
+        </div>
+      </Transition>
+    </router-view>
 
     <!-- The video call window floats over every child page, so it is only here once -->
     <VideoCallCard />
   </template>
 </template>
+
+<style scoped>
+/* Next step: the stage bar stays still. Everything under it (.stage-bar ~ * = whatever comes after the bar)
+   fades out quickly; the new page appears (150ms), then gently drops down from above (450ms).
+   :deep() = these elements are inside the step pages, not in this file (scoped styles need it to reach them).
+   cubic-bezier(0.23, 1, 0.32, 1) = the team's --ease-out (that variable is only set inside .app-page) */
+.step-enter-active :deep(.stage-bar ~ *) {
+  transition: opacity 150ms ease, transform 450ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.step-leave-active :deep(.stage-bar ~ *) {
+  transition: opacity 100ms ease;
+}
+
+.step-enter-from :deep(.stage-bar ~ *) {
+  opacity: 0;
+  transform: translateY(-12px);
+}
+
+.step-leave-to :deep(.stage-bar ~ *) {
+  opacity: 0;
+}
+
+/* People who turned on "Reduce motion" on their device: the step changes without moving */
+@media (prefers-reduced-motion: reduce) {
+  .step-enter-active :deep(.stage-bar ~ *),
+  .step-leave-active :deep(.stage-bar ~ *) {
+    transition: none;
+  }
+
+  .step-enter-from :deep(.stage-bar ~ *) {
+    transform: none;
+  }
+}
+</style>

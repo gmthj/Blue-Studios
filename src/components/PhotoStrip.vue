@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { filterCss, cropOf, cropPositionCss, cropZoomCss, MAX_ZOOM } from '../stripData.js'
 import ClipSequencePlayer from './ClipSequencePlayer.vue'
 import { CLIP_SECONDS } from '../clips.js'
@@ -29,7 +29,7 @@ const props = defineProps({
   selectedStickerId: { type: Number, default: null },   // the sticker to outline
 })
 
-const emit = defineEmits(['drop-photo', 'slot-click', 'clear-slot', 'crop-slot', 'drop-sticker', 'move-sticker', 'sticker-click', 'strip-click'])
+const emit = defineEmits(['drop-photo', 'slot-click', 'clear-slot', 'crop-slot', 'drop-sticker', 'move-sticker', 'sticker-click', 'sticker-dblclick', 'delete-sticker', 'update-sticker', 'strip-click'])
 
 const stripEl = ref(null)   // the strip <div>, measured to work out where things are dropped
 const hoverSlot = ref(null) // the slot under a dragged photo (highlighted)
@@ -209,6 +209,108 @@ function onSlotClick(index) {
   emit('slot-click', index)
 }
 
+// ---------- RESIZE AND ROTATE A STICKER (Decorate page) ----------
+// The selected sticker gets a box with handles, like the Template Editor:
+//   corner circles and side pills: drag away from the middle to make it bigger, towards it to make it smaller
+//   the round ↻ handle under it: drag around to rotate (the angle shows next to it)
+// The box is drawn OUTSIDE the strip (handlesLayer), so handles near the edge are not cut off.
+// While dragging, only this screen updates (liveSticker); the new size / angle is saved once, on letting go.
+const handlesLayer = ref(null) // the layer over the strip that holds the box
+const liveSticker = ref(null)  // { id, w, rotate } while a handle is being dragged
+const ratios = ref({})         // each sticker picture's height / width, to draw the box the right height
+let transform = null           // the handle drag in progress
+const rotating = ref(false)    // the ↻ handle is being dragged (shows the angle)
+const overRotate = ref(false)  // the mouse is over the ↻ handle (shows the angle)
+
+// A sticker with the live size / angle applied while its handle is dragged
+function shown(sticker) {
+  if (liveSticker.value && liveSticker.value.id === sticker.id) return { ...sticker, ...liveSticker.value }
+  return sticker
+}
+
+// The selected sticker (as shown), for the box. Only on the Decorate page.
+const boxSticker = computed(() => {
+  if (props.mode !== 'decorate' || props.selectedStickerId === null) return null
+  const sticker = props.stickers.find((s) => s.id === props.selectedStickerId)
+  return sticker && sticker.visible ? shown(sticker) : null
+})
+
+// Remember each sticker picture's shape when it loads
+function onStickerLoad(event, id) {
+  const img = event.target
+  if (img.naturalWidth) ratios.value = { ...ratios.value, [id]: img.naturalHeight / img.naturalWidth }
+}
+
+// Where the box goes: the sticker's centre and width in % of the strip. Its height in % of the strip is
+// width × (picture height / width) × (strip width / height).
+function boxStyle(sticker) {
+  const ratio = ratios.value[sticker.id] || 1
+  return {
+    left: sticker.x + '%',
+    top: sticker.y + '%',
+    width: sticker.w + '%',
+    height: sticker.w * ratio * props.layout.aspect + '%',
+    transform: 'translate(-50%, -50%) rotate(' + sticker.rotate + 'deg)',
+  }
+}
+
+// The sticker's centre on the screen, in pixels
+function centreOnScreen(sticker) {
+  const box = handlesLayer.value.getBoundingClientRect()
+  return { x: box.left + (sticker.x / 100) * box.width, y: box.top + (sticker.y / 100) * box.height }
+}
+
+function onHandleDown(event, kind) {
+  const sticker = boxSticker.value
+  if (!sticker) return
+  event.currentTarget.setPointerCapture(event.pointerId) // keep getting moves outside the handle
+  const c = centreOnScreen(sticker)
+  transform = {
+    kind: kind, // 'resize' or 'rotate'
+    id: sticker.id,
+    centre: c,
+    startW: sticker.w,
+    startRotate: sticker.rotate,
+    startDist: Math.hypot(event.clientX - c.x, event.clientY - c.y) || 1,
+    startAngle: Math.atan2(event.clientY - c.y, event.clientX - c.x),
+  }
+  liveSticker.value = { id: sticker.id, w: sticker.w, rotate: sticker.rotate }
+  rotating.value = kind === 'rotate'
+}
+
+function onHandleMove(event) {
+  if (!transform) return
+  const t = transform
+  if (t.kind === 'resize') {
+    // Size follows the distance from the middle: twice as far = twice as big (5% to 100% of the strip's width)
+    const dist = Math.hypot(event.clientX - t.centre.x, event.clientY - t.centre.y)
+    const w = Math.min(100, Math.max(5, t.startW * (dist / t.startDist)))
+    liveSticker.value = { ...liveSticker.value, w: Math.round(w * 10) / 10 }
+  } else {
+    // Angle = how far around the middle the pointer has turned, added to the starting angle
+    const angle = Math.atan2(event.clientY - t.centre.y, event.clientX - t.centre.x)
+    let deg = t.startRotate + ((angle - t.startAngle) * 180) / Math.PI
+    deg = ((((deg + 180) % 360) + 360) % 360) - 180 // keep it between -180 and 180
+    for (const snap of [-180, -90, 0, 90, 180]) {
+      if (Math.abs(deg - snap) < 4) deg = snap // straight up / sideways is easy to hit
+    }
+    liveSticker.value = { ...liveSticker.value, rotate: Math.round(deg) }
+  }
+}
+
+function onHandleUp() {
+  if (!transform) return
+  const changes = { w: liveSticker.value.w, rotate: liveSticker.value.rotate }
+  emit('update-sticker', transform.id, changes) // the page saves it for everyone
+  transform = null
+  rotating.value = false // the angle tag goes away when done
+}
+
+// When the saved sticker comes back from Firestore, stop showing the live copy
+watch(() => props.stickers, () => {
+  if (!transform && !fingerMove) liveSticker.value = null
+}, { deep: true })
+
 // When the saved crop arrives back from Firestore, stop showing the live copy
 watch(() => props.crops, () => {
   if (!pan) liveCrop.value = null
@@ -261,7 +363,8 @@ function onDragOver(event) {
 }
 
 // Everything dropped on the strip comes here. The dragged item put a small JSON "parcel" in
-// dataTransfer when the drag started (type: 'photo', 'newSticker' or 'moveSticker').
+// dataTransfer when the drag started (type: 'photo' or 'newSticker'). Stickers already on the strip
+// are moved with pointer events instead (see MOVING A STICKER).
 function onDrop(event) {
   hoverSlot.value = null
 
@@ -280,15 +383,63 @@ function onDrop(event) {
   if (props.mode === 'decorate' && parcel.type === 'newSticker') {
     emit('drop-sticker', parcel.src, pos.x, pos.y)
   }
-  if (props.mode === 'decorate' && parcel.type === 'moveSticker') {
-    emit('move-sticker', parcel.stickerId, pos.x, pos.y)
-  }
 }
 
-// Dragging a sticker that is already on the strip: remember which one is moving
-function onStickerDragStart(event, sticker) {
-  event.dataTransfer.setData('text/plain', JSON.stringify({ type: 'moveSticker', stickerId: sticker.id }))
-  event.dataTransfer.effectAllowed = 'move'
+// ---------- MOVING A STICKER (finger or mouse) ----------
+// A drag on a sticker moves it with pointer events, saved once when the finger or button lifts.
+// WHY the mouse too (it used HTML drag and drop before): drag and drop only shows a ghost picture
+// until the drop, so the sticker could not snap or show alignment lines while it moved.
+let fingerMove = null // { id, startX, startY, startStickerX, startStickerY, moved }
+
+// Alignment guides: while a sticker moves near the middle of the strip (across or down), it snaps
+// onto the middle and a red line shows it, like Canva or PowerPoint.
+const SNAP_PX = 6
+const guides = ref({ x: false, y: false })
+
+// Two quick taps on the same sticker = a double-tap (phones send no dblclick), used to edit
+// a text sticker's words right on the strip.
+let lastStickerTap = { id: null, time: 0 }
+
+function onStickerPointerDown(event, sticker) {
+  if (props.mode !== 'decorate' || event.button > 0) return
+  event.currentTarget.setPointerCapture(event.pointerId)
+  fingerMove = { id: sticker.id, startX: event.clientX, startY: event.clientY, startStickerX: sticker.x, startStickerY: sticker.y, moved: false }
+}
+
+function onStickerPointerMove(event) {
+  if (!fingerMove) return
+  const dx = event.clientX - fingerMove.startX
+  const dy = event.clientY - fingerMove.startY
+  if (!fingerMove.moved && Math.abs(dx) + Math.abs(dy) < 6) return // a small wobble is still a tap
+  fingerMove.moved = true
+  const box = stripEl.value.getBoundingClientRect()
+  let x = Math.min(100, Math.max(0, fingerMove.startStickerX + (dx / box.width) * 100)) // pixels -> % of the strip
+  let y = Math.min(100, Math.max(0, fingerMove.startStickerY + (dy / box.height) * 100))
+  // Snap to the middle when within a few pixels of it
+  const nearX = Math.abs(x - 50) * box.width / 100 < SNAP_PX
+  const nearY = Math.abs(y - 50) * box.height / 100 < SNAP_PX
+  if (nearX) x = 50
+  if (nearY) y = 50
+  guides.value = { x: nearX, y: nearY }
+  liveSticker.value = { ...(liveSticker.value && liveSticker.value.id === fingerMove.id ? liveSticker.value : {}), id: fingerMove.id, x: x, y: y }
+}
+
+function onStickerPointerUp() {
+  if (!fingerMove) return
+  guides.value = { x: false, y: false }
+  if (fingerMove.moved && liveSticker.value) {
+    emit('move-sticker', fingerMove.id, liveSticker.value.x, liveSticker.value.y)
+  } else {
+    emit('sticker-click', fingerMove.id) // just a tap: select it
+    const now = Date.now()
+    if (lastStickerTap.id === fingerMove.id && now - lastStickerTap.time < 400) {
+      emit('sticker-dblclick', fingerMove.id)
+      lastStickerTap = { id: null, time: 0 }
+    } else {
+      lastStickerTap = { id: fingerMove.id, time: now }
+    }
+  }
+  fingerMove = null
 }
 
 // Phones do not support drag and drop, so a tap on the strip sends its position instead
@@ -301,12 +452,16 @@ function onStripClick(event) {
 <template>
   <!-- dragover.prevent: browsers do not allow dropping by default, cancelling dragover allows it -->
   <!-- drop.prevent: stops some browsers opening the dropped image as a new page -->
+  <!-- strip-wrap: the strip, plus the sticker handles drawn over it (not cut off at the strip's edge) -->
+  <div class="strip-wrap" :style="{ '--strip-aspect': layout.aspect }">
   <div
     ref="stripEl"
     class="strip"
+    :class="{ templated: !!frameStyle.thumbnailUrl }"
     :style="{
       aspectRatio: layout.aspect,
-      background: frameStyle.thumbnailUrl ? `url(${frameStyle.thumbnailUrl}) center/cover no-repeat, ${frameStyle.background}` : frameStyle.background,
+      '--strip-aspect': layout.aspect,
+      background: frameStyle.thumbnailUrl ? `url(${frameStyle.thumbnailUrl}) center/cover no-repeat` : frameStyle.background,
       borderColor: frameStyle.border
     }"
     @dragover.prevent="onDragOver"
@@ -391,38 +546,100 @@ function onStripClick(event) {
       :key="sticker.id"
       class="sticker"
       :class="{ selected: sticker.id === selectedStickerId }"
-      :draggable="mode === 'decorate'"
       :style="{
-        left: sticker.x + '%',
-        top: sticker.y + '%',
-        width: sticker.w + '%',
+        left: shown(sticker).x + '%',
+        top: shown(sticker).y + '%',
+        width: shown(sticker).w + '%',
         zIndex: 10 + sticker.z,
-        transform: 'translate(-50%, -50%) rotate(' + sticker.rotate + 'deg)',
+        transform: 'translate(-50%, -50%) rotate(' + shown(sticker).rotate + 'deg)',
         pointerEvents: mode === 'decorate' ? 'auto' : 'none'
       }"
-      @dragstart="onStickerDragStart($event, sticker)"
+      @pointerdown="onStickerPointerDown($event, sticker)"
+      @pointermove="onStickerPointerMove"
+      @pointerup="onStickerPointerUp"
+      @pointercancel="onStickerPointerUp"
       @click.stop="emit('sticker-click', sticker.id)"
     >
-      <img :src="sticker.src" alt="" draggable="false" />
-      <!-- Who last placed or moved the selected sticker (like "Rae is moving this" in Figma) -->
-      <span v-if="sticker.id === selectedStickerId && sticker.by" class="moved-by">{{ sticker.by }}</span>
+      <img :src="sticker.src" alt="" draggable="false" @load="onStickerLoad($event, sticker.id)" />
     </div>
 
+    <!-- Alignment guides: a red line down / across the middle while a sticker sits on it -->
+    <div v-if="guides.x" class="align-guide vertical" aria-hidden="true"></div>
+    <div v-if="guides.y" class="align-guide horizontal" aria-hidden="true"></div>
+
     <p v-if="frameStyle.caption && !frameStyle.thumbnailUrl" class="caption" :style="{ color: frameStyle.captionColor || frameStyle.border }">{{ frameStyle.caption }}</p>
+  </div>
+
+  <!-- The selected sticker's box with handles (Decorate page) -->
+  <div ref="handlesLayer" class="handles-layer" :class="{ templated: !!frameStyle.thumbnailUrl }">
+    <div v-if="boxSticker" class="sticker-box" :style="boxStyle(boxSticker)">
+      <!-- Corners and sides: resize (the sticker keeps its shape) -->
+      <span
+        v-for="spot in ['tl', 'tr', 'bl', 'br', 't', 'b', 'l', 'r']"
+        :key="spot"
+        class="handle"
+        :class="[spot, spot.length === 2 ? 'corner' : 'side']"
+        @pointerdown.stop.prevent="onHandleDown($event, 'resize')"
+        @pointermove="onHandleMove"
+        @pointerup="onHandleUp"
+        @pointercancel="onHandleUp"
+      ></span>
+
+      <!-- Rotate: the round handle under the box, with the angle next to it -->
+      <span
+        class="rotate-handle"
+        title="Drag to rotate"
+        @pointerenter="overRotate = $event.pointerType === 'mouse'"
+        @pointerleave="overRotate = false"
+        @pointerdown.stop.prevent="onHandleDown($event, 'rotate')"
+        @pointermove="onHandleMove"
+        @pointerup="onHandleUp"
+        @pointercancel="onHandleUp"
+      >&#x21bb;</span>
+      <span v-if="rotating || overRotate" class="angle-tag" :style="{ transform: 'translateX(-50%) rotate(' + -boxSticker.rotate + 'deg)' }">{{ boxSticker.rotate }}°</span>
+
+      <!-- Who last placed or moved it (like "Rae is moving this" in Figma), kept upright -->
+      <span v-if="boxSticker.by" class="moved-by" :style="{ transform: 'rotate(' + -boxSticker.rotate + 'deg)' }">{{ boxSticker.by }}</span>
+
+      <!-- Delete -->
+      <button
+        type="button"
+        class="sticker-delete"
+        aria-label="Delete sticker"
+        title="Delete sticker"
+        @pointerdown.stop
+        @click.stop="emit('delete-sticker', boxSticker.id)"
+      >&times;</button>
+    </div>
+  </div>
   </div>
 </template>
 
 <style scoped>
 /* position: relative, so the slots and stickers (position: absolute) are placed inside the strip */
+.strip-wrap {
+  position: relative;
+  width: 100%;
+  /* At most 300px wide, and never taller than the page's stage (--stage-h, set by the page around the strip;
+     82% of the screen height if the page sets none). width = height × aspect, so every frame, default or saved,
+     fits in the same space whatever its shape. */
+  max-width: min(300px, calc(var(--stage-h, 82vh) * var(--strip-aspect, 0.3)));
+  margin: 0 auto;
+}
+
 .strip {
   position: relative;
   width: 100%;
-  max-width: 300px;
-  margin: 0 auto;
   border: 4px solid;
   border-radius: 6px;
   overflow: hidden;   /* cuts off stickers that hang over the edge */
   user-select: none;  /* stops text being highlighted while dragging */
+}
+
+/* A saved template is a picture that already has its own (rounded) border, so the strip adds none */
+.strip.templated {
+  border: none;
+  border-radius: 0;
 }
 
 .slot {
@@ -547,6 +764,33 @@ function onStripClick(event) {
 .sticker {
   position: absolute;
   cursor: grab;
+  touch-action: none; /* a finger on a sticker moves it instead of scrolling the page */
+}
+
+.sticker:active {
+  cursor: grabbing;
+}
+
+/* The red alignment line through the middle of the strip, above every sticker */
+.align-guide {
+  position: absolute;
+  z-index: 9999;
+  background: #F04438;
+  pointer-events: none;
+}
+
+.align-guide.vertical {
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.align-guide.horizontal {
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
 }
 
 .sticker img {
@@ -556,15 +800,146 @@ function onStripClick(event) {
 }
 
 .sticker.selected {
-  outline: 2px solid #2F5BEA;
-  outline-offset: 2px;
+  outline: none; /* the box with handles marks it instead */
+}
+
+/* ---------- The selected sticker's box (like the Template Editor) ---------- */
+/* Lies exactly over the inside of the strip (inside its 4px border), so % positions match the stickers */
+.handles-layer {
+  position: absolute;
+  inset: 4px;
+  pointer-events: none; /* only the handles catch the mouse; dragging the sticker itself still works */
+  z-index: 40;
+}
+
+.handles-layer.templated {
+  inset: 0; /* a saved template has no strip border */
+}
+
+.sticker-box {
+  position: absolute;
+  border: 2px solid #7C4DFF;
+  border-radius: 2px;
+}
+
+/* White handles with a grey outline */
+.handle {
+  position: absolute;
+  background: #fff;
+  border: 1.5px solid #9AA0B4;
+  box-shadow: 0 1px 3px rgba(20, 23, 43, 0.2);
+  pointer-events: auto;
+  touch-action: none; /* a finger drags the handle instead of scrolling the page */
+}
+
+.handle.corner {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+
+.handle.side {
+  border-radius: 999px;
+}
+
+.handle.t,
+.handle.b {
+  width: 22px;
+  height: 9px;
+  left: 50%;
+  margin-left: -11px;
+}
+
+.handle.l,
+.handle.r {
+  width: 9px;
+  height: 22px;
+  top: 50%;
+  margin-top: -11px;
+}
+
+.handle.tl { left: -8px; top: -8px; cursor: nwse-resize; }
+.handle.br { right: -8px; bottom: -8px; cursor: nwse-resize; }
+.handle.tr { right: -8px; top: -8px; cursor: nesw-resize; }
+.handle.bl { left: -8px; bottom: -8px; cursor: nesw-resize; }
+.handle.t { top: -5px; cursor: ns-resize; }
+.handle.b { bottom: -5px; cursor: ns-resize; }
+.handle.l { left: -5px; cursor: ew-resize; }
+.handle.r { right: -5px; cursor: ew-resize; }
+
+/* The round rotate handle below the box */
+.rotate-handle {
+  position: absolute;
+  left: 50%;
+  bottom: -38px;
+  width: 26px;
+  height: 26px;
+  margin-left: -13px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1.5px solid #9AA0B4;
+  box-shadow: 0 1px 4px rgba(20, 23, 43, 0.25);
+  color: #14172B;
+  font-size: 0.95rem;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.rotate-handle:active {
+  cursor: grabbing;
+}
+
+/* The angle, under the rotate handle (kept upright) */
+.angle-tag {
+  position: absolute;
+  left: 50%;
+  bottom: -60px;
+  background: #7C4DFF;
+  color: #fff;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* The round × to delete, just outside the top-right corner */
+.sticker-delete {
+  position: absolute;
+  top: -30px;
+  right: -30px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: #E5484D;
+  color: #fff;
+  font-size: 0.9rem;
+  font-weight: 700;
+  line-height: 1;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 4px rgba(20, 23, 43, 0.25);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.sticker-delete:hover {
+  background: #C9353A;
 }
 
 .moved-by {
   position: absolute;
-  left: 50%;
-  top: -22px;
-  transform: translateX(-50%);
+  left: -2px;
+  top: -26px;
   background: #F2711C;
   color: #fff;
   font-size: 0.65rem;
