@@ -89,21 +89,21 @@ function formatDate(timestamp) {
         aria-labelledby="templates-overlay-title"
       >
         <!-- Dialog Header -->
-        <div class="px-4 py-3 bg-white border-bottom d-flex align-items-center justify-content-between flex-shrink-0">
-          <div class="d-flex align-items-center gap-3">
-            <div class="p-2 rounded-3 bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center" style="width: 42px; height: 42px;">
-              <IconFolder :size="22" :stroke-width="2" />
+        <div class="px-3 px-sm-4 py-2 py-sm-3 bg-white border-bottom d-flex align-items-center justify-content-between flex-shrink-0">
+          <div class="d-flex align-items-center gap-2 gap-sm-3 min-w-0">
+            <div class="p-2 rounded-3 bg-primary bg-opacity-10 text-primary d-flex align-items-center justify-content-center flex-shrink-0" style="width: 38px; height: 38px;">
+              <IconFolder :size="20" :stroke-width="2" />
             </div>
-            <div>
-              <h5 id="templates-overlay-title" class="fw-bold text-dark fs-5 mb-0">My Saved Templates</h5>
+            <div class="min-w-0">
+              <h5 id="templates-overlay-title" class="fw-bold text-dark fs-6 fs-sm-5 mb-0 text-truncate">My Saved Templates</h5>
             </div>
           </div>
 
-          <div class="d-flex align-items-center gap-2">
+          <div class="d-flex align-items-center gap-1 gap-sm-2 flex-shrink-0">
             <!-- Button to start new frame -->
             <button
               type="button"
-              class="btn btn-sm btn-outline-primary rounded-pill px-3 py-1 fw-semibold d-flex align-items-center gap-1"
+              class="btn btn-sm btn-outline-primary rounded-pill px-2 px-sm-3 py-1 fw-semibold d-flex align-items-center gap-1"
               style="font-size: 0.82rem;"
               title="Start a new blank photostrip frame"
               @click="startNewBlankFrame"
@@ -112,17 +112,17 @@ function formatDate(timestamp) {
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
-              <span>New Frame</span>
+              <span class="d-none d-sm-inline">New Frame</span>
             </button>
 
             <!-- Router link to full studio -->
             <router-link
               to="/studio"
-              class="btn btn-sm btn-light border rounded-pill px-3 py-1 text-secondary text-decoration-none fw-semibold d-flex align-items-center gap-1"
+              class="btn btn-sm btn-light border rounded-pill px-2 px-sm-3 py-1 text-secondary text-decoration-none fw-semibold d-flex align-items-center gap-1"
               style="font-size: 0.82rem;"
               title="View full My Studio page"
             >
-              <span>My Studio</span>
+              <span class="d-none d-sm-inline">My Studio</span>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
                 <polyline points="15 3 21 3 21 9" />
@@ -133,7 +133,7 @@ function formatDate(timestamp) {
             <!-- Close button -->
             <button
               type="button"
-              class="btn-close ms-2"
+              class="btn-close ms-1 ms-sm-2"
               aria-label="Close"
               @click="closeMyTemplatesDrawer"
             ></button>
@@ -141,7 +141,7 @@ function formatDate(timestamp) {
         </div>
 
         <!-- Toolbar: Search Bar & Count -->
-        <div class="px-4 py-2 bg-light border-bottom d-flex align-items-center justify-content-between gap-3 flex-shrink-0">
+        <div class="px-3 px-sm-4 py-2 bg-light border-bottom d-flex align-items-center justify-content-between gap-2 gap-sm-3 flex-shrink-0">
           <div class="input-group input-group-sm" style="max-width: 380px;">
             <span class="input-group-text bg-white border-end-0">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748B" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
@@ -440,6 +440,17 @@ function formatDate(timestamp) {
   display: flex;
   flex-direction: column;
   animation: scaleIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (max-width: 576px) {
+  .my-templates-overlay-backdrop {
+    padding: 8px;
+  }
+  .my-templates-dialog {
+    width: 100%;
+    height: 94vh;
+    border-radius: 14px;
+  }
 }
 
 .empty-icon-wrapper {

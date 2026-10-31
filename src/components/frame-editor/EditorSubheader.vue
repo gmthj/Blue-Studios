@@ -225,18 +225,19 @@ const {
       </button>
     </div>
 
-    <!-- Right: Save Action (Desktop & Mobile) & My Templates (Desktop only) -->
+    <!-- Right: Save Action & My Templates -->
     <div class="d-flex align-items-center gap-2">
-      <!-- My Templates Drawer Action Button (Desktop only) -->
+      <!-- My Templates Drawer Action Button (Desktop text + count, Mobile icon only) -->
       <button
         type="button"
-        class="btn btn-sm btn-outline-secondary d-none d-lg-flex align-items-center gap-1"
+        class="btn btn-sm btn-outline-secondary d-flex align-items-center justify-content-center gap-1"
         title="View all your saved templates"
+        aria-label="My Templates"
         @click="openMyTemplatesDrawer"
       >
-        <IconFolder :size="14" :stroke-width="2.2" />
-        <span>My Templates</span>
-        <span v-if="allUserTemplatesCount > 0" class="badge rounded-pill bg-primary ms-1">{{ allUserTemplatesCount }}</span>
+        <IconFolder :size="15" :stroke-width="2.2" />
+        <span class="d-none d-lg-inline">My Templates</span>
+        <span v-if="allUserTemplatesCount > 0" class="badge rounded-pill bg-primary ms-1 d-none d-lg-inline">{{ allUserTemplatesCount }}</span>
       </button>
 
       <!-- Save Frame Button -->
