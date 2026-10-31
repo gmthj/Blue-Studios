@@ -13,13 +13,13 @@ const route = useRoute()
 const router = useRouter()
 const { user, isAccount, isAdmin, authError, avatar, logOut, resendVerification } = useAuth()
 
-// Room pages use the full width of the screen (Bootstrap container-fluid), so big laptop and
-// computer screens get a bigger camera and bigger video call tiles.
+// Room pages and frame editor use the full width of the screen (Bootstrap container-fluid), so big laptop and
+// computer screens get a bigger camera, video call tiles, or full-width editor canvas.
 // Other pages (home) use the normal centred container.
-const isEditor = computed(() => route.path === '/template-editor')
+const isEditor = computed(() => route.path === '/frame-editor')
 const inRoom = computed(() => route.path.startsWith('/room/'))
 const containerClass = computed(() => {
-  return inRoom.value ? 'container-fluid' : 'container'
+  return (inRoom.value || isEditor.value) ? 'container-fluid' : 'container'
 })
 
 // Fullscreen button in a room (StageBar.vue): the header is hidden so the room gets the whole screen
@@ -27,7 +27,7 @@ const { fullscreen } = useFullscreen()
 const hideNav = computed(() => inRoom.value && fullscreen.value)
 
 // Accounts that have not clicked the link in their verification email yet
-const showVerifyReminder = computed(() => isAccount.value && !user.value.emailVerified && !inRoom.value)
+const showVerifyReminder = computed(() => isAccount.value && !user.value.emailVerified && !inRoom.value && !isEditor.value)
 const verificationSent = ref(false)
 
 async function resend() {
@@ -49,78 +49,81 @@ async function logOutAndGoHome() {
 </script>
 
 <template>
-  <template v-if="isEditor">
-    <router-view />
-  </template>
-  <template v-else>
-    <!--
-      White bar with the logo. Sticky: it stays at the top while the page scrolls (not in a room,
-      where the camera needs all the height). On phones the links become icons, so everything fits on one line.
-    -->
-    <nav v-if="!hideNav" class="app-nav mb-4" :class="{ sticky: !inRoom }">
-      <div class="nav-inner" :class="containerClass">
-        <router-link to="/" class="brand">
-          <!-- The camera and film strip from the logo (public/images/bluestudios.jpeg), cut out with a see-through background -->
-          <img src="/images/logo-mark.png" class="brand-mark" alt="" width="28" height="40" />
-          <span>Blue Studios</span>
+  <!--
+    White bar with the logo. Sticky: it stays at the top while the page scrolls (not in a room,
+    where the camera needs all the height). On phones the links become icons, so everything fits on one line.
+  -->
+  <nav v-if="!hideNav" class="app-nav" :class="{ sticky: !inRoom, 'mb-4': !inRoom && !isEditor }">
+    <div class="nav-inner" :class="containerClass">
+      <router-link to="/" class="brand">
+        <!-- The camera and film strip from the logo (public/images/bluestudios.jpeg), cut out with a see-through background -->
+        <img src="/images/logo-mark.png" class="brand-mark" alt="" width="28" height="40" />
+        <span>Blue Studios</span>
+      </router-link>
+
+      <!-- Hidden inside a room: logging out there would change your user id and drop you from the room -->
+      <div v-if="!inRoom" class="nav-links">
+        <router-link to="/marketplace" class="nav-link-btn" title="Marketplace">
+          <AppIcon name="shop" :size="18" />
+          <span class="link-text">Marketplace</span>
         </router-link>
-
-        <!-- Hidden inside a room: logging out there would change your user id and drop you from the room -->
-        <div v-if="!inRoom" class="nav-links">
-          <router-link to="/marketplace" class="nav-link-btn" title="Marketplace">
-            <AppIcon name="shop" :size="18" />
-            <span class="link-text">Marketplace</span>
+        <template v-if="isAccount">
+          <router-link to="/studio" class="nav-link-btn" title="My Studio">
+            <AppIcon name="folder" :size="18" />
+            <span class="link-text">My Studio</span>
           </router-link>
-          <template v-if="isAccount">
-            <router-link to="/studio" class="nav-link-btn" title="My Studio">
-              <AppIcon name="folder" :size="18" />
-              <span class="link-text">My Studio</span>
-            </router-link>
-            <router-link v-if="isAdmin" to="/admin" class="nav-link-btn nav-admin" title="Admin">
-              <AppIcon name="shield" :size="18" />
-              <span class="link-text">Admin</span>
-            </router-link>
-            <span class="nav-divider" aria-hidden="true"></span>
-            <!-- My picture and name: opens the Edit profile popup -->
-            <button class="account" title="Edit profile" aria-haspopup="dialog" @click="profileOpen = true">
-              <img :src="avatar" class="avatar" alt="" width="30" height="30" />
-              <span class="account-name text-truncate d-none d-lg-inline">{{ profileOf(user.uid).name || user.displayName || user.email }}</span>
-              <span class="visually-hidden">Edit profile</span>
-            </button>
-            <button class="nav-link-btn" title="Log out" @click="logOutAndGoHome">
-              <AppIcon name="log-out" :size="18" />
-              <span class="link-text">Log out</span>
-            </button>
-          </template>
-          <template v-else>
-            <router-link to="/login" class="nav-link-btn">Log in</router-link>
-            <router-link to="/login?mode=signup" class="nav-signup">Sign up</router-link>
-          </template>
-        </div>
+          <router-link v-if="isAdmin" to="/admin" class="nav-link-btn nav-admin" title="Admin">
+            <AppIcon name="shield" :size="18" />
+            <span class="link-text">Admin</span>
+          </router-link>
+          <span class="nav-divider" aria-hidden="true"></span>
+          <!-- My picture and name: opens the Edit profile popup -->
+          <button class="account" title="Edit profile" aria-haspopup="dialog" @click="profileOpen = true">
+            <img :src="avatar" class="avatar" alt="" width="30" height="30" />
+            <span class="account-name text-truncate d-none d-lg-inline">{{ profileOf(user.uid).name || user.displayName || user.email }}</span>
+            <span class="visually-hidden">Edit profile</span>
+          </button>
+          <button class="nav-link-btn" title="Log out" @click="logOutAndGoHome">
+            <AppIcon name="log-out" :size="18" />
+            <span class="link-text">Log out</span>
+          </button>
+        </template>
+        <template v-else>
+          <router-link to="/login" class="nav-link-btn">Log in</router-link>
+          <router-link to="/login?mode=signup" class="nav-signup">Sign up</router-link>
+        </template>
       </div>
-    </nav>
+    </div>
+  </nav>
 
-    <ProfileDialog v-if="isAccount" v-model:open="profileOpen" />
+  <ProfileDialog v-if="isAccount" v-model:open="profileOpen" />
 
-    <!-- One marketplace template or sticker, on top of any page whose URL has ?item=templates:{id} -->
-    <MarketplaceItemDialog />
+  <!-- One marketplace template or sticker, on top of any page whose URL has ?item=templates:{id} -->
+  <MarketplaceItemDialog />
 
-    <main class="pb-3" :class="[containerClass, { 'pt-2': hideNav }]">
-      <!-- Could not sign in (even as a guest), so nothing would be saved: show why instead of the page -->
-      <div v-if="authError" class="alert alert-danger">{{ authError }}</div>
+  <main
+    :class="[
+      isEditor ? 'p-0 editor-main' : containerClass,
+      {
+        'pb-3': !isEditor,
+        'pt-2': hideNav
+      }
+    ]"
+  >
+    <!-- Could not sign in (even as a guest), so nothing would be saved: show why instead of the page -->
+    <div v-if="authError" class="alert alert-danger">{{ authError }}</div>
 
-      <template v-else>
-        <div v-if="showVerifyReminder" class="alert alert-warning small">
-          Please confirm your email: open the link we sent to {{ user.email }}.
-          <span v-if="verificationSent">Sent again!</span>
-          <button v-else class="btn btn-link btn-sm p-0 align-baseline" @click="resend">Send it again</button>
-        </div>
+    <template v-else>
+      <div v-if="showVerifyReminder" class="alert alert-warning small">
+        Please confirm your email: open the link we sent to {{ user.email }}.
+        <span v-if="verificationSent">Sent again!</span>
+        <button v-else class="btn btn-link btn-sm p-0 align-baseline" @click="resend">Send it again</button>
+      </div>
 
-        <!-- The page that matches the URL (see router.js) is shown here -->
-        <router-view />
-      </template>
-    </main>
-  </template>
+      <!-- The page that matches the URL (see router.js) is shown here -->
+      <router-view />
+    </template>
+  </main>
 
   <!-- In-app popups for questions and messages (askConfirm / askText / showNotice in useDialog.js).
        Outside the v-if above, so the template editor can use it too. -->
@@ -141,6 +144,15 @@ async function logOutAndGoHome() {
   font-family: 'Plus Jakarta Sans', var(--bs-body-font-family);
   background: rgba(255, 255, 255, 0.85);
   border-bottom: 1px solid var(--line);
+}
+
+/* Full-height viewport workspace for template editor */
+.editor-main {
+  height: calc(100vh - 57px);
+  max-height: calc(100vh - 57px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 /* Stays at the top while scrolling. The see-through white with blur lets the page show faintly behind it.

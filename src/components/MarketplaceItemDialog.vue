@@ -261,13 +261,13 @@ function formatDate(time) {
               <AppIcon name="bookmark" :size="16" /> Log in to save
             </router-link>
 
-            <!-- Templates can also be opened in the template editor -->
+            <!-- Templates can also be opened in the frame editor -->
             <router-link
               v-if="item.type === 'templates'"
-              :to="'/template-editor?template=' + item.id"
+              :to="'/frame-editor?template=' + item.id"
               class="btn btn-outline-secondary d-inline-flex align-items-center justify-content-center gap-2"
             >
-              <AppIcon name="edit" :size="16" /> Open in Template Editor
+              <AppIcon name="edit" :size="16" /> Open in Frame Editor
             </router-link>
           </div>
           <p v-if="!isAccount" class="small text-muted mt-2 mb-0">Free account. Your saved templates and stickers show up in My Studio.</p>

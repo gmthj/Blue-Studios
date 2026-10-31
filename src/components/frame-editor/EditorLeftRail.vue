@@ -1,8 +1,8 @@
 <script setup>
-import { useTemplateEditorContext } from "../../composables/useTemplateEditor.js"
+import { useFrameEditorContext } from "../../composables/useFrameEditor.js"
 
 
-const editor = useTemplateEditorContext()
+const editor = useFrameEditorContext()
 const {
   activeTool,
   canvasElements,
@@ -35,10 +35,10 @@ const {
           @click="toggleDrawer('elements')"
         >
           <div class="mb-1">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="8" cy="8" r="4" />
-              <rect x="13" y="4" width="7" height="7" rx="1.5" />
-              <polygon points="12 14 16 21 8 21" />
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3.16a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1H8.3z" />
+              <rect x="3" y="14" width="7" height="7" rx="1" />
+              <circle cx="17.5" cy="17.5" r="3.5" />
             </svg>
           </div>
           <span style="font-size: 0.68rem;">Elements</span>
@@ -66,15 +66,19 @@ const {
           :class="(activeTool === 'uploads' && isDrawerOpen) ? 'text-primary bg-primary bg-opacity-10 fw-bold' : 'text-secondary'"
           @click="toggleDrawer('uploads')"
         >
-          <div class="mb-1">
+          <div class="mb-1 position-relative">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
               <polyline points="17 8 12 3 7 8" />
               <line x1="12" y1="3" x2="12" y2="15" />
             </svg>
+            <span
+              v-if="userUploads.length > 0"
+              class="badge rounded-pill bg-primary position-absolute top-0 start-100 translate-middle"
+              style="font-size: 0.6rem; padding: 2px 4px; line-height: 1;"
+            >{{ userUploads.length }}</span>
           </div>
           <span style="font-size: 0.68rem;">Uploads</span>
-          <span v-if="userUploads.length > 0" class="badge rounded-pill bg-primary position-absolute top-0 end-0 translate-middle-y me-1">{{ userUploads.length }}</span>
         </button>
 
         <button
@@ -97,15 +101,19 @@ const {
           :class="(activeTool === 'layers' && isDrawerOpen) ? 'text-primary bg-primary bg-opacity-10 fw-bold' : 'text-secondary'"
           @click="toggleDrawer('layers')"
         >
-          <div class="mb-1">
+          <div class="mb-1 position-relative">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <polygon points="12 2 2 7 12 12 22 7 12 2" />
               <polyline points="2 17 12 22 22 17" />
               <polyline points="2 12 12 17 22 12" />
             </svg>
+            <span
+              v-if="canvasElements.length > 0"
+              class="badge rounded-pill bg-primary position-absolute top-0 start-100 translate-middle"
+              style="font-size: 0.6rem; padding: 2px 4px; line-height: 1;"
+            >{{ canvasElements.length }}</span>
           </div>
           <span style="font-size: 0.68rem;">Layers</span>
-          <span v-if="canvasElements.length > 0" class="badge rounded-pill bg-primary position-absolute top-0 end-0 translate-middle-y me-1">{{ canvasElements.length }}</span>
         </button>
       </aside>
 </template>

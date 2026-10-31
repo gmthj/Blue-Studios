@@ -1,8 +1,9 @@
 <script setup>
-import { useTemplateEditorContext } from "../../composables/useTemplateEditor.js"
+import { onMounted, nextTick } from 'vue'
+import { useFrameEditorContext } from "../../composables/useFrameEditor.js"
 import CanvasRulerOverlay from "../CanvasRulerOverlay.vue"
 
-const editor = useTemplateEditorContext()
+const editor = useFrameEditorContext()
 const {
   activeDistanceBadges,
   activeGuides,
@@ -33,6 +34,7 @@ const {
   exportConfig,
   finishEditingCaption,
   finishEditingText,
+  fitToScreen,
   frameBg,
   getCurvedPathD,
   getCurvedSvgHeight,
@@ -79,6 +81,7 @@ const {
   sendToBack,
   sendToBackSelected,
   setTextRef,
+  shortcuts,
   showCutouts,
   showRulers,
   slotShape,
@@ -94,15 +97,27 @@ const {
   togglePositionPopover,
   toggleRulers,
   transformStyle,
-  ungroupSelectedElements
+  ungroupSelectedElements,
+  zoomPercentage
 } = editor
+
+onMounted(() => {
+  nextTick(() => {
+    if (typeof window !== 'undefined' && window.innerWidth < 992) {
+      fitToScreen(canvasWorkspaceRef.value, stripRef.value)
+      setTimeout(() => {
+        fitToScreen(canvasWorkspaceRef.value, stripRef.value)
+      }, 100)
+    }
+  })
+})
 </script>
 
 <template>
       <!-- Center Canvas Workspace -->
       <main
         ref="canvasWorkspaceRef"
-        class="canvas-workspace"
+        class="canvas-workspace position-relative"
         :class="{
           'is-hand-mode': isSpacePressed || isHandToolActive,
           'is-panning': isPanning,
@@ -115,6 +130,23 @@ const {
         @wheel.prevent="onWorkspaceWheel"
         @click="onCanvasClick"
       >
+        <!-- Mobile Floating Stage Pills (Layout Name & Zoom/Fit Badge) -->
+        <div class="canvas-stage-pills d-lg-none position-absolute top-0 start-0 end-0 d-flex justify-content-between p-2 pointer-events-none" style="z-index: 100;">
+          <div class="badge bg-white text-dark shadow-sm border px-2 py-1 fw-medium pointer-events-auto d-flex align-items-center gap-1" style="font-size: 0.72rem;">
+            <span>{{ currentLayoutDef.name }}</span>
+            <span class="text-muted" style="font-size: 0.65rem;">({{ currentSlots.length }} slots)</span>
+          </div>
+
+          <button
+            type="button"
+            class="badge bg-white text-secondary shadow-sm border px-2 py-1 fw-medium pointer-events-auto btn btn-sm border-0"
+            style="font-size: 0.72rem;"
+            title="Reset Zoom & Fit to Screen"
+            @click.stop="fitToScreen(canvasWorkspaceRef, stripRef)"
+          >
+            {{ zoomPercentage }}
+          </button>
+        </div>
         <!-- Canvas Marquee / Rubberband Selection Box -->
         <div
           v-if="isMarqueeActive && marqueeBoxStyle"
@@ -256,6 +288,7 @@ const {
                 display: el.isHidden ? 'none' : 'block'
               }"
               @mousedown.stop="selectElement(el, $event)"
+              @touchstart.stop="selectElement(el, $event)"
               @click.stop
               @dblclick.stop="onElementDblClick(el)"
               @contextmenu="openContextMenu($event, el)"
@@ -328,6 +361,9 @@ const {
                   @keydown.enter.prevent="finishEditingText(el)"
                   @keydown.esc.prevent="finishEditingText(el)"
                   @mousedown.stop
+                  @touchstart.stop
+                  @touchend.stop
+                  @pointerdown.stop
                   @click.stop
                 ></div>
 
@@ -409,7 +445,14 @@ const {
               <template v-if="selectedElementIds.length === 1 && selectedElementIds[0] === el.id">
                 <div class="element-bounding-box" :class="{ 'is-editing-text': editingTextId === el.id }">
                   <!-- Canva-Style Floating Action Toolbar above selected element (hidden during direct text typing) -->
-                  <div v-if="editingTextId !== el.id" class="element-floating-bar" @mousedown.stop>
+                  <div
+                    v-if="editingTextId !== el.id"
+                    class="element-floating-bar"
+                    @mousedown.stop
+                    @touchstart.stop
+                    @touchend.stop
+                    @pointerdown.stop
+                  >
                     <!-- Quick Edit Text Button if text type -->
                     <button
                       v-if="el.type === 'text'"
@@ -429,7 +472,7 @@ const {
                     <button
                       v-if="el.groupId"
                       class="floating-tool-btn group-btn"
-                      title="Ungroup Element (⇧⌘G)"
+                      :title="`Ungroup Element (${shortcuts.ungroup})`"
                       @click.stop="ungroupSelectedElements"
                     >
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
@@ -460,27 +503,35 @@ const {
                       </button>
 
                       <!-- Position Popover Menu -->
-                      <div v-if="isPositionPopoverOpen" class="position-popover" @click.stop>
-                        <div class="popover-header">Layer Ordering</div>
+                      <div
+                        v-if="isPositionPopoverOpen"
+                        class="position-popover"
+                        @click.stop
+                        @mousedown.stop
+                        @touchstart.stop
+                        @touchend.stop
+                        @pointerdown.stop
+                      >
+                        <div class="popover-header d-none d-lg-block">Layer Ordering</div>
                         <button class="popover-item" @click="bringForward(el.id)">
-                          <span class="item-icon">▲</span>
+                          <span class="item-icon d-none d-lg-inline-block">▲</span>
                           <span class="item-label">Bring Forward</span>
-                          <span class="item-shortcut">⌘]</span>
+                          <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.bringForward }}</span>
                         </button>
                         <button class="popover-item" @click="bringToFront(el.id)">
-                          <span class="item-icon">⇪▲</span>
+                          <span class="item-icon d-none d-lg-inline-block">⇪▲</span>
                           <span class="item-label">Bring to Front</span>
-                          <span class="item-shortcut">⇧⌘]</span>
+                          <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.bringToFront }}</span>
                         </button>
                         <button class="popover-item" @click="sendBackward(el.id)">
-                          <span class="item-icon">▼</span>
+                          <span class="item-icon d-none d-lg-inline-block">▼</span>
                           <span class="item-label">Send Backward</span>
-                          <span class="item-shortcut">⌘[</span>
+                          <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.sendBackward }}</span>
                         </button>
                         <button class="popover-item" @click="sendToBack(el.id)">
-                          <span class="item-icon">⇪▼</span>
+                          <span class="item-icon d-none d-lg-inline-block">⇪▼</span>
                           <span class="item-label">Send to Back</span>
-                          <span class="item-shortcut">⇧⌘[</span>
+                          <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.sendToBack }}</span>
                         </button>
                       </div>
                     </div>
@@ -488,7 +539,7 @@ const {
                     <div class="floating-divider"></div>
 
                     <!-- Duplicate Button -->
-                    <button class="floating-tool-btn icon-only" title="Duplicate (⌘D)" @click.stop="duplicateElement(el.id)">
+                    <button class="floating-tool-btn icon-only" :title="`Duplicate (${shortcuts.duplicate})`" @click.stop="duplicateElement(el.id)">
                       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                         <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
@@ -582,12 +633,18 @@ const {
               @dblclick.stop="onCollectiveDblClick($event)"
             >
               <!-- Collective Floating Action Toolbar -->
-              <div class="element-floating-bar collective-floating-bar" @mousedown.stop>
+              <div
+                class="element-floating-bar collective-floating-bar"
+                @mousedown.stop
+                @touchstart.stop
+                @touchend.stop
+                @pointerdown.stop
+              >
                 <!-- Group / Ungroup Button -->
                 <button
                   v-if="canUngroupSelected"
                   class="floating-tool-btn group-btn"
-                  title="Ungroup Elements (⇧⌘G)"
+                  :title="`Ungroup Elements (${shortcuts.ungroup})`"
                   @click.stop="ungroupSelectedElements"
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
@@ -595,12 +652,12 @@ const {
                     <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
                   </svg>
                   <span>Ungroup</span>
-                  <span class="shortcut-tag">⇧⌘G</span>
+                  <span class="shortcut-tag d-none d-lg-inline-block">{{ shortcuts.ungroup }}</span>
                 </button>
                 <button
                   v-else
                   class="floating-tool-btn group-btn"
-                  title="Group Elements (⌘G)"
+                  :title="`Group Elements (${shortcuts.group})`"
                   @click.stop="groupSelectedElements"
                 >
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
@@ -610,7 +667,7 @@ const {
                     <rect x="3" y="14" width="7" height="7" />
                   </svg>
                   <span>Group</span>
-                  <span class="shortcut-tag">⌘G</span>
+                  <span class="shortcut-tag d-none d-lg-inline-block">{{ shortcuts.group }}</span>
                 </button>
 
                 <div class="floating-divider"></div>
@@ -635,17 +692,25 @@ const {
                   </button>
 
                   <!-- Position Popover Menu -->
-                  <div v-if="isPositionPopoverOpen" class="position-popover" @click.stop>
-                    <div class="popover-header">Layer Ordering</div>
+                  <div
+                    v-if="isPositionPopoverOpen"
+                    class="position-popover"
+                    @click.stop
+                    @mousedown.stop
+                    @touchstart.stop
+                    @touchend.stop
+                    @pointerdown.stop
+                  >
+                    <div class="popover-header d-none d-lg-block">Layer Ordering</div>
                     <button class="popover-item" @click="bringToFrontSelected">
-                      <span class="item-icon">⇪▲</span>
+                      <span class="item-icon d-none d-lg-inline-block">⇪▲</span>
                       <span class="item-label">Bring to Front</span>
-                      <span class="item-shortcut">⇧⌘]</span>
+                      <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.bringToFront }}</span>
                     </button>
                     <button class="popover-item" @click="sendToBackSelected">
-                      <span class="item-icon">⇪▼</span>
+                      <span class="item-icon d-none d-lg-inline-block">⇪▼</span>
                       <span class="item-label">Send to Back</span>
-                      <span class="item-shortcut">⇧⌘[</span>
+                      <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.sendToBack }}</span>
                     </button>
                   </div>
                 </div>
@@ -653,7 +718,7 @@ const {
                 <div class="floating-divider"></div>
 
                 <!-- Duplicate Multi-Selection -->
-                <button class="floating-tool-btn icon-only" title="Duplicate (⌘D)" @click.stop="duplicateSelectedElements">
+                <button class="floating-tool-btn icon-only" :title="`Duplicate (${shortcuts.duplicate})`" @click.stop="duplicateSelectedElements">
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />

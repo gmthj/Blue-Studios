@@ -61,6 +61,23 @@ export const FRAME_STYLES = [
   { id: 'mine-sunny', group: 'mine', background: '#FFE8A3', border: '#E0A100', shape: 'rounded', caption: 'Our day out' },
 ]
 
+// ---------- STICKER TRAY (Decorate page) ----------
+// PLACEHOLDER (Rae): replace with stickers from the Sticker Maker.
+//   tab 'mine'    = stickers the user made (cut-outs, custom captions)
+//   tab 'giphy'   = GIPHY search results (a .gif URL works as it is, <img> plays it)
+//   tab 'dynamic' = live stickers (OpenWeatherMap weather, the time)
+// Each sticker only needs { id, tab, name, src }, where src is an image URL.
+
+// Draws a coloured text badge as an SVG and returns it as an image URL, so we have
+// stickers to test with before the Sticker Maker is ready
+function makeBadge(text, background, colour) {
+  const svg =
+    '<svg xmlns="http://www.w3.org/2000/svg" width="260" height="70">' +
+    '<rect x="2" y="2" width="256" height="66" rx="33" fill="' + background + '"/>' +
+    '<text x="130" y="45" font-family="Arial" font-size="24" font-weight="bold" fill="' + colour +
+    '" text-anchor="middle">' + text + '</text></svg>'
+  return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
+}
 // ---------- WHAT THE ROOM HAS CHOSEN ----------
 // The cut and the frame of a room's strip, the same as on the Pick and Decorate pages.
 // A template picked from My Studio or the marketplace is saved as room.stripCustomTemplate: it brings its own slots

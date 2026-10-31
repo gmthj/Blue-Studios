@@ -196,35 +196,41 @@ export async function loadSavedFramesFromDB() {
 
 export async function saveFrameToDB(frameRecord) {
   try {
+    const cleanRecord = JSON.parse(JSON.stringify(frameRecord))
     const db = await openFramesDB()
     if (!db) {
       const cached = localStorage.getItem('blue_studios_saved_frames')
       const list = cached ? JSON.parse(cached) : []
-      const idx = list.findIndex((f) => f.id === frameRecord.id)
-      if (idx >= 0) list[idx] = frameRecord
-      else list.unshift(frameRecord)
+      const idx = list.findIndex((f) => f.id === cleanRecord.id)
+      if (idx >= 0) list[idx] = cleanRecord
+      else list.unshift(cleanRecord)
       localStorage.setItem('blue_studios_saved_frames', JSON.stringify(list.slice(0, 30)))
       return true
     }
     return new Promise((resolve) => {
-      const tx = db.transaction(FRAMES_STORE_NAME, 'readwrite')
-      const store = tx.objectStore(FRAMES_STORE_NAME)
-      store.put(frameRecord)
-      tx.oncomplete = () => {
-        try {
-          const cached = localStorage.getItem('blue_studios_saved_frames')
-          if (cached) {
-            const list = JSON.parse(cached)
-            const idx = list.findIndex((f) => f.id === frameRecord.id)
-            if (idx >= 0) list[idx] = frameRecord
-            else list.unshift(frameRecord)
-            localStorage.setItem('blue_studios_saved_frames', JSON.stringify(list.slice(0, 30)))
-          }
-        } catch (_) {}
-        resolve(true)
-      }
-      tx.onerror = (err) => {
-        console.warn('Error saving frame to IndexedDB:', err)
+      try {
+        const tx = db.transaction(FRAMES_STORE_NAME, 'readwrite')
+        const store = tx.objectStore(FRAMES_STORE_NAME)
+        store.put(cleanRecord)
+        tx.oncomplete = () => {
+          try {
+            const cached = localStorage.getItem('blue_studios_saved_frames')
+            if (cached) {
+              const list = JSON.parse(cached)
+              const idx = list.findIndex((f) => f.id === cleanRecord.id)
+              if (idx >= 0) list[idx] = cleanRecord
+              else list.unshift(cleanRecord)
+              localStorage.setItem('blue_studios_saved_frames', JSON.stringify(list.slice(0, 30)))
+            }
+          } catch (_) {}
+          resolve(true)
+        }
+        tx.onerror = (err) => {
+          console.warn('Error saving frame to IndexedDB:', err)
+          resolve(false)
+        }
+      } catch (err) {
+        console.warn('Sync error saving frame to IndexedDB:', err)
         resolve(false)
       }
     })

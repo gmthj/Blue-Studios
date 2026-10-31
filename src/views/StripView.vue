@@ -606,6 +606,12 @@ async function goToStage(stage) {
             @click="chooseStyle(s.id)"
           ></button>
 
+          <!-- Add new template button linking to Frame Editor -->
+          <router-link
+            to="/frame-editor"
+            class="swatch add-swatch text-decoration-none d-flex align-items-center justify-content-center"
+            title="Design a new frame in Frame Editor"
+          >+</router-link>
         </div>
 
         <!-- Templates saved from the marketplace (in My Studio) -->
@@ -641,6 +647,13 @@ async function goToStage(stage) {
               <div class="text-muted" style="font-size: 0.7rem;">Active Template</div>
             </div>
           </div>
+          <router-link
+            :to="'/frame-editor?template=' + room.stripCustomTemplate.id"
+            class="btn btn-sm btn-outline-primary py-0 px-2 text-decoration-none flex-shrink-0"
+            title="Re-edit this template in Frame Editor (retains full workspace)"
+          >
+            ✏️ Re-edit
+          </router-link>
         </div>
 
         <!-- The cut is only for the default designs: a template already has its own slots -->

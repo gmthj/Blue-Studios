@@ -5,11 +5,14 @@ import { useRoute, useRouter } from "vue-router"
 import { useSmartGuides } from "./useSmartGuides.js"
 import { useCanvasViewport } from "./useCanvasViewport.js"
 import { useAuth, getUid } from "./useAuth.js"
+import { askConfirm } from "./useDialog.js"
 
 // Studio & Marketplace Integrations
 import {
   saveTemplate,
   loadTemplateProject,
+  listMyItems,
+  deleteItem,
   CATEGORIES,
   MAX_CATEGORIES,
   categoryLabel
@@ -18,7 +21,6 @@ import { getItem } from "../marketplace.js"
 
 // Utilities & Engines
 import {
-  exportPhotostrip,
   MOCK_PORTRAIT_PHOTOS,
   sanitizeFilename
 } from "../utils/exportEngine.js"
@@ -47,12 +49,13 @@ import {
   BACKGROUND_PATTERNS,
   getTextureBackgroundImage,
   getTextureBackgroundSize
-} from "../constants/templateEditorData.js"
+} from "../constants/frameEditorData.js"
 
-export const TEMPLATE_EDITOR_KEY = Symbol("TEMPLATE_EDITOR_KEY")
+export const FRAME_EDITOR_KEY = Symbol("FRAME_EDITOR_KEY")
+export const TEMPLATE_EDITOR_KEY = FRAME_EDITOR_KEY
 
 
-export function useTemplateEditor() {
+export function useFrameEditor() {
 const templatePresets = TEMPLATE_PRESETS
 const elementCategories = ELEMENT_CATEGORIES
 const textPresets = TEXT_PRESETS
@@ -60,6 +63,38 @@ const bgColors = BACKGROUND_COLORS
 const bgGradients = BACKGROUND_GRADIENTS
 const bgTextures = BACKGROUND_TEXTURES
 const bgPatterns = BACKGROUND_PATTERNS
+
+// Cross-platform OS detection (Mac vs Windows / Linux)
+const isMac = typeof navigator !== 'undefined' && (
+  /Mac|iPod|iPhone|iPad/.test(navigator.userAgent || navigator.platform || '') ||
+  (navigator.userAgentData?.platform === 'macOS')
+)
+
+// Platform-appropriate keyboard shortcut labels
+const shortcuts = {
+  isMac,
+  mod: isMac ? '⌘' : 'Ctrl+',
+  shiftMod: isMac ? '⇧⌘' : 'Ctrl+Shift+',
+  undo: isMac ? '⌘Z' : 'Ctrl+Z',
+  redo: isMac ? '⌘Y' : 'Ctrl+Y',
+  save: isMac ? '⌘S' : 'Ctrl+S',
+  duplicate: isMac ? '⌘D' : 'Ctrl+D',
+  group: isMac ? '⌘G' : 'Ctrl+G',
+  ungroup: isMac ? '⇧⌘G' : 'Ctrl+Shift+G',
+  selectAll: isMac ? '⌘A' : 'Ctrl+A',
+  zoomIn: isMac ? '⌘+' : 'Ctrl++',
+  zoomOut: isMac ? '⌘-' : 'Ctrl+-',
+  fit: isMac ? '⌘0' : 'Ctrl+0',
+  actualSize: isMac ? '⌘1' : 'Ctrl+1',
+  bold: isMac ? '⌘B' : 'Ctrl+B',
+  italic: isMac ? '⌘I' : 'Ctrl+I',
+  underline: isMac ? '⌘U' : 'Ctrl+U',
+  bringForward: isMac ? '⌘]' : 'Ctrl+]',
+  bringToFront: isMac ? '⇧⌘]' : 'Ctrl+Shift+]',
+  sendBackward: isMac ? '⌘[' : 'Ctrl+[',
+  sendToBack: isMac ? '⇧⌘[' : 'Ctrl+Shift+[',
+  delete: isMac ? 'Delete / ⌫' : 'Delete / Backspace'
+}
 
 // =============================================================================
 // 2. Core Reactive State & Model Definitions
@@ -82,8 +117,31 @@ const cloudId = ref(null) // Firestore document ID if saved to account or loaded
 const loadedTemplateOwnerId = ref(null) // ownerId of template loaded from Firestore
 const chosenCategories = ref(['other']) // 1 to 3 categories from CATEGORIES
 const isSaveModalOpen = ref(false)
+const isSavingFrame = ref(false)
+const isSaveSuccess = ref(false)
 const cloudErrorMessage = ref('')
-const alsoDownloadPng = ref(true)
+
+// --- My Saved Templates Drawer & Template Switching State ---
+const isMyTemplatesDrawerOpen = ref(false)
+const userCloudTemplates = ref([])
+const isLoadingUserTemplates = ref(false)
+const pendingSwitchTemplate = ref(null)
+const isSwitchPromptOpen = ref(false)
+const isSwitchingWorkspace = ref(false)
+
+// --- Workspace Loading State (prevents stock design flash when opening saved template) ---
+const getInitialTemplateQuery = () => {
+  if (typeof window !== 'undefined') {
+    const params = new URLSearchParams(window.location.search)
+    return params.get('template') || null
+  }
+  return null
+}
+const initialTemplateParam = getInitialTemplateQuery()
+const isWorkspaceLoading = ref(Boolean(initialTemplateParam || route?.query?.template))
+const workspaceLoadingMessage = ref(
+  (initialTemplateParam || route?.query?.template) ? 'Loading saved template...' : ''
+)
 
 const isOwner = computed(() => {
   if (!cloudId.value || !loadedTemplateOwnerId.value) return true
@@ -144,11 +202,12 @@ const {
 
 
 // --- Editor Navigation & Toolbar State ---
-const templateName = ref('Retro 4-cut')
+const templateName = ref('my-templates-1')
 const activeLayout = ref('retro-4-cut') // 'retro-4-cut' | 'polaroid-2x2' | 'film-3-cut'
 const slotShape = ref('Rounded') // 'Square' | 'Rounded' | 'Circle'
-const activeTool = ref('elements') // 'templates' | 'elements' | 'text' | 'background' | 'layers'
-const isDrawerOpen = ref(true)
+const isMobileInitial = typeof window !== 'undefined' && window.innerWidth < 992
+const activeTool = ref('templates') // 'templates' (Presets) | 'elements' | 'text' | 'background' | 'layers'
+const isDrawerOpen = ref(!isMobileInitial)
 const showCutouts = ref(true) // Toggle cutouts on/off
 const cutoutsLayerPosition = ref('above') // 'above' (over elements) | 'below' (behind elements)
 const activeBgTab = ref('colors') // 'colors' | 'gradients' | 'patterns'
@@ -260,7 +319,6 @@ const isUploading = ref(false)
 // --- Saved Frames & Workspace Persistence ---
 const isSavedFramesModalOpen = ref(false)
 const savedFramesList = ref([])
-const isSavingFrame = ref(false)
 const currentSavedFrameId = ref(null)
 
 // --- Export Configuration Fallbacks ---
@@ -573,10 +631,32 @@ function applySnapshot(state) {
 // =============================================================================
 // 6. Template Presets & Layout Operations
 // =============================================================================
+const isMobileEditSheetOpen = ref(false)
+
+function openMobileEditSheet() {
+  isDrawerOpen.value = false
+  isMobileEditSheetOpen.value = true
+}
+
+function toggleMobileEditSheet() {
+  if (isMobileEditSheetOpen.value) {
+    isMobileEditSheetOpen.value = false
+  } else {
+    isDrawerOpen.value = false
+    isMobileEditSheetOpen.value = true
+  }
+}
+
+function closeMobileSheets() {
+  isDrawerOpen.value = false
+  isMobileEditSheetOpen.value = false
+}
+
 function toggleDrawer(toolName) {
   if (activeTool.value === toolName && isDrawerOpen.value) {
     closeDrawer()
   } else {
+    isMobileEditSheetOpen.value = false
     activeTool.value = toolName
     isDrawerOpen.value = true
   }
@@ -621,6 +701,14 @@ function setLayout(layout) {
   nextTick(() => {
     triggerFitToScreen()
   })
+}
+
+function setSlotShape(shape) {
+  slotShape.value = shape
+  if (!showCutouts.value) {
+    showCutouts.value = true
+  }
+  saveHistoryState()
 }
 
 function toggleCutouts() {
@@ -862,13 +950,40 @@ function setFrameGradient(val) {
 }
 
 function setFrameTexture(id) {
-  frameBg.value.texture = id
+  if (frameBg.value.texture === id) {
+    frameBg.value.texture = null
+  } else {
+    frameBg.value.texture = id
+  }
   saveHistoryState()
 }
 
 function clearFrameTexture() {
   frameBg.value.texture = null
   saveHistoryState()
+}
+
+function resetFrameBackground() {
+  selectedBgColor.value = '#FFFFFF'
+  frameBg.value = {
+    type: 'color',
+    value: '#FFFFFF',
+    baseColor: '#FFFFFF',
+    texture: null,
+    opacity: 0.85,
+    blendMode: 'multiply',
+    scale: 1
+  }
+  customGradient.value = {
+    type: 'linear',
+    color1: '#FFFFFF',
+    color2: '#F1F5F9',
+    color3: '',
+    angle: 180
+  }
+  activeBgTab.value = 'colors'
+  saveHistoryState()
+  notify('Background reset to clean white')
 }
 
 function getFrameStyle() {
@@ -1053,7 +1168,7 @@ function selectElement(el, event) {
 
   if (editingTextId.value === el.id) return
 
-  if (event.type === 'mousedown') {
+  if (event.type === 'mousedown' || event.type === 'touchstart') {
     startDrag(el, event)
   }
 }
@@ -1070,8 +1185,9 @@ function onElementDblClick(el) {
 }
 
 function startDrag(el, event) {
-  if (event.button !== 0) return
-  event.preventDefault()
+  const isTouch = Boolean(event.touches && event.touches.length > 0)
+  if (!isTouch && event.button !== 0) return
+  if (event.cancelable) event.preventDefault()
 
   if (event.altKey) {
     duplicateSelectedElements()
@@ -1083,10 +1199,13 @@ function startDrag(el, event) {
   const frameW = stripRef.value?.offsetWidth || 280
   const frameH = stripRef.value?.offsetHeight || 556
 
+  const clientX = isTouch ? event.touches[0].clientX : event.clientX
+  const clientY = isTouch ? event.touches[0].clientY : event.clientY
+
   const selectedItems = canvasElements.value.filter(item => selectedElementIds.value.includes(item.id))
   dragData.value = {
-    startX: event.clientX,
-    startY: event.clientY,
+    startX: clientX,
+    startY: clientY,
     startElX: el.x || 0,
     startElY: el.y || 0,
     elementsInitial: selectedItems.map(item => ({
@@ -1107,6 +1226,21 @@ function startDrag(el, event) {
 
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('mouseup', onMouseUp)
+  window.addEventListener('touchmove', onTouchMove, { passive: false })
+  window.addEventListener('touchend', onTouchEnd)
+}
+
+function onTouchMove(event) {
+  if (!event.touches || event.touches.length === 0) return
+  if (event.cancelable) event.preventDefault()
+  onMouseMove({
+    clientX: event.touches[0].clientX,
+    clientY: event.touches[0].clientY
+  })
+}
+
+function onTouchEnd() {
+  onMouseUp()
 }
 
 function onMouseMove(event) {
@@ -1155,6 +1289,8 @@ function onMouseUp() {
   }
   window.removeEventListener('mousemove', onMouseMove)
   window.removeEventListener('mouseup', onMouseUp)
+  window.removeEventListener('touchmove', onTouchMove)
+  window.removeEventListener('touchend', onTouchEnd)
 }
 
 // =============================================================================
@@ -1593,7 +1729,7 @@ function groupSelectedElements() {
       el.groupId = newGroupId
     }
   })
-  notify(`Grouped ${selectedElementIds.value.length} elements (⌘G)`)
+  notify(`Grouped ${selectedElementIds.value.length} elements (${shortcuts.group})`)
   saveHistoryState()
 }
 
@@ -1607,7 +1743,7 @@ function ungroupSelectedElements() {
     }
   })
   editingGroupId.value = null
-  notify(`Ungrouped ${count} elements (⇧⌘G)`)
+  notify(`Ungrouped ${count} elements (${shortcuts.ungroup})`)
   saveHistoryState()
 }
 
@@ -2040,7 +2176,12 @@ function startEditingText(el) {
   if (el.type !== 'text') return
   editingTextId.value = el.id
   selectedElementId.value = el.id
+  selectedElementIds.value = [el.id]
   isPositionPopoverOpen.value = false
+  if (typeof window !== 'undefined' && window.innerWidth < 992) {
+    activeTool.value = 'text'
+    isDrawerOpen.value = true
+  }
   nextTick(() => {
     const domEl = textInputRefs.value[el.id]
     if (domEl) {
@@ -2305,16 +2446,17 @@ async function loadUploadsFromDB() {
 
 async function saveUploadToDB(item) {
   try {
+    const cleanItem = JSON.parse(JSON.stringify(item))
     const db = await openUploadsDB()
     if (!db) {
       const cached = localStorage.getItem('blue_studios_uploads')
       const arr = cached ? JSON.parse(cached) : []
-      arr.unshift(item)
+      arr.unshift(cleanItem)
       localStorage.setItem('blue_studios_uploads', JSON.stringify(arr.slice(0, 15)))
       return
     }
     const tx = db.transaction(STORE_NAME, 'readwrite')
-    tx.objectStore(STORE_NAME).put(item)
+    tx.objectStore(STORE_NAME).put(cleanItem)
   } catch (err) {
     console.warn('Error saving upload:', err)
   }
@@ -2344,6 +2486,18 @@ function triggerFileUpload() {
   }
 }
 
+const ALLOWED_UPLOAD_EXTS = ['.png', '.jpg', '.jpeg', '.svg']
+const ALLOWED_UPLOAD_MIMES = ['image/png', 'image/jpeg', 'image/svg+xml']
+const isInternalDragging = ref(false)
+
+function isAllowedUploadFile(file) {
+  if (!file) return false
+  const name = (file.name || '').toLowerCase()
+  const matchesExt = ALLOWED_UPLOAD_EXTS.some(ext => name.endsWith(ext))
+  const matchesMime = ALLOWED_UPLOAD_MIMES.includes(file.type)
+  return matchesExt || matchesMime
+}
+
 async function handleFileUpload(event) {
   const files = event?.target?.files
   if (!files || files.length === 0) return
@@ -2351,17 +2505,53 @@ async function handleFileUpload(event) {
   if (uploadInputRef.value) uploadInputRef.value.value = ''
 }
 
+function onDropzoneDragOver(event) {
+  if (isInternalDragging.value) {
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'none'
+    return
+  }
+  event.preventDefault()
+}
+
 async function handleFileUploadDrop(event) {
   event.preventDefault()
+
+  // Prevent re-uploading/duplicating an already existing asset dragged from the drawer
+  if (isInternalDragging.value) {
+    isInternalDragging.value = false
+    return
+  }
+
+  if (event.dataTransfer) {
+    const types = Array.from(event.dataTransfer.types || [])
+    if (types.includes('application/x-blue-asset') || types.includes('application/json')) {
+      return
+    }
+  }
+
   const files = event.dataTransfer?.files
   if (!files || files.length === 0) return
   await processUploadedFiles(Array.from(files))
 }
 
 async function processUploadedFiles(files) {
+  if (!files || files.length === 0) return
+
+  const validFiles = files.filter(isAllowedUploadFile)
+  const rejectedCount = files.length - validFiles.length
+
+  if (validFiles.length === 0) {
+    notify('Only PNG, JPG, and SVG files are supported.')
+    return
+  }
+
   isUploading.value = true
-  for (const file of files) {
-    const isSvg = file.type === 'image/svg+xml' || file.name.endsWith('.svg')
+  let addedCount = 0
+  let duplicateCount = 0
+
+  for (const file of validFiles) {
+    const isSvg = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg')
+    const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, '')
     const reader = new FileReader()
 
     await new Promise(resolve => {
@@ -2369,9 +2559,21 @@ async function processUploadedFiles(files) {
         reader.onload = async e => {
           const svgContent = e.target.result
           const dataUrl = 'data:image/svg+xml;utf8,' + encodeURIComponent(svgContent)
+
+          // Deduplicate: check if this SVG is already in userUploads
+          const isDuplicate = userUploads.value.some(u =>
+            u.isSvg && (u.svgContent === svgContent || (u.name === fileNameWithoutExt && u.size === file.size))
+          )
+
+          if (isDuplicate) {
+            duplicateCount++
+            resolve()
+            return
+          }
+
           const newUpload = {
             id: 'upl-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
-            name: file.name.replace(/\.[^/.]+$/, ''),
+            name: fileNameWithoutExt,
             type: 'svg',
             isSvg: true,
             svgContent: svgContent,
@@ -2381,15 +2583,28 @@ async function processUploadedFiles(files) {
           }
           userUploads.value.unshift(newUpload)
           await saveUploadToDB(newUpload)
+          addedCount++
           resolve()
         }
         reader.readAsText(file)
       } else {
         reader.onload = async e => {
           const dataUrl = e.target.result
+
+          // Deduplicate: check if this raster image is already in userUploads
+          const isDuplicate = userUploads.value.some(u =>
+            !u.isSvg && (u.dataUrl === dataUrl || (u.name === fileNameWithoutExt && u.size === file.size))
+          )
+
+          if (isDuplicate) {
+            duplicateCount++
+            resolve()
+            return
+          }
+
           const newUpload = {
             id: 'upl-' + Date.now() + '-' + Math.floor(Math.random() * 1000),
-            name: file.name.replace(/\.[^/.]+$/, ''),
+            name: fileNameWithoutExt,
             type: 'image',
             isSvg: false,
             dataUrl: dataUrl,
@@ -2398,6 +2613,7 @@ async function processUploadedFiles(files) {
           }
           userUploads.value.unshift(newUpload)
           await saveUploadToDB(newUpload)
+          addedCount++
           resolve()
         }
         reader.readAsDataURL(file)
@@ -2405,7 +2621,14 @@ async function processUploadedFiles(files) {
     })
   }
   isUploading.value = false
-  notify(`Uploaded ${files.length} file${files.length > 1 ? 's' : ''}!`)
+
+  if (duplicateCount > 0 && addedCount === 0) {
+    notify(`Asset${duplicateCount > 1 ? 's' : ''} already in your uploads!`)
+  } else if (rejectedCount > 0) {
+    notify(`Uploaded ${addedCount} file${addedCount > 1 ? 's' : ''} (${rejectedCount} unsupported skipped)`)
+  } else if (addedCount > 0) {
+    notify(`Uploaded ${addedCount} file${addedCount > 1 ? 's' : ''}!`)
+  }
 }
 
 async function deleteUpload(id, event) {
@@ -2460,16 +2683,41 @@ function addUploadToCanvas(item, customX = null, customY = null) {
 }
 
 function onAssetDragStart(item, event) {
+  isInternalDragging.value = true
   if (event && event.dataTransfer) {
     event.dataTransfer.setData('application/json', JSON.stringify(item))
+    event.dataTransfer.setData('application/x-blue-asset', item.id || 'true')
     event.dataTransfer.effectAllowed = 'copy'
   }
+}
+
+function onAssetDragEnd() {
+  isInternalDragging.value = false
 }
 
 async function onCanvasDrop(event) {
   event.preventDefault()
 
-  // 1. Files dropped from computer desktop / file browser
+  // 1. Internal drawer asset drag (Prioritize internal drag to avoid synthetic file creation)
+  const rawData = event.dataTransfer?.getData('application/json')
+  if (rawData) {
+    try {
+      const item = JSON.parse(rawData)
+      if (item && (item.id || item.svgContent || item.dataUrl)) {
+        isInternalDragging.value = false
+        if (!stripRef.value) return
+        const rect = stripRef.value.getBoundingClientRect()
+        const dropX = Math.round((event.clientX - rect.left) / canvasScale.value - 40)
+        const dropY = Math.round((event.clientY - rect.top) / canvasScale.value - 40)
+        addUploadToCanvas(item, dropX, dropY)
+        return
+      }
+    } catch (err) {
+      console.warn('Canvas drop parse error:', err)
+    }
+  }
+
+  // 2. Files dropped from computer desktop / file browser
   if (event.dataTransfer?.files && event.dataTransfer.files.length > 0) {
     const file = event.dataTransfer.files[0]
     if (file.name.endsWith('.png') || file.type === 'image/png' || file.name.endsWith('.json')) {
@@ -2483,20 +2731,6 @@ async function onCanvasDrop(event) {
     }
     handleFileUploadDrop(event)
     return
-  }
-
-  // 2. Internal drawer asset drag
-  const rawData = event.dataTransfer?.getData('application/json')
-  if (!rawData) return
-  try {
-    const item = JSON.parse(rawData)
-    if (!stripRef.value) return
-    const rect = stripRef.value.getBoundingClientRect()
-    const dropX = Math.round((event.clientX - rect.left) / canvasScale.value - 40)
-    const dropY = Math.round((event.clientY - rect.top) / canvasScale.value - 40)
-    addUploadToCanvas(item, dropX, dropY)
-  } catch (err) {
-    console.warn('Canvas drop error:', err)
   }
 }
 
@@ -2541,16 +2775,52 @@ function toggleCategory(id) {
   }
 }
 
+function getNextDefaultTemplateName() {
+  let highestNum = 0
+  const sources = [
+    ...(allUserTemplates.value || []),
+    ...(savedFramesList.value || []),
+    ...(userCloudTemplates.value || [])
+  ]
+
+  for (const item of sources) {
+    const name = (item.name || item.templateName || '').trim()
+    const match = name.match(/^my-templates-(\d+)$/i) || name.match(/^my-template-(\d+)$/i)
+    if (match) {
+      const num = parseInt(match[1], 10)
+      if (!isNaN(num) && num > highestNum) {
+        highestNum = num
+      }
+    }
+  }
+
+  return `my-templates-${highestNum + 1}`
+}
+
 function saveFrame() {
   if (!isAccount.value) {
     router.push('/login?redirect=' + encodeURIComponent(route.fullPath))
     return
   }
   cloudErrorMessage.value = ''
-  executeSave()
+
+  // If first time saving (no cloudId yet, or not owner of loaded template),
+  // prompt user with "Save Frame As" dialog so they can name their frame
+  if (!cloudId.value || !isOwner.value) {
+    if (!templateName.value || templateName.value.trim() === '' || templateName.value === 'Untitled frame' || templateName.value === 'Retro 4-cut') {
+      templateName.value = getNextDefaultTemplateName()
+    }
+    isSaveModalOpen.value = true
+    return
+  }
+
+  // If already saved to cloud and owned by user:
+  // Open save modal and save, which triggers the loading animation -> success animation -> redirect
+  isSaveModalOpen.value = true
+  executeSave({ asCopy: false, redirectOnSuccess: true })
 }
 
-async function executeSave({ asCopy = false } = {}) {
+async function executeSave({ asCopy = false, redirectOnSuccess = true } = {}) {
   if (isSavingFrame.value || !stripRef.value) return
   if (!isAccount.value) {
     isSaveModalOpen.value = false
@@ -2558,6 +2828,7 @@ async function executeSave({ asCopy = false } = {}) {
     return
   }
   isSavingFrame.value = true
+  isSaveSuccess.value = false
   cloudErrorMessage.value = ''
 
   const prevSelected = [...selectedElementIds.value]
@@ -2590,7 +2861,7 @@ async function executeSave({ asCopy = false } = {}) {
     const isGradient = frameBg.value.type === 'gradient'
     const bgVal = isGradient ? frameBg.value.value : (frameBg.value.baseColor || selectedBgColor.value)
 
-    const projectData = {
+    const projectData = JSON.parse(JSON.stringify({
       id: frameId,
       templateName: safeName,
       updatedAt: Date.now(),
@@ -2610,14 +2881,14 @@ async function executeSave({ asCopy = false } = {}) {
       captionText: captionText.value,
       captionColor: captionColor.value,
       selectedBgColor: selectedBgColor.value,
-      frameBg: { ...frameBg.value },
+      frameBg: frameBg.value,
       borderColor: borderColor.value,
       borderWidth: borderWidth.value,
       cutoutsLayerPosition: cutoutsLayerPosition.value,
       showCutouts: false,
-      canvasElements: JSON.parse(JSON.stringify(canvasElements.value)),
-      customGuides: JSON.parse(JSON.stringify(customGuides.value))
-    }
+      canvasElements: canvasElements.value,
+      customGuides: customGuides.value
+    }))
 
     const { blob, rawBlob, thumbnail } = await captureEditablePng(stripRef.value, projectData)
 
@@ -2648,56 +2919,364 @@ async function executeSave({ asCopy = false } = {}) {
       loadedTemplateOwnerId.value = getUid()
     }
 
-    // Always update local IndexedDB record for offline / browser backup
-    const record = {
-      id: frameId,
-      cloudId: cloudId.value,
-      name: safeName,
-      updatedAt: Date.now(),
-      slotCount: slotCount.value,
-      elementCount: canvasElements.value.length,
-      thumbnail: thumbnail,
-      projectData: projectData
+    // Always update local IndexedDB record for offline / browser backup (isolated in try/catch)
+    try {
+      const record = {
+        id: frameId,
+        cloudId: cloudId.value,
+        name: safeName,
+        updatedAt: Date.now(),
+        slotCount: slotCount.value,
+        elementCount: canvasElements.value.length,
+        thumbnail: thumbnail,
+        projectData: projectData
+      }
+      await saveFrameToDB(record)
+      savedFramesList.value = await loadSavedFramesFromDB()
+    } catch (idbErr) {
+      console.warn('Local IndexedDB backup skipped/failed:', idbErr)
     }
-    await saveFrameToDB(record)
-    savedFramesList.value = await loadSavedFramesFromDB()
 
-    if (alsoDownloadPng.value || !isAccount.value) {
+    if (!isAccount.value) {
       const filename = `${sanitizeFilename(safeName)}.png`
       triggerFileDownload(blob, filename)
     }
 
-    isSaveModalOpen.value = false
+    isSavingFrame.value = false
+    isSaveSuccess.value = true
 
-    // Redirect to templates homepage where user can see all their saved frames
-    if (isAccount.value) {
+    // If redirectOnSuccess: show success animation, then redirect back to My Studio
+    if (redirectOnSuccess && isAccount.value) {
+      await new Promise((resolve) => setTimeout(resolve, 1100))
+      isSaveModalOpen.value = false
+      isSaveSuccess.value = false
       router.push('/studio')
     }
   } catch (err) {
     console.error('Failed to save frame:', err)
     cloudErrorMessage.value = err.message || 'Failed to save frame. Please try again.'
+    isSavingFrame.value = false
+    isSaveSuccess.value = false
   } finally {
     selectedElementIds.value = prevSelected
     showCutouts.value = prevShowCutouts
-    isSavingFrame.value = false
   }
+}
+
+const allUserTemplates = computed(() => {
+  const list = []
+  const seenIds = new Set()
+
+  // 1. Cloud templates from My Studio (newest first)
+  for (const t of userCloudTemplates.value) {
+    seenIds.add(t.id)
+    list.push({
+      id: t.id,
+      cloudId: t.id,
+      name: t.name || 'Untitled Template',
+      slotCount: t.slotCount || 4,
+      updatedAt: t.updatedAt || t.createdAt || Date.now(),
+      cardUrl: t.cardUrl || null,
+      thumbnailPath: t.thumbnailPath || null,
+      dataPath: t.dataPath || null,
+      thumbnail: null,
+      isCloud: true,
+      isLocal: false,
+      categories: t.categories || [],
+      ownerId: t.ownerId || null,
+      raw: t
+    })
+  }
+
+  // 2. Locally saved frames in IndexedDB
+  for (const f of savedFramesList.value) {
+    if (f.cloudId && seenIds.has(f.cloudId)) {
+      const existing = list.find((item) => item.id === f.cloudId)
+      if (existing) {
+        if (!existing.thumbnail && f.thumbnail) existing.thumbnail = f.thumbnail
+        if (!existing.projectData && f.projectData) existing.projectData = f.projectData
+        existing.isLocal = true
+      }
+      continue
+    }
+    if (seenIds.has(f.id)) continue
+    seenIds.add(f.id)
+
+    list.push({
+      id: f.id,
+      cloudId: f.cloudId || null,
+      name: f.name || 'Untitled Frame',
+      slotCount: f.slotCount || 4,
+      updatedAt: f.updatedAt || Date.now(),
+      cardUrl: null,
+      thumbnailPath: null,
+      thumbnail: f.thumbnail || null,
+      isCloud: !!f.cloudId,
+      isLocal: true,
+      projectData: f.projectData || null,
+      raw: f
+    })
+  }
+
+  return list
+})
+
+const allUserTemplatesCount = computed(() => allUserTemplates.value.length)
+
+async function loadAllUserTemplates() {
+  isLoadingUserTemplates.value = true
+  try {
+    const localFrames = await loadSavedFramesFromDB()
+    savedFramesList.value = localFrames || []
+
+    if (isAccount.value) {
+      try {
+        const cloudItems = await listMyItems('templates')
+        userCloudTemplates.value = cloudItems || []
+      } catch (err) {
+        console.warn('Could not load user cloud templates:', err)
+        userCloudTemplates.value = []
+      }
+    } else {
+      userCloudTemplates.value = []
+    }
+  } catch (err) {
+    console.error('Failed to load user templates:', err)
+  } finally {
+    isLoadingUserTemplates.value = false
+  }
+}
+
+function openMyTemplatesDrawer() {
+  isMyTemplatesDrawerOpen.value = true
+  loadAllUserTemplates()
+}
+
+function closeMyTemplatesDrawer() {
+  isMyTemplatesDrawerOpen.value = false
+}
+
+function promptSwitchTemplate(template) {
+  if (!template) return
+  const isActive = (
+    (cloudId.value && (cloudId.value === template.id || cloudId.value === template.cloudId)) ||
+    (currentSavedFrameId.value && currentSavedFrameId.value === template.id)
+  )
+  if (isActive) {
+    notify(`"${template.name}" is already open in your editor.`)
+    return
+  }
+
+  pendingSwitchTemplate.value = template
+  isSwitchPromptOpen.value = true
+}
+
+async function confirmSaveAndSwitch() {
+  if (!pendingSwitchTemplate.value) return
+  const target = pendingSwitchTemplate.value
+  isSwitchingWorkspace.value = true
+
+  try {
+    // Save current frame without leaving the editor
+    await executeSave({ redirectOnSuccess: false })
+  } catch (err) {
+    console.error('Error saving current frame prior to template switch:', err)
+  }
+
+  isSwitchPromptOpen.value = false
+  await loadTemplateWorkspace(target)
+  isSwitchingWorkspace.value = false
+}
+
+async function confirmSwitchWithoutSaving() {
+  if (!pendingSwitchTemplate.value) return
+  const target = pendingSwitchTemplate.value
+  isSwitchingWorkspace.value = true
+  isSwitchPromptOpen.value = false
+  await loadTemplateWorkspace(target)
+  isSwitchingWorkspace.value = false
+}
+
+async function loadTemplateWorkspace(targetTemplate) {
+  if (!targetTemplate) return
+  isWorkspaceLoading.value = true
+  workspaceLoadingMessage.value = `Loading "${targetTemplate.name || 'template'}"...`
+  try {
+    notify(`Loading "${targetTemplate.name}"...`)
+    let project = targetTemplate.projectData
+
+    if (!project && targetTemplate.dataPath) {
+      project = await loadTemplateProject(targetTemplate.raw || targetTemplate)
+    }
+
+    if (!project && targetTemplate.id) {
+      const localFrames = await loadSavedFramesFromDB()
+      const match = (localFrames || []).find((f) => f.id === targetTemplate.id || f.cloudId === targetTemplate.id)
+      if (match?.projectData) {
+        project = match.projectData
+      }
+    }
+
+    if (!project) {
+      const cloudItem = await getItem('templates', targetTemplate.id)
+      if (cloudItem) {
+        project = await loadTemplateProject(cloudItem)
+      }
+    }
+
+    if (project) {
+      applySnapshot(project)
+      templateName.value = targetTemplate.name || project.templateName || 'Untitled frame'
+      currentSavedFrameId.value = targetTemplate.id || project.id
+      cloudId.value = targetTemplate.cloudId || (targetTemplate.isCloud ? targetTemplate.id : null)
+      loadedTemplateOwnerId.value = targetTemplate.ownerId || (targetTemplate.isCloud ? getUid() : null)
+
+      if (targetTemplate.categories && targetTemplate.categories.length) {
+        chosenCategories.value = [...targetTemplate.categories]
+      }
+
+      history.value = [JSON.stringify(project)]
+      historyIndex.value = 0
+
+      // Update URL query param so it redirects to the new workspace route
+      const targetQueryId = targetTemplate.cloudId || targetTemplate.id
+      router.replace({ path: '/frame-editor', query: { template: targetQueryId } })
+
+      await nextTick()
+      triggerFitToScreen()
+      await new Promise((r) => setTimeout(r, 120))
+      isMyTemplatesDrawerOpen.value = false
+      pendingSwitchTemplate.value = null
+      notify(`Loaded "${targetTemplate.name}"!`)
+    } else {
+      notify('Could not load template data.')
+    }
+  } catch (err) {
+    console.error('Error switching to template workspace:', err)
+    notify('Failed to load template')
+  } finally {
+    isWorkspaceLoading.value = false
+  }
+}
+
+async function deleteUserTemplate(template) {
+  if (!template) return false
+  const name = template.name || 'this template'
+  const sure = await askConfirm({
+    title: `Delete "${name}"?`,
+    message: 'This cannot be undone. This template will be permanently removed.',
+    confirmLabel: 'Delete',
+    danger: true,
+    icon: 'trash'
+  })
+  if (!sure) return false
+
+  try {
+    const targetCloudId = template.cloudId || (template.isCloud ? template.id : null)
+
+    // 1. Delete from Firestore & Cloud Storage if cloud item
+    if (targetCloudId) {
+      try {
+        await deleteItem({
+          type: 'templates',
+          id: targetCloudId,
+          thumbnailPath: template.thumbnailPath || template.raw?.thumbnailPath,
+          dataPath: template.dataPath || template.raw?.dataPath,
+          cardPath: template.cardPath || template.raw?.cardPath
+        })
+      } catch (cloudErr) {
+        console.warn('Cloud delete error (may be local-only or already removed):', cloudErr)
+      }
+      userCloudTemplates.value = userCloudTemplates.value.filter(
+        (t) => t.id !== targetCloudId && t.id !== template.id
+      )
+    }
+
+    // 2. Delete from local IndexedDB & LocalStorage
+    const localMatches = savedFramesList.value.filter(
+      (f) => f.id === template.id || (targetCloudId && f.cloudId === targetCloudId)
+    )
+    for (const match of localMatches) {
+      await deleteSavedFrameFromDB(match.id)
+    }
+    await deleteSavedFrameFromDB(template.id)
+    savedFramesList.value = savedFramesList.value.filter(
+      (f) => f.id !== template.id && (!targetCloudId || f.cloudId !== targetCloudId)
+    )
+
+    // 3. If currently open template was deleted, reset workspace state & URL
+    if (
+      currentSavedFrameId.value === template.id ||
+      cloudId.value === template.id ||
+      (targetCloudId && cloudId.value === targetCloudId)
+    ) {
+      cloudId.value = null
+      loadedTemplateOwnerId.value = null
+      currentSavedFrameId.value = null
+      templateName.value = getNextDefaultTemplateName()
+      router.replace({ path: '/frame-editor' })
+    }
+
+    notify(`Deleted "${name}"`)
+    return true
+  } catch (err) {
+    console.error('Failed to delete template:', err)
+    notify('Could not delete template')
+    return false
+  }
+}
+
+async function startNewBlankFrame() {
+  cloudId.value = null
+  loadedTemplateOwnerId.value = null
+  currentSavedFrameId.value = null
+  templateName.value = getNextDefaultTemplateName()
+  chosenCategories.value = ['other']
+  canvasElements.value = []
+  selectedElementIds.value = []
+  router.replace({ path: '/frame-editor' })
+  saveHistoryState()
+  nextTick(() => {
+    triggerFitToScreen()
+  })
+  isMyTemplatesDrawerOpen.value = false
+  isSwitchPromptOpen.value = false
+  pendingSwitchTemplate.value = null
+  notify('Started new blank frame')
 }
 
 function openSavedFrame(frameRecord) {
   if (!frameRecord || !frameRecord.projectData) return
-  applySnapshot(frameRecord.projectData)
-  currentSavedFrameId.value = frameRecord.id
-  if (frameRecord.cloudId) {
-    cloudId.value = frameRecord.cloudId
+  isWorkspaceLoading.value = true
+  workspaceLoadingMessage.value = `Opening "${frameRecord.name || 'template'}"...`
+  try {
+    applySnapshot(frameRecord.projectData)
+    currentSavedFrameId.value = frameRecord.id
+    if (frameRecord.cloudId) {
+      cloudId.value = frameRecord.cloudId
+    }
+    templateName.value = frameRecord.name || templateName.value
+    history.value = [JSON.stringify(frameRecord.projectData)]
+    historyIndex.value = 0
+    isSavedFramesModalOpen.value = false
+    nextTick(() => {
+      triggerFitToScreen()
+      setTimeout(() => {
+        isWorkspaceLoading.value = false
+      }, 100)
+    })
+    notify(`Loaded "${frameRecord.name || 'Template'}"!`)
+  } catch (err) {
+    console.error('Failed to open saved frame:', err)
+    isWorkspaceLoading.value = false
   }
-  isSavedFramesModalOpen.value = false
-  notify(`Loaded "${frameRecord.name || 'Template'}"!`)
 }
 
 async function loadTemplateFromQuery(templateId) {
   if (!templateId) return
+  isWorkspaceLoading.value = true
+  workspaceLoadingMessage.value = 'Loading saved template...'
   try {
-    notify('Loading template...')
     let projectData = null
     let template = null
 
@@ -2736,9 +3315,9 @@ async function loadTemplateFromQuery(templateId) {
       currentSavedFrameId.value = projectData.id || templateId
       history.value = [JSON.stringify(projectData)]
       historyIndex.value = 0
-      nextTick(() => {
-        triggerFitToScreen()
-      })
+      await nextTick()
+      triggerFitToScreen()
+      await new Promise((r) => setTimeout(r, 120))
       notify(`Loaded template "${template?.name || templateName.value}"!`)
     } else {
       notify('Template not found or private.')
@@ -2746,6 +3325,8 @@ async function loadTemplateFromQuery(templateId) {
   } catch (err) {
     console.error('Error loading template from cloud:', err)
     notify('Could not load template from cloud.')
+  } finally {
+    isWorkspaceLoading.value = false
   }
 }
 
@@ -2763,8 +3344,16 @@ async function deleteFrame(id) {
   }
 }
 
-function confirmDeleteFrame(frame) {
-  if (confirm(`Are you sure you want to delete "${frame.name || 'this template'}" from your saved frames?`)) {
+async function confirmDeleteFrame(frame) {
+  if (!frame) return
+  const sure = await askConfirm({
+    title: `Delete "${frame.name || 'this template'}"?`,
+    message: 'This will remove the template from your saved browser frames.',
+    confirmLabel: 'Delete',
+    danger: true,
+    icon: 'trash'
+  })
+  if (sure) {
     deleteFrame(frame.id)
   }
 }
@@ -2814,6 +3403,7 @@ async function importFrameFromFile(file) {
     }
 
     const frameId = project.id || `frame_${Date.now()}`
+    const cleanProject = JSON.parse(JSON.stringify({ ...project, showCutouts: false }))
     const record = {
       id: frameId,
       name: project.templateName || file.name.replace(/\.[^/.]+$/, ''),
@@ -2821,10 +3411,14 @@ async function importFrameFromFile(file) {
       slotCount: project.slotCount || slotCount.value || 4,
       elementCount: project.canvasElements ? project.canvasElements.length : 0,
       thumbnail: thumbnail,
-      projectData: { ...project, showCutouts: false }
+      projectData: cleanProject
     }
-    await saveFrameToDB(record)
-    savedFramesList.value = await loadSavedFramesFromDB()
+    try {
+      await saveFrameToDB(record)
+      savedFramesList.value = await loadSavedFramesFromDB()
+    } catch (idbErr) {
+      console.warn('Local save failed during import:', idbErr)
+    }
     applySnapshot(record.projectData)
     currentSavedFrameId.value = frameId
     isSavedFramesModalOpen.value = false
@@ -3068,6 +3662,27 @@ function onKeydown(e) {
 
   const isCmdOrCtrl = e.metaKey || e.ctrlKey
 
+  // Undo: Cmd+Z (Mac) or Ctrl+Z (Windows)
+  if (isCmdOrCtrl && e.key.toLowerCase() === 'z' && !e.shiftKey) {
+    e.preventDefault()
+    if (historyIndex.value > 0) {
+      undo()
+    }
+    return
+  }
+
+  // Redo: Cmd+Shift+Z or Cmd+Y (Mac), Ctrl+Y or Ctrl+Shift+Z (Windows)
+  if (
+    isCmdOrCtrl &&
+    ((e.shiftKey && e.key.toLowerCase() === 'z') || e.key.toLowerCase() === 'y')
+  ) {
+    e.preventDefault()
+    if (historyIndex.value < history.value.length - 1) {
+      redo()
+    }
+    return
+  }
+
   // Cmd/Ctrl + S: Save Frame & Download Editable PNG
   if (isCmdOrCtrl && e.key.toLowerCase() === 's') {
     e.preventDefault()
@@ -3214,23 +3829,61 @@ onMounted(async () => {
   window.addEventListener('resize', updateScreenSize)
   updateScreenSize()
 
+  if (typeof window !== 'undefined' && window.innerWidth < 992) {
+    isDrawerOpen.value = false
+    isMobileEditSheetOpen.value = false
+  } else {
+    activeTool.value = 'templates'
+    isDrawerOpen.value = true
+  }
+
   nextTick(() => {
     fitToScreen(canvasWorkspaceRef.value, stripRef.value)
   })
 
-  const stored = await loadUploadsFromDB()
-  if (stored && stored.length > 0) {
-    userUploads.value = stored
-  }
+  const templateToLoad = route?.query?.template || initialTemplateParam
 
-  const frames = await loadSavedFramesFromDB()
-  if (frames && frames.length > 0) {
-    savedFramesList.value = frames
-  }
+  if (templateToLoad) {
+    isWorkspaceLoading.value = true
+    workspaceLoadingMessage.value = 'Loading saved template...'
 
-  // Check if opening a saved template from My Studio or Marketplace via ?template={id}
-  if (route.query.template) {
-    await loadTemplateFromQuery(route.query.template)
+    // Prioritize loading the target template, running uploads & saved frames loads in parallel
+    await Promise.all([
+      loadTemplateFromQuery(templateToLoad),
+      (async () => {
+        try {
+          const [stored, frames] = await Promise.all([
+            loadUploadsFromDB(),
+            loadSavedFramesFromDB()
+          ])
+          if (stored && stored.length > 0) userUploads.value = stored
+          if (frames && frames.length > 0) savedFramesList.value = frames
+          await loadAllUserTemplates()
+        } catch (bgErr) {
+          console.warn('Background data preload error:', bgErr)
+        }
+      })()
+    ])
+  } else {
+    const stored = await loadUploadsFromDB()
+    if (stored && stored.length > 0) {
+      userUploads.value = stored
+    }
+
+    const frames = await loadSavedFramesFromDB()
+    if (frames && frames.length > 0) {
+      savedFramesList.value = frames
+    }
+
+    // Load all user templates (cloud + local) for My Templates drawer & counter
+    await loadAllUserTemplates()
+
+    // If opening fresh without a loaded template, ensure frame title reflects the next sequence
+    if (!cloudId.value && !currentSavedFrameId.value) {
+      if (!templateName.value || templateName.value === 'Retro 4-cut' || templateName.value === 'my-templates-1') {
+        templateName.value = getNextDefaultTemplateName()
+      }
+    }
   }
 })
 
@@ -3257,6 +3910,8 @@ onBeforeUnmount(() => {
 
   
     return {
+    isWorkspaceLoading,
+    workspaceLoadingMessage,
     templatePresets,
     elementCategories,
     textPresets,
@@ -3279,7 +3934,6 @@ onBeforeUnmount(() => {
     chosenCategories,
     isSaveModalOpen,
     cloudErrorMessage,
-    alsoDownloadPng,
     isOwner,
     showNotification,
     notificationMessage,
@@ -3325,6 +3979,10 @@ onBeforeUnmount(() => {
     slotShape,
     activeTool,
     isDrawerOpen,
+    isMobileEditSheetOpen,
+    openMobileEditSheet,
+    toggleMobileEditSheet,
+    closeMobileSheets,
     showCutouts,
     cutoutsLayerPosition,
     activeBgTab,
@@ -3373,6 +4031,15 @@ onBeforeUnmount(() => {
     isSavedFramesModalOpen,
     savedFramesList,
     isSavingFrame,
+    isSaveSuccess,
+    isMyTemplatesDrawerOpen,
+    userCloudTemplates,
+    isLoadingUserTemplates,
+    allUserTemplates,
+    allUserTemplatesCount,
+    pendingSwitchTemplate,
+    isSwitchPromptOpen,
+    isSwitchingWorkspace,
     currentSavedFrameId,
     isExporting,
     exportConfig,
@@ -3408,6 +4075,7 @@ onBeforeUnmount(() => {
     triggerFitToScreen,
     refitDuringTransition,
     setLayout,
+    setSlotShape,
     toggleCutouts,
     toggleCutoutsLayerPosition,
     applyTemplate,
@@ -3425,6 +4093,7 @@ onBeforeUnmount(() => {
     setFrameGradient,
     setFrameTexture,
     clearFrameTexture,
+    resetFrameBackground,
     getFrameStyle,
     getFrameTextureStyle,
     incrementBorderWidth,
@@ -3526,12 +4195,24 @@ onBeforeUnmount(() => {
     deleteUpload,
     addUploadToCanvas,
     onAssetDragStart,
+    onAssetDragEnd,
+    onDropzoneDragOver,
     onCanvasDrop,
     shrinkPng,
     measureSlots,
     toggleCategory,
     saveFrame,
     executeSave,
+    loadAllUserTemplates,
+    openMyTemplatesDrawer,
+    closeMyTemplatesDrawer,
+    promptSwitchTemplate,
+    confirmSaveAndSwitch,
+    confirmSwitchWithoutSaving,
+    loadTemplateWorkspace,
+    deleteUserTemplate,
+    startNewBlankFrame,
+    getNextDefaultTemplateName,
     openSavedFrame,
     loadTemplateFromQuery,
     deleteFrame,
@@ -3561,24 +4242,32 @@ onBeforeUnmount(() => {
     ELEMENT_TAG_FILTERS,
     FONT_CATEGORIES,
     getTextureBackgroundImage,
-    getTextureBackgroundSize
+    getTextureBackgroundSize,
+    isMac,
+    shortcuts
   }
 
 
 
 }
 
-export function provideTemplateEditor() {
-  const editor = useTemplateEditor()
-  provide(TEMPLATE_EDITOR_KEY, editor)
+export function provideFrameEditor() {
+  const editor = useFrameEditor()
+  provide(FRAME_EDITOR_KEY, editor)
+  provide("frameEditor", editor)
   provide("templateEditor", editor)
   return editor
 }
 
-export function useTemplateEditorContext() {
-  const context = inject(TEMPLATE_EDITOR_KEY) || inject("templateEditor")
+export function useFrameEditorContext() {
+  const context = inject(FRAME_EDITOR_KEY) || inject("frameEditor") || inject("templateEditor")
   if (!context) {
-    throw new Error("useTemplateEditorContext must be used within a templateEditor provider")
+    throw new Error("useFrameEditorContext must be used within a frameEditor provider")
   }
   return context
 }
+
+// Backwards compatibility aliases
+export const useTemplateEditor = useFrameEditor
+export const provideTemplateEditor = provideFrameEditor
+export const useTemplateEditorContext = useFrameEditorContext
