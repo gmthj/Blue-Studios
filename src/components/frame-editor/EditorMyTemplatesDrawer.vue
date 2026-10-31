@@ -23,7 +23,7 @@ const {
 } = editor
 
 const searchQuery = ref('')
-const confirmingDeleteId = ref(null)
+const deletingId = ref(null)
 
 const filteredTemplates = computed(() => {
   let list = allUserTemplates.value || []
@@ -51,13 +51,14 @@ function handleSelect(template) {
   promptSwitchTemplate(template)
 }
 
-function handleDeleteClick(template) {
-  confirmingDeleteId.value = template.id
-}
-
-function handleConfirmDelete(template) {
-  confirmingDeleteId.value = null
-  deleteUserTemplate(template)
+async function handleDeleteClick(template) {
+  if (deletingId.value) return
+  deletingId.value = template.id
+  try {
+    await deleteUserTemplate(template)
+  } finally {
+    deletingId.value = null
+  }
 }
 
 function formatDate(timestamp) {
@@ -290,40 +291,19 @@ function formatDate(timestamp) {
                     </div>
                   </div>
 
-                  <!-- Bottom Toolbar (Delete with Confirmation) -->
+                  <!-- Bottom Toolbar (Delete) -->
                   <div class="d-flex align-items-center justify-content-end pt-2 border-top mt-2" @click.stop>
-                    <!-- Delete Confirmation Buttons -->
-                    <div v-if="confirmingDeleteId === template.id" class="d-flex align-items-center gap-1">
-                      <button
-                        class="btn btn-sm btn-danger py-0 px-2 fw-semibold"
-                        style="font-size: 0.7rem; line-height: 1.6;"
-                        title="Confirm permanent deletion"
-                        @click.stop="handleConfirmDelete(template)"
-                      >
-                        Delete?
-                      </button>
-                      <button
-                        class="btn btn-sm btn-outline-secondary py-0 px-1"
-                        style="font-size: 0.7rem; line-height: 1.6;"
-                        title="Cancel"
-                        @click.stop="confirmingDeleteId = null"
-                      >
-                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                          <line x1="18" y1="6" x2="6" y2="18" />
-                          <line x1="6" y1="6" x2="18" y2="18" />
-                        </svg>
-                      </button>
-                    </div>
-
                     <button
-                      v-else
+                      type="button"
                       class="btn btn-sm btn-link text-danger p-0 d-flex align-items-center gap-1 text-decoration-none"
                       style="font-size: 0.75rem;"
                       title="Delete saved template"
+                      :disabled="deletingId === template.id"
                       @click.stop="handleDeleteClick(template)"
                     >
-                      <IconTrash :size="13" :stroke-width="2" />
-                      <span>Delete</span>
+                      <span v-if="deletingId === template.id" class="spinner-border spinner-border-sm" style="width: 12px; height: 12px;" role="status"></span>
+                      <IconTrash v-else :size="13" :stroke-width="2" />
+                      <span>{{ deletingId === template.id ? 'Deleting...' : 'Delete' }}</span>
                     </button>
                   </div>
                 </div>

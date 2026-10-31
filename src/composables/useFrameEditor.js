@@ -3160,24 +3160,69 @@ async function loadTemplateWorkspace(targetTemplate) {
 }
 
 async function deleteUserTemplate(template) {
-  if (!template) return
+  if (!template) return false
+  const name = template.name || 'this template'
+  const sure = await askConfirm({
+    title: `Delete "${name}"?`,
+    message: 'This cannot be undone. This template will be permanently removed.',
+    confirmLabel: 'Delete',
+    danger: true,
+    icon: 'trash'
+  })
+  if (!sure) return false
+
   try {
-    if (template.isCloud && template.cloudId) {
-      await deleteItem(template.raw || template)
-      userCloudTemplates.value = userCloudTemplates.value.filter((t) => t.id !== template.id)
+    const targetCloudId = template.cloudId || (template.isCloud ? template.id : null)
+
+    // 1. Delete from Firestore & Cloud Storage if cloud item
+    if (targetCloudId) {
+      try {
+        await deleteItem({
+          type: 'templates',
+          id: targetCloudId,
+          thumbnailPath: template.thumbnailPath || template.raw?.thumbnailPath,
+          dataPath: template.dataPath || template.raw?.dataPath,
+          cardPath: template.cardPath || template.raw?.cardPath
+        })
+      } catch (cloudErr) {
+        console.warn('Cloud delete error (may be local-only or already removed):', cloudErr)
+      }
+      userCloudTemplates.value = userCloudTemplates.value.filter(
+        (t) => t.id !== targetCloudId && t.id !== template.id
+      )
     }
-    if (template.isLocal || template.id) {
-      await deleteSavedFrameFromDB(template.id)
-      savedFramesList.value = savedFramesList.value.filter((f) => f.id !== template.id)
+
+    // 2. Delete from local IndexedDB & LocalStorage
+    const localMatches = savedFramesList.value.filter(
+      (f) => f.id === template.id || (targetCloudId && f.cloudId === targetCloudId)
+    )
+    for (const match of localMatches) {
+      await deleteSavedFrameFromDB(match.id)
     }
-    if (currentSavedFrameId.value === template.id || cloudId.value === template.id) {
-      currentSavedFrameId.value = null
+    await deleteSavedFrameFromDB(template.id)
+    savedFramesList.value = savedFramesList.value.filter(
+      (f) => f.id !== template.id && (!targetCloudId || f.cloudId !== targetCloudId)
+    )
+
+    // 3. If currently open template was deleted, reset workspace state & URL
+    if (
+      currentSavedFrameId.value === template.id ||
+      cloudId.value === template.id ||
+      (targetCloudId && cloudId.value === targetCloudId)
+    ) {
       cloudId.value = null
+      loadedTemplateOwnerId.value = null
+      currentSavedFrameId.value = null
+      templateName.value = getNextDefaultTemplateName()
+      router.replace({ path: '/frame-editor' })
     }
-    notify(`Deleted "${template.name}"`)
+
+    notify(`Deleted "${name}"`)
+    return true
   } catch (err) {
     console.error('Failed to delete template:', err)
     notify('Could not delete template')
+    return false
   }
 }
 
