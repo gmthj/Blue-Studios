@@ -1343,7 +1343,7 @@ label[for],
   transform: scale(0.97);
 }
 
-/* Toast Notification (Hidden per user request) */
+/* Toast Notification */
 .toast-toast {
   display: none !important;
 }

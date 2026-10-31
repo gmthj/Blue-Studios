@@ -56,7 +56,6 @@ const {
   isPanning,
   isPositionPopoverOpen,
   isRotating,
-  isScreenLg,
   isSpacePressed,
   marqueeBoxStyle,
   onCanvasClick,

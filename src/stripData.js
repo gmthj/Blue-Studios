@@ -63,7 +63,7 @@ export const FRAME_STYLES = [
 
 // ---------- STICKER TRAY (Decorate page) ----------
 // PLACEHOLDER (Rae): replace with stickers from the Sticker Maker.
-//   tab 'mine'    = stickers the user made (remove.bg cut-outs, Gemini captions)
+//   tab 'mine'    = stickers the user made (cut-outs, custom captions)
 //   tab 'giphy'   = GIPHY search results (a .gif URL works as it is, <img> plays it)
 //   tab 'dynamic' = live stickers (OpenWeatherMap weather, the time)
 // Each sticker only needs { id, tab, name, src }, where src is an image URL.

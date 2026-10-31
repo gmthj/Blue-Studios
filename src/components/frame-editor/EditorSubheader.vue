@@ -22,8 +22,6 @@ const {
   openMyTemplatesDrawer,
   redo,
   resetToActualSize,
-  route,
-  router,
   saveFrame,
   setZoom,
   shortcuts,

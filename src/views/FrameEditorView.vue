@@ -30,10 +30,8 @@ const {
   isSavedFramesModalOpen,
   isScreenLg,
   isWorkspaceLoading,
-  notificationMessage,
   openSavedFrame,
   savedFramesList,
-  showNotification,
   workspaceLoadingMessage
 } = editor
 </script>
