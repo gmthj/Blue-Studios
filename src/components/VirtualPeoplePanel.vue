@@ -56,6 +56,10 @@ function hasVideo(id) {
   <div class="people-panel" :class="{ disabled: disabled }">
     <div class="panel-head">
       <span class="panel-title">Virtual people</span>
+      <!-- Only the host has this list; everyone else sees it is host only, and when it is on -->
+      <span class="host-only-tag" title="Only you (the host) can change this. Everyone else sees when it is on.">
+        <AppIcon name="lock" :size="12" /> Host only
+      </span>
       <span v-if="behindLayerLoading" class="panel-loading">Loading...</span>
       <button class="icon-btn" aria-label="Close" @click="$emit('close')">
         <AppIcon name="close" :size="16" />
@@ -158,6 +162,18 @@ function hasVideo(id) {
   flex: 1;
   font-size: 0.85rem;
   font-weight: 700;
+}
+
+.host-only-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.16);
 }
 
 .panel-loading {

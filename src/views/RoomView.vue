@@ -40,10 +40,34 @@ watch(faceFilterError, (message) => {
 })
 
 // The layer behind me: only the host can add people behind them
-const { peopleCount, behindLayerError, keepOnlyMembers } = useBehindLayer()
+const { lineup, peopleCount, behindLayerError, keepOnlyMembers } = useBehindLayer()
 const isHost = computed(() => room.value.hostId === uid)
 
 const showPeoplePanel = ref(false) // the host's list of people to put behind them is open
+const showHostOnlyInfo = ref(false) // everyone else: the card saying Virtual people is host only is open
+
+// The host's line-up is only on the host's device, so the host saves it in the room (virtualPeople)
+// for everyone else to see that Virtual people is on, and who is in it
+watch(
+  lineup,
+  (ids) => {
+    if (!isHost.value) return
+    const saved = room.value.virtualPeople || []
+    if (ids.join() === saved.join()) return
+    updateDoc(roomRef(), { virtualPeople: ids }).catch((error) => console.error(error))
+  },
+  { immediate: true }
+)
+
+// Everyone else: the people the host has put into their camera (not the host), still in the room.
+// Empty if the host has left (their last line-up may still be saved in the room).
+const hostVirtualPeople = computed(() => {
+  const hostHere = activeMembers.value.some((member) => member.id === room.value.hostId)
+  if (!hostHere) return []
+  const ids = room.value.virtualPeople || []
+  return activeMembers.value.filter((member) => member.id !== room.value.hostId && ids.includes(member.id))
+})
+const iAmVirtual = computed(() => hostVirtualPeople.value.some((member) => member.id === uid))
 
 // Someone left the room: take them out of the line-up
 watch(activeMembers, (members) => {
@@ -360,6 +384,49 @@ async function copyJoinLink() {
               @close="showPeoplePanel = false"
             />
 
+            <!-- Everyone else: Virtual people is host only. This shows that, and lights up while the
+                 host has people in their camera. Tap it to see who (and to read why it is locked). -->
+            <button
+              v-if="localStream && !isHost && !recording && !savingClip"
+              class="glass-btn people-behind-btn host-only-btn"
+              :class="{ 'host-people-on': hostVirtualPeople.length > 0 }"
+              :aria-label="hostVirtualPeople.length > 0 ? 'Virtual people is on (host only)' : 'Virtual people (host only)'"
+              :aria-expanded="showHostOnlyInfo"
+              @click="showHostOnlyInfo = !showHostOnlyInfo"
+            >
+              <span v-if="hostVirtualPeople.length > 0" class="live-dot"></span>
+              <AppIcon v-else name="users" :size="16" />
+              <span class="d-none d-sm-inline">Virtual people</span>
+              <span v-if="hostVirtualPeople.length > 0">on ({{ hostVirtualPeople.length }})</span>
+              <span class="host-only-tag">
+                <AppIcon name="lock" :size="12" />
+                <span class="d-none d-sm-inline">Host only</span>
+              </span>
+            </button>
+
+            <div v-if="localStream && !isHost && showHostOnlyInfo" class="host-only-info people-panel-pos">
+              <div class="host-only-head">
+                <span class="host-only-title">Virtual people</span>
+                <span class="host-only-tag"><AppIcon name="lock" :size="12" /> Host only</span>
+                <button class="host-only-close" aria-label="Close" @click="showHostOnlyInfo = false">
+                  <AppIcon name="close" :size="16" />
+                </button>
+              </div>
+              <p class="host-only-text">
+                Only {{ room.hostName }} (the host) can put people from the call into their camera, so you all stand together in one shot.
+              </p>
+              <template v-if="hostVirtualPeople.length > 0">
+                <p class="host-only-status on"><span class="live-dot"></span> On: in {{ room.hostName }}'s camera now</p>
+                <ul class="host-only-list">
+                  <li v-for="member in hostVirtualPeople" :key="member.id">
+                    {{ member.name }}<template v-if="member.id === uid"> (you)</template>
+                  </li>
+                </ul>
+                <p v-if="iAmVirtual" class="host-only-text">Stay in your camera's view so you show up.</p>
+              </template>
+              <p v-else class="host-only-status">Off right now</p>
+            </div>
+
             <!-- The face filters: a row that scrolls behind the shutter button (the middle one is chosen) -->
             <FaceFilterPicker v-if="localStream" class="filter-carousel-pos" :disabled="capturing" />
 
@@ -603,6 +670,117 @@ async function copyJoinLink() {
 /* Some people are behind me: a white ring around the button */
 .people-behind-btn.people-on {
   box-shadow: inset 0 0 0 2px #ffffff;
+}
+
+/* Everyone else's Virtual people button: a small lock tag says only the host can use it */
+.host-only-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.16);
+}
+
+/* The host has people in their camera: the button turns blue and pulses once */
+.host-only-btn.host-people-on {
+  background: var(--brand);
+  animation: host-people-pulse 900ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .host-only-btn.host-people-on:hover {
+    background: var(--brand);
+    filter: brightness(1.1);
+  }
+}
+
+@keyframes host-people-pulse {
+  from { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7); }
+  to { box-shadow: 0 0 0 12px rgba(255, 255, 255, 0); }
+}
+
+/* A small white "live" dot */
+.live-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+/* Everyone else's card about Virtual people (in the same place as the host's list) */
+.host-only-info {
+  width: 270px;
+  max-width: calc(100% - 24px);
+  padding: 12px;
+  overflow-y: auto;
+  border-radius: 16px;
+  color: #ffffff;
+  background: rgba(14, 16, 32, 0.72);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(14, 16, 32, 0.35);
+}
+
+.host-only-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.host-only-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.host-only-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.host-only-text {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.host-only-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.host-only-status.on {
+  color: #ffffff;
+}
+
+.host-only-list {
+  margin: 6px 0 8px;
+  padding-left: 18px;
+  font-size: 0.82rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .host-only-btn.host-people-on {
+    animation: none;
+  }
 }
 
 /* The host's Virtual people list: under its button, above the Photo / Video switch, filter row and shutter */
