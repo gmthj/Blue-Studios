@@ -96,7 +96,7 @@ let mirrored = false // my preview is mirrored, so "left" on screen is the right
 let getRemoteTrack = () => null // given a uid, their video from the call (set by useVideoCall.js)
 const remoteVideos = new Map()  // uid -> { video, track }: a hidden <video> for each person in the line-up
 
-// One cut-out per video: video element -> { segmenter, maskCanvas, ready, detector, face, rect, ... }
+// One cut-out per video: video element -> { maskCanvas, ready, hasPerson, face, rect, ... } (the tools are shared, see startTools)
 const cutouts = new Map()
 let scratch = null    // a spare canvas, where one person is cut out before being drawn
 let lastDrawTime = 0  // when the last frame was drawn (for gliding)
@@ -274,7 +274,7 @@ function getRemoteVideo(uid) {
     video.playsInline = true
     video.style.cssText = 'position:fixed; top:0; left:0; width:1px; height:1px; opacity:0; pointer-events:none;'
     document.body.appendChild(video)
-    remote = { video: video, track: null }
+    remote = { video: video, track: null, lastPlayTry: 0 }
     remoteVideos.set(uid, remote)
   }
 
@@ -282,6 +282,12 @@ function getRemoteVideo(uid) {
   if (remote.track !== track) {
     remote.track = track
     remote.video.srcObject = new MediaStream([track])
+    remote.lastPlayTry = performance.now()
+    remote.video.play().catch((error) => console.error(error))
+  }
+  // Phones sometimes pause a hidden video: try to play it again (at most once a second)
+  if (remote.video.paused && performance.now() - remote.lastPlayTry > 1000) {
+    remote.lastPlayTry = performance.now()
     remote.video.play().catch((error) => console.error(error))
   }
   return remote.video
@@ -303,14 +309,116 @@ function forgetUnusedRemoteVideos() {
 
 // ---------- Cutting people out ----------
 
-// The cut-out for this video. The first time, its segmenter and face finder start downloading
-// (ready = false until the first mask is made). After that, the person is found again every time
-// the video has a new frame, and their face a few times a second.
+// ---------- The cut-out tools (shared by every video) ----------
+// ONE segmenter and ONE face finder look at every video in turn (IMAGE mode: each frame is looked at
+// on its own, so frames from different videos can be mixed). Every MediaPipe tool on the GPU uses its
+// own graphics (WebGL) context, and phones allow only a few at once (Chrome on Android: 8). With one
+// tool per video, phones ran out: Chrome quietly dropped the oldest ones, and nobody was ever found.
+let segmenter = null        // the person cut-out tool, once loaded
+let segmenterLoading = false
+let segmenterOnCpu = false  // switched to the CPU because the GPU gave empty masks (see BAD_MASKS_BEFORE_CPU)
+let detector = null         // the face finder, once loaded
+let detectorLoading = false
+let toolsVersion = 0        // goes up when the tools are closed, so a download still in progress is thrown away
+let badMasks = 0            // masks in a row that failed or came back completely empty
+
+// Some phones' GPUs give masks that are all 0 (or fail) without an error. After this many in a row,
+// the segmenter is loaded again on the CPU (slower, but works everywhere).
+const BAD_MASKS_BEFORE_CPU = 30
+
+// Start loading the tools (only once; again after an error or after they were closed)
+function startTools() {
+  if (!segmenter && !segmenterLoading) loadSegmenter()
+  if (!detector && !detectorLoading) loadDetector()
+}
+
+async function loadSegmenter() {
+  const version = toolsVersion
+  segmenterLoading = true
+  behindLayerLoading.value = true
+  try {
+    const { vision, files } = await loadMediaPipe()
+    const options = {
+      baseOptions: { modelAssetPath: SEGMENTER_MODEL_URL },
+      runningMode: 'IMAGE',
+      outputConfidenceMasks: true, // how sure it is, per pixel (gives soft edges)
+      outputCategoryMask: false,
+    }
+    const task = segmenterOnCpu
+      ? await vision.ImageSegmenter.createFromOptions(files, { ...options, baseOptions: { ...options.baseOptions, delegate: 'CPU' } })
+      : await createTask(vision.ImageSegmenter, files, options)
+    if (version !== toolsVersion) {
+      task.close() // the tools were closed while this was downloading
+      return
+    }
+    segmenter = task
+  } catch (error) {
+    console.error(error)
+    if (version !== toolsVersion) return
+    behindLayerError.value = 'Could not load the people layer. Please check your internet and try again.'
+    lineup.value = []
+  } finally {
+    if (version === toolsVersion) {
+      segmenterLoading = false
+      behindLayerLoading.value = false
+    }
+  }
+}
+
+// The face finder is used to make everyone the same size.
+// If it cannot load, people are just drawn at full height instead.
+async function loadDetector() {
+  const version = toolsVersion
+  detectorLoading = true
+  try {
+    const { vision, files } = await loadMediaPipe()
+    const task = await createTask(vision.FaceDetector, files, {
+      baseOptions: { modelAssetPath: FACE_DETECTOR_MODEL_URL },
+      runningMode: 'IMAGE',
+    })
+    if (version !== toolsVersion) {
+      task.close()
+      return
+    }
+    detector = task
+  } catch (error) {
+    console.error(error)
+  } finally {
+    if (version === toolsVersion) detectorLoading = false
+  }
+}
+
+// Close both tools (leaving the shoot page), freeing their graphics contexts
+function closeTools() {
+  toolsVersion = toolsVersion + 1
+  if (segmenter) segmenter.close()
+  if (detector) detector.close()
+  segmenter = null
+  detector = null
+  segmenterLoading = false
+  detectorLoading = false
+  behindLayerLoading.value = false
+  badMasks = 0
+}
+
+// A mask failed or was completely empty: after too many in a row on the GPU, use the CPU instead
+function countBadMask() {
+  badMasks = badMasks + 1
+  if (badMasks < BAD_MASKS_BEFORE_CPU || segmenterOnCpu || !segmenter) return
+  console.warn('Virtual Friends: the GPU cut-out is not working on this device, using the CPU instead')
+  segmenterOnCpu = true
+  badMasks = 0
+  segmenter.close()
+  segmenter = null
+  loadSegmenter()
+}
+
+// The cut-out for this video. The person is found again every time the video has a new frame,
+// and their face a few times a second (once the shared tools have loaded; ready = false until the first mask).
 function getCutout(video) {
   let cutout = cutouts.get(video)
   if (!cutout) {
     cutout = {
-      segmenter: null,
       maskCanvas: null,
       maskData: null,
       lastMask: null, // the last mask's numbers, mixed into the next one (see MASK_MIXING)
@@ -318,66 +426,20 @@ function getCutout(video) {
       hasPerson: false, // a person is found in the video (see FOUND_AREA)
       centreX: 0.5,   // the middle of the person, from 0 (left edge) to 1 (right edge)
       lastVideoTime: -1,
-      detector: null,
-      face: null,     // { x, eyeY, width } of their face, as parts of the video's width / height (null = not found yet)
+      face: null,     // { x, eyeY, width, span, count } of their face(s), as parts of the video's width / height (null = not found yet)
       lastFaceCheck: 0,
       rect: null,     // where they were drawn last frame: { x, y, height } (for gliding)
     }
     cutouts.set(video, cutout)
-    startSegmenter(cutout)
-    startFaceDetector(cutout)
   }
-  if (cutout.segmenter) {
+  startTools()
+  if (segmenter) {
     findPerson(video, cutout)
   }
-  if (cutout.detector) {
+  if (detector) {
     findFace(video, cutout)
   }
   return cutout
-}
-
-// Each video gets its own segmenter, because it expects one video's frames one after another
-async function startSegmenter(cutout) {
-  behindLayerLoading.value = true
-  try {
-    const { vision, files } = await loadMediaPipe()
-    const segmenter = await createTask(vision.ImageSegmenter, files, {
-      baseOptions: { modelAssetPath: SEGMENTER_MODEL_URL },
-      runningMode: 'VIDEO',
-      outputConfidenceMasks: true, // how sure it is, per pixel (gives soft edges)
-      outputCategoryMask: false,
-    })
-    // The video may have been removed while this was downloading
-    if (cutout.forgotten) {
-      segmenter.close()
-    } else {
-      cutout.segmenter = segmenter
-    }
-  } catch (error) {
-    console.error(error)
-    behindLayerError.value = 'Could not load the people layer. Please check your internet and try again.'
-    lineup.value = []
-  }
-  behindLayerLoading.value = false
-}
-
-// Each video also gets a face finder, used to make everyone the same size.
-// If it cannot load, people are just drawn at full height instead.
-async function startFaceDetector(cutout) {
-  try {
-    const { vision, files } = await loadMediaPipe()
-    const detector = await createTask(vision.FaceDetector, files, {
-      baseOptions: { modelAssetPath: FACE_DETECTOR_MODEL_URL },
-      runningMode: 'VIDEO',
-    })
-    if (cutout.forgotten) {
-      detector.close()
-    } else {
-      cutout.detector = detector
-    }
-  } catch (error) {
-    console.error(error)
-  }
 }
 
 // Look for the biggest face in the video (the person nearest the camera), a few times a second
@@ -388,7 +450,7 @@ function findFace(video, cutout) {
 
   let detections
   try {
-    detections = cutout.detector.detectForVideo(video, now).detections
+    detections = detector.detect(video).detections
   } catch (error) {
     console.error(error)
     return
@@ -453,15 +515,23 @@ function findPerson(video, cutout) {
   cutout.lastVideoTime = video.currentTime
 
   try {
-    cutout.segmenter.segmentForVideo(video, performance.now(), (result) => {
+    segmenter.segment(video, (result) => {
       // The last mask is "person" (if there are two, the first one is "background")
       const masks = result.confidenceMasks
-      if (!masks || masks.length === 0) return
+      if (!masks || masks.length === 0) return countBadMask()
       const mask = masks[masks.length - 1]
-      updateMask(cutout, mask.width, mask.height, mask.getAsFloat32Array())
+      const sure = mask.getAsFloat32Array()
+      // A real camera picture never gives exactly 0 everywhere: an all-0 mask means the GPU is not working
+      if (sure.some((value) => value > 0)) {
+        badMasks = 0
+      } else {
+        countBadMask()
+      }
+      updateMask(cutout, mask.width, mask.height, sure)
     })
   } catch (error) {
     console.error(error)
+    countBadMask()
   }
 }
 
@@ -531,15 +601,10 @@ function drawCutout(ctx, video, cutout, x, y, width, height) {
   ctx.drawImage(scratch, x, y, width, height)
 }
 
-// Close the segmenters and face finders of videos that are no longer used (e.g. a person was removed)
+// Forget the cut-outs of videos that are no longer used (e.g. a person was removed)
 function forgetUnusedCutouts(videosInUse) {
-  for (const [video, cutout] of cutouts) {
-    if (!videosInUse.includes(video)) {
-      cutout.forgotten = true
-      if (cutout.segmenter) cutout.segmenter.close()
-      if (cutout.detector) cutout.detector.close()
-      cutouts.delete(video)
-    }
+  for (const video of [...cutouts.keys()]) {
+    if (!videosInUse.includes(video)) cutouts.delete(video)
   }
 }
 
@@ -595,13 +660,14 @@ function setRemoteTrackSource(getTrack) {
   getRemoteTrack = getTrack
 }
 
-// Stop all the work (hidden videos, segmenters, face finders) but keep the line-up,
+// Stop all the work (hidden videos, the segmenter and face finder) but keep the line-up,
 // so it comes back when the layer is drawn again
 function releaseBehindLayer() {
   for (const uid of [...remoteVideos.keys()]) {
     removeRemoteVideo(uid)
   }
   forgetUnusedCutouts([])
+  closeTools()
 }
 
 // Leaving the room: empty line-up, and close everything
