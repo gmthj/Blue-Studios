@@ -29,7 +29,7 @@ const props = defineProps({
   selectedStickerId: { type: Number, default: null },   // the sticker to outline
 })
 
-const emit = defineEmits(['drop-photo', 'slot-click', 'clear-slot', 'crop-slot', 'drop-sticker', 'move-sticker', 'sticker-click', 'delete-sticker', 'update-sticker', 'strip-click'])
+const emit = defineEmits(['drop-photo', 'slot-click', 'clear-slot', 'crop-slot', 'drop-sticker', 'move-sticker', 'sticker-click', 'sticker-dblclick', 'delete-sticker', 'update-sticker', 'strip-click'])
 
 const stripEl = ref(null)   // the strip <div>, measured to work out where things are dropped
 const hoverSlot = ref(null) // the slot under a dragged photo (highlighted)
@@ -363,7 +363,8 @@ function onDragOver(event) {
 }
 
 // Everything dropped on the strip comes here. The dragged item put a small JSON "parcel" in
-// dataTransfer when the drag started (type: 'photo', 'newSticker' or 'moveSticker').
+// dataTransfer when the drag started (type: 'photo' or 'newSticker'). Stickers already on the strip
+// are moved with pointer events instead (see MOVING A STICKER).
 function onDrop(event) {
   hoverSlot.value = null
 
@@ -382,18 +383,25 @@ function onDrop(event) {
   if (props.mode === 'decorate' && parcel.type === 'newSticker') {
     emit('drop-sticker', parcel.src, pos.x, pos.y)
   }
-  if (props.mode === 'decorate' && parcel.type === 'moveSticker') {
-    emit('move-sticker', parcel.stickerId, pos.x, pos.y)
-  }
 }
 
-// ---------- MOVING A STICKER WITH A FINGER (phones) ----------
-// Phones do not have HTML drag and drop, so a finger drag on a sticker moves it with pointer events instead.
-// (A mouse still uses the drag and drop below.) Saved once, when the finger lifts.
+// ---------- MOVING A STICKER (finger or mouse) ----------
+// A drag on a sticker moves it with pointer events, saved once when the finger or button lifts.
+// WHY the mouse too (it used HTML drag and drop before): drag and drop only shows a ghost picture
+// until the drop, so the sticker could not snap or show alignment lines while it moved.
 let fingerMove = null // { id, startX, startY, startStickerX, startStickerY, moved }
 
+// Alignment guides: while a sticker moves near the middle of the strip (across or down), it snaps
+// onto the middle and a red line shows it, like Canva or PowerPoint.
+const SNAP_PX = 6
+const guides = ref({ x: false, y: false })
+
+// Two quick taps on the same sticker = a double-tap (phones send no dblclick), used to edit
+// a text sticker's words right on the strip.
+let lastStickerTap = { id: null, time: 0 }
+
 function onStickerPointerDown(event, sticker) {
-  if (props.mode !== 'decorate' || event.pointerType === 'mouse') return
+  if (props.mode !== 'decorate' || event.button > 0) return
   event.currentTarget.setPointerCapture(event.pointerId)
   fingerMove = { id: sticker.id, startX: event.clientX, startY: event.clientY, startStickerX: sticker.x, startStickerY: sticker.y, moved: false }
 }
@@ -405,25 +413,33 @@ function onStickerPointerMove(event) {
   if (!fingerMove.moved && Math.abs(dx) + Math.abs(dy) < 6) return // a small wobble is still a tap
   fingerMove.moved = true
   const box = stripEl.value.getBoundingClientRect()
-  const x = Math.min(100, Math.max(0, fingerMove.startStickerX + (dx / box.width) * 100)) // pixels -> % of the strip
-  const y = Math.min(100, Math.max(0, fingerMove.startStickerY + (dy / box.height) * 100))
+  let x = Math.min(100, Math.max(0, fingerMove.startStickerX + (dx / box.width) * 100)) // pixels -> % of the strip
+  let y = Math.min(100, Math.max(0, fingerMove.startStickerY + (dy / box.height) * 100))
+  // Snap to the middle when within a few pixels of it
+  const nearX = Math.abs(x - 50) * box.width / 100 < SNAP_PX
+  const nearY = Math.abs(y - 50) * box.height / 100 < SNAP_PX
+  if (nearX) x = 50
+  if (nearY) y = 50
+  guides.value = { x: nearX, y: nearY }
   liveSticker.value = { ...(liveSticker.value && liveSticker.value.id === fingerMove.id ? liveSticker.value : {}), id: fingerMove.id, x: x, y: y }
 }
 
 function onStickerPointerUp() {
   if (!fingerMove) return
+  guides.value = { x: false, y: false }
   if (fingerMove.moved && liveSticker.value) {
     emit('move-sticker', fingerMove.id, liveSticker.value.x, liveSticker.value.y)
   } else {
     emit('sticker-click', fingerMove.id) // just a tap: select it
+    const now = Date.now()
+    if (lastStickerTap.id === fingerMove.id && now - lastStickerTap.time < 400) {
+      emit('sticker-dblclick', fingerMove.id)
+      lastStickerTap = { id: null, time: 0 }
+    } else {
+      lastStickerTap = { id: fingerMove.id, time: now }
+    }
   }
   fingerMove = null
-}
-
-// Dragging a sticker that is already on the strip: remember which one is moving
-function onStickerDragStart(event, sticker) {
-  event.dataTransfer.setData('text/plain', JSON.stringify({ type: 'moveSticker', stickerId: sticker.id }))
-  event.dataTransfer.effectAllowed = 'move'
 }
 
 // Phones do not support drag and drop, so a tap on the strip sends its position instead
@@ -530,7 +546,6 @@ function onStripClick(event) {
       :key="sticker.id"
       class="sticker"
       :class="{ selected: sticker.id === selectedStickerId }"
-      :draggable="mode === 'decorate'"
       :style="{
         left: shown(sticker).x + '%',
         top: shown(sticker).y + '%',
@@ -539,7 +554,6 @@ function onStripClick(event) {
         transform: 'translate(-50%, -50%) rotate(' + shown(sticker).rotate + 'deg)',
         pointerEvents: mode === 'decorate' ? 'auto' : 'none'
       }"
-      @dragstart="onStickerDragStart($event, sticker)"
       @pointerdown="onStickerPointerDown($event, sticker)"
       @pointermove="onStickerPointerMove"
       @pointerup="onStickerPointerUp"
@@ -548,6 +562,10 @@ function onStripClick(event) {
     >
       <img :src="sticker.src" alt="" draggable="false" @load="onStickerLoad($event, sticker.id)" />
     </div>
+
+    <!-- Alignment guides: a red line down / across the middle while a sticker sits on it -->
+    <div v-if="guides.x" class="align-guide vertical" aria-hidden="true"></div>
+    <div v-if="guides.y" class="align-guide horizontal" aria-hidden="true"></div>
 
     <p v-if="frameStyle.caption && !frameStyle.thumbnailUrl" class="caption" :style="{ color: frameStyle.captionColor || frameStyle.border }">{{ frameStyle.caption }}</p>
   </div>
@@ -747,6 +765,32 @@ function onStripClick(event) {
   position: absolute;
   cursor: grab;
   touch-action: none; /* a finger on a sticker moves it instead of scrolling the page */
+}
+
+.sticker:active {
+  cursor: grabbing;
+}
+
+/* The red alignment line through the middle of the strip, above every sticker */
+.align-guide {
+  position: absolute;
+  z-index: 9999;
+  background: #F04438;
+  pointer-events: none;
+}
+
+.align-guide.vertical {
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+}
+
+.align-guide.horizontal {
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 1px;
 }
 
 .sticker img {

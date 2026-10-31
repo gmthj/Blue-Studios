@@ -3141,13 +3141,19 @@ function imageStyle(layer) {
 /*  Blue Studios rather than a copy of another editor.                 */
 /* ------------------------------------------------------------------ */
 .sm-page {
-  /* Everything App.vue puts around the page: the 57px navbar, its 24px margin (mb-4) and
-     main's 16px bottom padding (pb-3). The editor fills exactly what is left, so it never scrolls. */
-  --sm-navbar: 97px;
+  /* App.vue puts the page in a centred column under the navbar. An editor wants every pixel,
+     so it breaks out: the full width of the window (the negative side margins undo the column)
+     and up against the navbar (-24px undoes its mb-4 margin). What is left to subtract is the
+     57px navbar and main's 16px bottom padding (pb-3), so the editor fills the screen exactly. */
+  --sm-navbar: 73px;
   --sm-gap: 12px;
   --sm-float: 0 1px 2px rgba(20, 23, 43, 0.04), 0 12px 32px rgba(20, 23, 43, 0.06);
   --sm-faint: #9AA0AE;
 
+  width: 100vw;
+  margin-left: calc(50% - 50vw);
+  margin-right: calc(50% - 50vw);
+  margin-top: -24px;
   height: calc(100vh - var(--sm-navbar));
   height: calc(100dvh - var(--sm-navbar));
   min-height: 560px;
@@ -3978,9 +3984,6 @@ function imageStyle(layer) {
 @media (max-width: 991.98px) {
   .sm-page {
     --sm-rail-h: calc(62px + env(safe-area-inset-bottom));
-    /* Pull up 16px into the navbar's 24px margin: small screens need every pixel. */
-    --sm-navbar: 81px;
-    margin-top: -16px;
     height: calc(100vh - var(--sm-navbar));
     height: calc(100dvh - var(--sm-navbar));
     min-height: 0;

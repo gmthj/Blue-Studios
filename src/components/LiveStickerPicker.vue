@@ -45,8 +45,9 @@ let tilesVersion = 0 // so a slow, older drawing never replaces a newer one
 function tileConfig(type) {
   if (type === 'time') return { type, style: style.value, hour12: hour12.value, timeZone: '' }
   if (type === 'date') return { type, style: style.value, timeZone: '' }
-  const city = type === 'location' ? (label.value.trim() || place.value.city) : place.value.city
-  return { type, style: style.value, city, country: place.value.country }
+  // Weather and location both show the place you picked (searched "Clementi" shows Clementi,
+  // not "Chinese Garden", the weather station OpenWeatherMap happens to use nearby)
+  return { type, style: style.value, city: (label.value.trim() || place.value.city).slice(0, 40), country: place.value.country }
 }
 
 async function refreshTiles() {
@@ -184,10 +185,8 @@ watch([style, hour12, place, label, weather], refreshTiles, { immediate: true })
 
 function addPlace(type) {
   if (!place.value) return
-  // The location sticker shows the picked name; the weather sticker needs the city.
-  const city = type === 'location' ? (label.value.trim() || place.value.city).slice(0, 40) : place.value.city
   emit('add', {
-    config: { type, style: style.value, city, country: place.value.country },
+    config: tileConfig(type),
     live: type === 'weather' ? weather.value : null,
   })
 }
@@ -195,29 +194,16 @@ function addPlace(type) {
 
 <template>
   <div class="live-picker">
-    <p class="lp-label">Look</p>
-    <div class="lp-looks" role="group" aria-label="Look">
-      <span class="lp-looks-group">Badge</span>
-      <button
-        v-for="item in BADGE_STYLES"
-        :key="item.id"
-        type="button"
-        class="lp-look"
-        :class="{ active: style === item.id }"
-        :aria-pressed="style === item.id"
-        @click="style = item.id"
-      >{{ item.label }}</button>
-      <span class="lp-looks-group">Words only</span>
-      <button
-        v-for="item in WORD_STYLES"
-        :key="item.id"
-        type="button"
-        class="lp-look"
-        :class="['lp-look-' + item.id, { active: style === item.id }]"
-        :aria-pressed="style === item.id"
-        @click="style = item.id"
-      >{{ item.label }}</button>
-    </div>
+    <!-- One choice for every sticker below, so it is a dropdown: pick a look, then tap a sticker -->
+    <label class="lp-label" for="lp-look">Style</label>
+    <select id="lp-look" v-model="style" class="form-select form-select-sm lp-input">
+      <optgroup label="Badge">
+        <option v-for="item in BADGE_STYLES" :key="item.id" :value="item.id">{{ item.label }}</option>
+      </optgroup>
+      <optgroup label="Words only (no background)">
+        <option v-for="item in WORD_STYLES" :key="item.id" :value="item.id">{{ item.label }}</option>
+      </optgroup>
+    </select>
 
     <p class="lp-label">Time and date</p>
     <div class="lp-grid">
@@ -244,7 +230,7 @@ function addPlace(type) {
         type="text"
         class="form-control lp-input"
         maxlength="80"
-        placeholder="SMU, Jurong, Tokyo…"
+        placeholder="e.g. Marina Bay Sands"
         aria-label="Place"
       />
       <button type="submit" class="btn btn-outline-secondary" :disabled="busy !== ''">
@@ -295,8 +281,9 @@ function addPlace(type) {
         </div>
       </template>
 
+      <template v-if="names.length > 1 || nearby.length > 0">
       <p class="lp-label">{{ nearby.length > 0 ? 'Or the area' : 'Name on the sticker' }}</p>
-      <div v-if="names.length > 1 || nearby.length > 0" class="lp-chips" role="group" aria-label="Pick a name">
+      <div class="lp-chips" role="group" aria-label="Pick a name">
         <button
           v-for="name in names"
           :key="name"
@@ -307,7 +294,7 @@ function addPlace(type) {
           @click="label = name"
         >{{ name }}</button>
       </div>
-      <input v-model="label" type="text" class="form-control form-control-sm lp-input mt-2" maxlength="40" aria-label="Name on the location sticker" />
+      </template>
 
       <div class="lp-grid lp-grid-gap">
         <button type="button" class="lp-cell" title="Add the weather" @click="addPlace('weather')">
@@ -322,7 +309,7 @@ function addPlace(type) {
         </button>
       </div>
     </template>
-    <p class="lp-hint">Only the name you pick is used, never your exact location.</p>
+    <p class="lp-hint">Only the place name is used, never your exact location. To change a name, double-tap the sticker on the strip.</p>
   </div>
 </template>
 
@@ -358,29 +345,6 @@ function addPlace(type) {
 .lp-input { font-size: 16px; } /* 16px so iPhones do not zoom in */
 .lp-gps { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 
-/* Looks: small buttons in rows, the "Words only" ones set in a hint of their own style */
-.lp-looks { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.lp-looks-group {
-  flex-basis: 100%;
-  font-size: 0.7rem; font-weight: 700;
-  letter-spacing: 0.04em; text-transform: uppercase;
-  color: var(--muted);
-}
-.lp-look {
-  padding: 5px 10px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: #ffffff;
-  font-size: 0.8rem;
-  color: var(--ink);
-  transition: border-color 150ms ease, background-color 150ms ease, transform 160ms var(--ease-out);
-}
-.lp-look:active { transform: scale(0.96); }
-.lp-look.active { border-color: var(--brand); background: var(--brand-tint); color: var(--brand); font-weight: 600; }
-.lp-look-typewriter { font-family: 'Special Elite', 'Courier New', monospace; }
-.lp-look-stamp { font-family: 'Space Mono', 'Courier New', monospace; color: #E8740F; }
-.lp-look-cartoon { font-family: 'Fredoka', sans-serif; font-weight: 700; }
-.lp-look-cute { font-family: 'Gochi Hand', cursive; color: #E8628B; }
 /* While a text look's font loads, an empty space the size of the picture */
 .lp-cell-wait { display: block; width: 100%; height: 38px; border-radius: 8px; background: #EEF0F5; }
 
