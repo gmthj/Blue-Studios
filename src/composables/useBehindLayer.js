@@ -27,7 +27,7 @@
 //   resetBehindLayer()                  // when leaving the room
 //
 // Usage in a page (host only):
-//   const { lineup, peopleCount, addToLineup, removeFromLineup, moveInLineup } = useBehindLayer()
+//   const { lineup, friendsCount, addToLineup, removeFromLineup, moveInLineup } = useBehindLayer()
 
 import { ref, computed } from 'vue'
 import { loadMediaPipe, createTask } from '../utils/mediapipe.js'
@@ -90,7 +90,7 @@ const behindLayerError = ref('')
 const lineup = ref([])                // member ids, left to right on my screen, me included. [] = nobody.
 
 // How many people (not counting me) are in the line-up
-const peopleCount = computed(() => lineup.value.filter((id) => id !== getUid()).length)
+const friendsCount = computed(() => lineup.value.filter((id) => id !== getUid()).length)
 
 let mirrored = false // my preview is mirrored, so "left" on screen is the right of the canvas
 let getRemoteTrack = () => null // given a uid, their video from the call (set by useVideoCall.js)
@@ -613,7 +613,7 @@ function resetBehindLayer() {
 export function useBehindLayer() {
   return {
     lineup,
-    peopleCount,
+    friendsCount,
     behindLayerLoading,
     behindLayerError,
     addToLineup,

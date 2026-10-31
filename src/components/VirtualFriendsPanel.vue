@@ -11,7 +11,7 @@ import AppIcon from './AppIcon.vue'
 // the host included, from left to right on the host's screen (top of the list = far left).
 // Added people go left / right of the host in turn; the arrows then move anyone anywhere.
 // See useBehindLayer.js.
-// Usage: <VirtualPeoplePanel :disabled="countdown > 0" @close="..." />
+// Usage: <VirtualFriendsPanel :disabled="countdown > 0" @close="..." />
 
 defineProps({
   disabled: { type: Boolean, default: false }, // e.g. while the 3-2-1 countdown runs
@@ -53,9 +53,9 @@ function hasVideo(id) {
 </script>
 
 <template>
-  <div class="people-panel" :class="{ disabled: disabled }">
+  <div class="friends-panel" :class="{ disabled: disabled }">
     <div class="panel-head">
-      <span class="panel-title">Virtual people</span>
+      <span class="panel-title">Virtual Friends</span>
       <!-- Only the host has this list; everyone else sees it is host only, and when it is on -->
       <span class="host-only-tag" title="Only you (the host) can change this. Everyone else sees when it is on.">
         <AppIcon name="lock" :size="12" /> Host only
@@ -70,7 +70,7 @@ function hasVideo(id) {
     <p v-else-if="inLineup.length > 0" class="panel-hint">Left to right on your screen</p>
 
     <!-- TransitionGroup: when the order changes, the rows slide to their new places (see .lineup-move) -->
-    <TransitionGroup tag="ul" name="lineup" class="people-list">
+    <TransitionGroup tag="ul" name="lineup" class="friends-list">
       <!-- The line-up, left to right: arrows to move anyone (me too), a tick to remove others -->
       <li
         v-for="(member, index) in inLineup"
@@ -133,7 +133,7 @@ function hasVideo(id) {
 
 <style scoped>
 /* A dark see-through card floating on the camera, like the other camera buttons */
-.people-panel {
+.friends-panel {
   display: flex;
   flex-direction: column;
   width: 290px;
@@ -147,7 +147,7 @@ function hasVideo(id) {
 }
 
 /* During the countdown the order cannot change */
-.people-panel.disabled .people-list {
+.friends-panel.disabled .friends-list {
   opacity: 0.6;
 }
 
@@ -257,7 +257,7 @@ function hasVideo(id) {
 }
 
 /* The list scrolls if there are many people */
-.people-list {
+.friends-list {
   min-height: 0; /* lets the list be shorter than its content (and scroll) inside the card */
   margin: 0;
   padding: 0;
