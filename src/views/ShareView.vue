@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { runTransaction, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useRoom } from '../composables/useRoom.js'
@@ -23,8 +24,10 @@ import SharedStrip from '../components/SharedStrip.vue'
 //   'failed'   something went wrong (error). Anyone can press "Try again".
 // If the device making it disappears (updatedAt is older than STALE_MS), another device takes over.
 
-const { code, room, photos, clips, roomRef, goToStage } = useRoom()
+const { code, room, photos, clips, roomRef, goToStage, exitRoom } = useRoom()
 const { isAccount } = useAuth()
+const route = useRoute() // route.fullPath is this page's address, /room/4821/share (for "log in, then come back here")
+const router = useRouter()
 const uid = getUid()
 const myName = getGuestName()
 
@@ -170,6 +173,20 @@ watch(
 const shownProgress = computed(() => (building.value ? progress.value : (job.value && job.value.progress) || 0))
 const shownLabel = computed(() => (building.value ? label.value : (job.value && job.value.label) || ''))
 
+// ---------- LOG IN TO SAVE (guests) ----------
+
+// Go to the login page, and come back to this page after (redirect: the login page brings the user back here, where Save is waiting).
+// Logging in to an existing account makes us a NEW member of the room (a different user id). The old place would
+// still count for up to 45 seconds, so if everyone logs in at once the room could look full. So we leave our place first.
+async function goToLogin() {
+  try {
+    await exitRoom(true) // true: remove me from the members list straight away
+  } catch (error) {
+    console.error(error) // not fatal: the old place just times out by itself
+  }
+  router.push('/login?redirect=' + encodeURIComponent(route.fullPath))
+}
+
 // ---------- SAVE TO MY STUDIO (accounts only) ----------
 
 const saving = ref(false)
@@ -201,7 +218,7 @@ async function saveToStudio() {
       <button v-if="isAccount" class="btn btn-outline-primary w-100 mt-2" :disabled="saving" @click="saveToStudio">
         {{ saving ? 'Saving...' : 'Save to My Studio' }}
       </button>
-      <router-link v-else to="/login" class="btn btn-outline-primary w-100 mt-2">Log in to save it to My Studio</router-link>
+      <button v-else class="btn btn-outline-primary w-100 mt-2" @click="goToLogin">Log in to save it to My Studio</button>
       <p v-if="saveMessage" class="small mt-2 mb-0">{{ saveMessage }}</p>
     </SharedStrip>
     <p class="mt-3"><button class="btn btn-outline-secondary btn-sm" @click="goToStage('export')">&larr; Export</button></p>
