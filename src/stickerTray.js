@@ -1,4 +1,4 @@
-import { STICKERS, SHAPES, TAPES, EMOJI } from './stickerArt.js'
+import { STICKERS, SHAPES, TAPES, EMOJI, FONTS, loadArtFonts } from './stickerArt.js'
 import { dynamicDataUrl, isTextStyle, drawTextSticker } from './dynamicStickers.js'
 import { listMyItems, getFileUrl } from './studio.js'
 import { listMySaved } from './marketplace.js'
@@ -76,6 +76,39 @@ export async function loadDefaultStickers() {
   }
   defaultCache = items
   return items
+}
+
+// ---------- TEXT (the Text tab) ----------
+// Words as a picture with a see-through background, in one of the Sticker Maker's fonts.
+// text: { words, font, color, bold, italic }. The settings are kept on the placed sticker too,
+// so the words can be changed later by double-tapping it on the strip.
+// WHY a picture: everything on the strip is a picture, so the export and every teammate's
+// page draw text stickers with no extra code.
+const TEXT_SIZE = 64 // pixels: sharp enough on a strip, small enough to keep the room light
+
+export async function textStickerPng(text) {
+  const family = (FONTS.find((f) => f.name === text.font) || FONTS[0]).stack
+  const font = (text.italic ? 'italic ' : '') + (text.bold ? 700 : 400) + ' ' + TEXT_SIZE + 'px ' + family
+  loadArtFonts()
+  if (document.fonts) {
+    // Ask for the exact font, so the picture is not drawn with a stand-in (at most 3 seconds)
+    await Promise.race([document.fonts.load(font, text.words), new Promise((resolve) => setTimeout(resolve, 3000))]).catch(() => {})
+  }
+  const lines = String(text.words || '').split('\n')
+  const canvas = document.createElement('canvas')
+  const ctx = canvas.getContext('2d')
+  ctx.font = font
+  const pad = 10
+  const lineHeight = TEXT_SIZE * 1.25
+  const width = Math.max(...lines.map((line) => ctx.measureText(line).width), TEXT_SIZE)
+  canvas.width = Math.ceil(width + pad * 2)
+  canvas.height = Math.ceil(lines.length * lineHeight + pad * 2)
+  ctx.font = font // setting the size clears the canvas settings, so set the font again
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillStyle = text.color || '#14172B'
+  lines.forEach((line, i) => ctx.fillText(line, canvas.width / 2, pad + lineHeight * (i + 0.5)))
+  return canvas.toDataURL('image/png')
 }
 
 // ---------- LIVE (time, date, weather, location) ----------

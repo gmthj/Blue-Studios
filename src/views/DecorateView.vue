@@ -6,7 +6,8 @@ import { getGuestName } from '../guest.js'
 import { useAuth } from '../composables/useAuth.js'
 import { saveStrip } from '../studio.js'
 import { resolveEditedVideos } from '../clips.js'
-import { loadDefaultStickers, loadMyStickers, liveStickerPng, DEFAULT_SECTIONS } from '../stickerTray.js'
+import { loadDefaultStickers, loadMyStickers, liveStickerPng, textStickerPng, DEFAULT_SECTIONS } from '../stickerTray.js'
+import { FONT_GROUPS_READY, loadArtFonts } from '../stickerArt.js'
 import { LAYOUTS, FRAME_STYLES, FILTERS, filterCss, saveField, saveFields, cropOf, cropSource } from '../stripData.js'
 import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
@@ -89,6 +90,7 @@ const photosById = computed(() => {
 // (Rae) and the ones saved from the marketplace, loaded from Firebase (see stickerTray.js).
 const TRAY_TABS = [
   { id: 'default', label: 'Default' },
+  { id: 'text', label: 'Text' },
   { id: 'live', label: 'Live' },
   { id: 'mine', label: 'Mine' },
 ]
@@ -113,6 +115,7 @@ function onTabVisible() {
 }
 
 onMounted(async () => {
+  loadArtFonts() // the Text tab's fonts (the same 29 as the Sticker Maker)
   refreshMyStickers()
   document.addEventListener('visibilitychange', onTabVisible)
   defaultStickers.value = await loadDefaultStickers()
@@ -154,14 +157,139 @@ function pickTraySticker(item, width) {
 
 // The Live tab chose a sticker: draw it as a picture of this moment, then place it.
 // WHY wider: it is a row of words, and at a normal sticker's width they would be tiny.
+// Its settings are kept on the sticker (live), so a place name can be changed later on the strip.
 async function addLiveSticker({ config, live }) {
   trayError.value = ''
   try {
-    pickTraySticker({ src: await liveStickerPng(config, live) }, 80)
+    const src = await liveStickerPng(config, live)
+    addSticker(src, 50, 50, 80, { live: { config, live: live || null } })
+    if (isPhone()) trayOpen.value = false
   } catch (err) {
     console.error('Could not draw the live sticker:', err)
     trayError.value = 'Could not add that sticker. Please try again.'
   }
+}
+
+// ---------- TEXT TAB ----------
+// Type, pick a font, colour, bold or italic, then add it. With a text sticker selected, the
+// same controls restyle that sticker instead (like the Sticker Maker). Its words are changed
+// by double-tapping it on the strip.
+const TEXT_COLORS = ['#14172B', '#FFFFFF', '#2F5BEA', '#0EA5E9', '#12B76A', '#F79009', '#F04438', '#7A5AF8', '#FFB3C6', '#FDE047']
+const textDraft = ref({ words: '', font: 'Caveat', color: '#14172B', bold: false, italic: false })
+
+// The selected sticker if it is a text sticker
+const selectedTextSticker = computed(() => (selectedSticker.value && selectedSticker.value.text ? selectedSticker.value : null))
+// What the Text tab's controls show and change: the selected text sticker, or the new one being typed
+const textStyle = computed(() => (selectedTextSticker.value ? selectedTextSticker.value.text : textDraft.value))
+
+// The typing box shows the words in the chosen font and style (white is shown dark, so it can be read)
+const ALL_FONTS = FONT_GROUPS_READY.flatMap((group) => group.fonts)
+const draftStyle = computed(() => ({
+  fontFamily: (ALL_FONTS.find((f) => f.name === textDraft.value.font) || ALL_FONTS[0]).stack,
+  fontWeight: textDraft.value.bold ? 700 : 400,
+  fontStyle: textDraft.value.italic ? 'italic' : 'normal',
+  color: textDraft.value.color === '#FFFFFF' ? '#14172B' : textDraft.value.color,
+}))
+
+async function addTextSticker() {
+  const text = { ...textDraft.value, words: textDraft.value.words.trim() }
+  if (!text.words) {
+    trayError.value = 'Type something first.'
+    return
+  }
+  trayError.value = ''
+  try {
+    addSticker(await textStickerPng(text), 50, 50, 70, { text })
+    textDraft.value = { ...textDraft.value, words: '' }
+    if (isPhone()) trayOpen.value = false
+  } catch (err) {
+    console.error('Could not draw the text:', err)
+    trayError.value = 'Could not add the text. Please try again.'
+  }
+}
+
+// A font, colour, bold or italic was picked
+async function setTextStyle(changes) {
+  const sticker = selectedTextSticker.value
+  if (!sticker) {
+    textDraft.value = { ...textDraft.value, ...changes }
+    return
+  }
+  const text = { ...sticker.text, ...changes }
+  try {
+    await updateSticker(sticker.id, { text, src: await textStickerPng(text) })
+  } catch (err) {
+    console.error('Could not restyle the text:', err)
+    trayError.value = 'Could not change the text. Please try again.'
+  }
+}
+
+// ---------- EDITING WORDS ON THE STRIP ----------
+// Double-tap a text sticker (or a location / weather one) and a bar opens over the strip with
+// its words. The strip shows the change as you type (only on this screen); Done saves it for
+// everyone. Time and date stickers show when they were added, so they cannot be retyped.
+const editing = ref(null)        // { id, kind: 'text' | 'live', words } while the bar is open
+const editPreview = ref(null)    // { id, src } the redrawn picture while typing
+const editInput = ref(null)
+let editTimer = null
+
+function startEditSticker(id) {
+  const sticker = stickers.value.find((s) => s.id === id)
+  if (!sticker) return
+  if (sticker.text) {
+    editing.value = { id, kind: 'text', words: sticker.text.words }
+  } else if (sticker.live && ['location', 'weather'].includes(sticker.live.config.type)) {
+    editing.value = { id, kind: 'live', words: sticker.live.config.city }
+  } else {
+    return // a picture, or a time / date sticker: nothing to retype
+  }
+  editPreview.value = null
+  setTimeout(() => editInput.value && editInput.value.focus(), 0)
+}
+
+// The picture for the words being typed
+async function drawEdited(sticker, words) {
+  if (editing.value.kind === 'text') return textStickerPng({ ...sticker.text, words })
+  return liveStickerPng({ ...sticker.live.config, city: words.slice(0, 40) }, sticker.live.live)
+}
+
+function onEditInput() {
+  clearTimeout(editTimer)
+  // Wait for a pause in typing, so the picture is not redrawn on every key
+  editTimer = setTimeout(async () => {
+    if (!editing.value) return
+    const sticker = stickers.value.find((s) => s.id === editing.value.id)
+    const words = editing.value.words.trim()
+    if (!sticker || !words) return
+    editPreview.value = { id: sticker.id, src: await drawEdited(sticker, words) }
+  }, 250)
+}
+
+async function finishEditSticker() {
+  clearTimeout(editTimer)
+  const edit = editing.value
+  editing.value = null
+  if (!edit) return
+  const sticker = stickers.value.find((s) => s.id === edit.id)
+  const words = edit.words.trim()
+  if (!sticker || !words) {
+    editPreview.value = null
+    return
+  }
+  editing.value = edit // drawEdited reads the kind
+  const src = await drawEdited(sticker, words)
+  editing.value = null
+  const changes = edit.kind === 'text'
+    ? { src, text: { ...sticker.text, words } }
+    : { src, live: { ...sticker.live, config: { ...sticker.live.config, city: words.slice(0, 40) } } }
+  await updateSticker(edit.id, changes)
+  editPreview.value = null
+}
+
+function cancelEditSticker() {
+  clearTimeout(editTimer)
+  editing.value = null
+  editPreview.value = null
 }
 
 // The photo in the selected slot, used for the filter previews
@@ -174,6 +302,11 @@ const currentEdit = computed(() => {
 
 const selectedSticker = computed(() => stickers.value.find((s) => s.id === selectedStickerId.value) || null)
 
+// Selecting a text sticker opens the Text tab, so its font and colour are right there
+watch(selectedTextSticker, (sticker) => {
+  if (sticker) trayTab.value = 'text'
+})
+
 // Stickers sorted front to back, for the Layers list ([...] copies the list, so the real one is not reordered)
 // (While a layer is being dragged, its new place in the list is shown, see dragOrder below.)
 const layersFrontToBack = computed(() => {
@@ -182,10 +315,18 @@ const layersFrontToBack = computed(() => {
 })
 
 // What the strip draws: the room's stickers, restacked while a layer is being dragged
+// (Also shows the words being retyped on the strip before they are saved, see editPreview.)
 const stripStickers = computed(() => {
-  if (!dragOrder.value) return stickers.value
-  const order = dragOrder.value
-  return stickers.value.map((s) => ({ ...s, z: order.length - order.indexOf(s.id) }))
+  let list = stickers.value
+  if (dragOrder.value) {
+    const order = dragOrder.value
+    list = list.map((s) => ({ ...s, z: order.length - order.indexOf(s.id) }))
+  }
+  if (editPreview.value) {
+    const preview = editPreview.value
+    list = list.map((s) => (s.id === preview.id ? { ...s, src: preview.src } : s))
+  }
+  return list
 })
 
 const photoCount = computed(() => Object.values(slotPhotos.value).filter(Boolean).length)
@@ -220,7 +361,8 @@ function onTrayDragStart(event, item) {
 }
 
 // A tray sticker was dropped at (x, y) %. The new sticker goes in front of all the others.
-async function addSticker(src, x, y, width = 45) {
+// extra: anything else to keep on the sticker, e.g. { text } or { live } so its words can be changed later
+async function addSticker(src, x, y, width = 45, extra = {}) {
   const topZ = Math.max(0, ...stickers.value.map((s) => s.z)) // the highest z so far (0 if none)
   const sticker = {
     id: Date.now(),  // a simple unique id
@@ -232,6 +374,7 @@ async function addSticker(src, x, y, width = 45) {
     z: topZ + 1,
     visible: true,
     by: myName,       // who placed it (shown when it is selected)
+    ...extra,
   }
   selectedStickerId.value = sticker.id // select it, so the size / rotate sliders show
   await saveStickers([...stickers.value, sticker])
@@ -317,7 +460,7 @@ function onStripClick() {
 // also lets go of the selected sticker
 function onPagePointerDown(event) {
   if (selectedStickerId.value === null) return
-  if (event.target.closest('.strip-wrap, .tray, .layers')) return // the strip handles its own taps
+  if (event.target.closest('.strip-wrap, .tray, .layers, .edit-bar')) return // the strip handles its own taps
   selectedStickerId.value = null
 }
 
@@ -481,6 +624,37 @@ async function saveToStudio() {
     <!-- MIDDLE: the strip (the same for everyone) -->
     <div class="col-12 col-lg-6 order-1 order-lg-2">
       <div class="panel canvas-area position-relative">
+        <!-- Retyping a text, location or weather sticker (opened by double-tapping it on the strip) -->
+        <div v-if="editing" class="edit-bar" role="dialog" aria-label="Change the words">
+          <textarea
+            v-if="editing.kind === 'text'"
+            ref="editInput"
+            v-model="editing.words"
+            class="form-control edit-input"
+            rows="2"
+            maxlength="120"
+            aria-label="Words"
+            @input="onEditInput"
+            @keydown.esc="cancelEditSticker"
+          ></textarea>
+          <input
+            v-else
+            ref="editInput"
+            v-model="editing.words"
+            type="text"
+            class="form-control edit-input"
+            maxlength="40"
+            aria-label="Place name"
+            @input="onEditInput"
+            @keydown.enter="finishEditSticker"
+            @keydown.esc="cancelEditSticker"
+          />
+          <div class="edit-actions">
+            <button type="button" class="btn btn-outline-secondary btn-sm" @click="cancelEditSticker">Cancel</button>
+            <button type="button" class="btn btn-primary btn-sm" @click="finishEditSticker">Done</button>
+          </div>
+        </div>
+
         <PhotoStrip
           mode="decorate"
           :layout="layout"
@@ -497,6 +671,7 @@ async function saveToStudio() {
           @drop-sticker="addSticker"
           @move-sticker="moveSticker"
           @sticker-click="(id) => (selectedStickerId = id)"
+          @sticker-dblclick="startEditSticker"
           @delete-sticker="deleteSticker"
           @update-sticker="updateSticker"
           @slot-click="onSlotClick"
@@ -555,6 +730,63 @@ async function saveToStudio() {
                   >
                     <img :src="s.src" alt="" draggable="false" />
                   </button>
+                </div>
+              </div>
+            </template>
+
+            <!-- TEXT: type, style, add. With a text sticker selected, the style buttons change it. -->
+            <template v-else-if="trayTab === 'text'">
+              <template v-if="!selectedTextSticker">
+                <textarea
+                  v-model="textDraft.words"
+                  class="form-control text-words"
+                  rows="2"
+                  maxlength="120"
+                  placeholder="Type something"
+                  aria-label="Words for the text sticker"
+                  :style="draftStyle"
+                ></textarea>
+                <button type="button" class="btn btn-primary btn-sm w-100 mt-2" @click="addTextSticker">Add to strip</button>
+              </template>
+              <p v-else class="small text-muted mb-2">Double-tap the text on the strip to change its words.</p>
+
+              <!-- Bold, italic and colour -->
+              <div class="text-row">
+                <button type="button" class="text-toggle" :class="{ active: textStyle.bold }" :aria-pressed="textStyle.bold" aria-label="Bold" title="Bold" @click="setTextStyle({ bold: !textStyle.bold })"><b>B</b></button>
+                <button type="button" class="text-toggle" :class="{ active: textStyle.italic }" :aria-pressed="textStyle.italic" aria-label="Italic" title="Italic" @click="setTextStyle({ italic: !textStyle.italic })"><i>I</i></button>
+                <span class="text-row-line" aria-hidden="true"></span>
+                <div class="text-colors">
+                  <button
+                    v-for="color in TEXT_COLORS"
+                    :key="color"
+                    type="button"
+                    class="text-swatch"
+                    :class="{ active: textStyle.color === color }"
+                    :style="{ background: color }"
+                    :aria-label="'Colour ' + color"
+                    :aria-pressed="textStyle.color === color"
+                    @click="setTextStyle({ color })"
+                  ></button>
+                  <label class="text-swatch text-swatch-any" title="Any colour">
+                    <input type="color" :value="textStyle.color" aria-label="Any colour" @change="setTextStyle({ color: $event.target.value })" />
+                  </label>
+                </div>
+              </div>
+
+              <!-- Fonts: each name in its own face -->
+              <div v-for="group in FONT_GROUPS_READY" :key="group.group" class="tray-section">
+                <p class="tray-label">{{ group.group }}</p>
+                <div class="text-fonts">
+                  <button
+                    v-for="font in group.fonts"
+                    :key="font.name"
+                    type="button"
+                    class="text-font"
+                    :class="{ active: textStyle.font === font.name }"
+                    :aria-pressed="textStyle.font === font.name"
+                    :style="{ fontFamily: font.stack }"
+                    @click="setTextStyle({ font: font.name })"
+                  >{{ font.name }}</button>
                 </div>
               </div>
             </template>
@@ -781,6 +1013,136 @@ async function saveToStudio() {
 
 .tray-chevron.up {
   transform: rotate(180deg);
+}
+
+/* ---------- Text tab ---------- */
+.text-words {
+  font-size: 1.15rem; /* also stops iPhones zooming in (16px or more) */
+  line-height: 1.3;
+  resize: vertical;
+}
+
+.text-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 12px 0 4px;
+}
+
+.text-toggle {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border: 1px solid #E3E6EE;
+  border-radius: 8px;
+  background: #fff;
+  font-family: Georgia, 'Times New Roman', serif;
+  color: #14172B;
+}
+
+.text-toggle.active {
+  border-color: #2F5BEA;
+  background: #E8EEFF;
+  color: #2F5BEA;
+}
+
+.text-row-line {
+  width: 1px;
+  height: 22px;
+  margin: 0 4px;
+  flex-shrink: 0;
+  background: #E3E6EE;
+}
+
+/* The colours scroll sideways in a narrow panel */
+.text-colors {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.text-swatch {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid rgba(20, 23, 43, 0.15);
+  border-radius: 999px;
+}
+
+.text-swatch.active {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #2F5BEA;
+}
+
+/* "Any colour": a rainbow circle with the real colour picker invisibly on top */
+.text-swatch-any {
+  margin: 0;
+  background: conic-gradient(#f04438, #f79009, #fdffb6, #12b76a, #0ea5e9, #7a5af8, #f04438);
+  cursor: pointer;
+}
+
+.text-swatch-any input {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.text-fonts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.text-font {
+  padding: 6px 8px;
+  border: 1px solid #E3E6EE;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 0.95rem;
+  color: #14172B;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.text-font.active {
+  border-color: #2F5BEA;
+  background: #E8EEFF;
+  color: #2F5BEA;
+}
+
+/* The bar for retyping a sticker's words, floating at the top of the strip area */
+.edit-bar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 50;
+  padding: 10px;
+  border: 1px solid #E3E6EE;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(20, 23, 43, 0.14);
+}
+
+.edit-input {
+  font-size: 16px; /* 16px so iPhones do not zoom in */
+}
+
+.edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
 }
 
 /* Phones: the "Stickers" button and the dim layer behind the open sheet (hidden on laptops) */
