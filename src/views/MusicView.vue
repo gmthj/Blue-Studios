@@ -609,7 +609,8 @@ onMounted(loadTracks)
             @cue="cueA"
           />
         </div>
-        <!-- MIXER (crossfader): DJ booth only -->
+        <!-- MIXER (crossfader): DJ booth only. <Transition> slides it in and fades it out (see .deck-* styles) -->
+        <Transition name="deck">
         <div v-if="djMode" class="col-12 col-md-2">
           <div class="card h-100">
             <div class="card-body d-flex flex-column justify-content-end text-center">
@@ -631,7 +632,9 @@ onMounted(loadTracks)
             </div>
           </div>
         </div>
+        </Transition>
         <!-- DECK B: DJ booth only -->
+        <Transition name="deck">
         <div v-if="djMode" class="col-12 col-md-5">
           <DeckCard
             label="Deck B"
@@ -652,6 +655,7 @@ onMounted(loadTracks)
             @cue="cueB"
           />
         </div>
+        </Transition>
         <!-- YOUR MIX -->
         <div class="col-12">
           <div class="card">
@@ -770,5 +774,46 @@ onMounted(loadTracks)
 .mixer-label {
   font-size: 0.65rem;
   letter-spacing: 0.05em;
+}
+
+/* Song rows lift a little on hover, so you can tell they can be picked */
+.track {
+  transition: background-color 150ms ease, transform 160ms var(--ease-out);
+}
+
+.track:hover {
+  background-color: var(--soft);
+  transform: translateY(-1px);
+}
+
+/* Not in syllabus: Vue's <Transition> adds these classes while the DJ booth columns appear (enter) or disappear (leave) */
+.deck-enter-active {
+  transition: opacity 250ms ease, transform 250ms var(--ease-out);
+}
+
+.deck-leave-active {
+  transition: opacity 150ms ease;   /* leaving is quicker, so it doesn't get in the way */
+}
+
+.deck-enter-from {
+  opacity: 0;
+  transform: translateX(16px);      /* starts a little to the right, then slides into place */
+}
+
+.deck-leave-to {
+  opacity: 0;
+}
+
+/* People who turned on "Reduce motion" on their device: no movement */
+@media (prefers-reduced-motion: reduce) {
+  .track,
+  .deck-enter-active,
+  .deck-leave-active {
+    transition: none;
+  }
+
+  .track:hover {
+    transform: none;
+  }
 }
 </style>

@@ -36,6 +36,16 @@ const props = defineProps({
 .bar {
   flex: 1;
   border-radius: 2px;
+  /* A new song changes each bar's height, so it grows instead of jumping.
+     The colour also fades, so the chosen 15 s slides along with the Start at slider. */
+  transition: height 300ms var(--ease-out), background-color 150ms ease;
+}
+
+/* People who turned on "Reduce motion" on their device: no movement */
+@media (prefers-reduced-motion: reduce) {
+  .bar {
+    transition: none;
+  }
 }
 
 .empty-line {

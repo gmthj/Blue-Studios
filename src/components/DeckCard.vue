@@ -67,10 +67,17 @@ function formatTime(seconds) {
   return mins + ':' + secs
 }
 
-// 60 bars: the chosen 15 s in this deck's colour, the rest grey, so you can SEE which part you picked.
+// Simple mode on a wide screen: the card is full width, so draw more (thinner) bars.
+// 160 and 60 both divide 960 evenly, so every bar covers the same amount of the song.
+// window.innerWidth = how wide the browser window is (Week 3 DOM), checked once when the page opens.
+// 768px is Bootstrap's md breakpoint, where the page's columns go side by side.
+const wideScreen = window.innerWidth >= 768
+
+// The bars: the chosen 15 s in this deck's colour, the rest grey, so you can SEE which part you picked.
 // computed = re-runs automatically when the song or the start changes.
 const bars = computed(function () {
-  const peaks = getPeaks(props.track, 60)
+  const count = props.simple && wideScreen ? 160 : 60
+  const peaks = getPeaks(props.track, count)
   const duration = props.track ? props.track.duration : 0
   const result = []
   for (let i = 0; i < peaks.length; i++) {
