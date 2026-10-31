@@ -13,7 +13,7 @@ import { useFullscreen } from '../composables/useFullscreen.js'
 import { getFaceFilter } from '../filters/faceFilters.js'
 import StreamVideo from '../components/StreamVideo.vue'
 import FaceFilterPicker from '../components/FaceFilterPicker.vue'
-import VirtualPeoplePanel from '../components/VirtualPeoplePanel.vue'
+import VirtualFriendsPanel from '../components/VirtualFriendsPanel.vue'
 import RoomGallery from '../components/RoomGallery.vue'
 import StageBar from '../components/StageBar.vue'
 import AppIcon from '../components/AppIcon.vue'
@@ -28,7 +28,7 @@ const uid = getUid()
 const guestName = getGuestName()
 
 const { code, room, roomRef, activeMembers } = useRoom()
-const { localStream, mirrored, cameras, cameraIndex, cameraError, switchingCamera, switchCamera } = useVideoCall()
+const { localStream, mirrored, cameras, cameraIndex, cameraError, switchingCamera, switchCamera, getRemoteUser, getRemoteVideoTrack } = useVideoCall()
 const { faceFilterId, faceFilterLoading, faceFilterError } = useFaceFilter()
 const { fullscreen } = useFullscreen() // fullscreen hides the header, so the page gets its height too
 
@@ -40,10 +40,60 @@ watch(faceFilterError, (message) => {
 })
 
 // The layer behind me: only the host can add people behind them
-const { peopleCount, behindLayerError, keepOnlyMembers } = useBehindLayer()
+const { lineup, friendsCount, behindLayerError, keepOnlyMembers } = useBehindLayer()
 const isHost = computed(() => room.value.hostId === uid)
 
-const showPeoplePanel = ref(false) // the host's list of people to put behind them is open
+const showFriendsPanel = ref(false) // the host's list of people to put behind them is open
+const showHostOnlyInfo = ref(false) // everyone else: the card saying Virtual Friends is host only is open
+
+// The host's line-up is only on the host's device, so the host saves it in the room (virtualFriends)
+// for everyone else to see that Virtual Friends is on, and who is in it
+watch(
+  lineup,
+  (ids) => {
+    if (!isHost.value) return
+    const saved = room.value.virtualFriends || []
+    if (ids.join() === saved.join()) return
+    updateDoc(roomRef(), { virtualFriends: ids }).catch((error) => console.error(error))
+  },
+  { immediate: true }
+)
+
+// Everyone else: the people the host has put into their camera (not the host), still in the room.
+// Empty if the host has left (their last line-up may still be saved in the room).
+const hostVirtualFriends = computed(() => {
+  const hostHere = activeMembers.value.some((member) => member.id === room.value.hostId)
+  if (!hostHere) return []
+  const ids = room.value.virtualFriends || []
+  return activeMembers.value.filter((member) => member.id !== room.value.hostId && ids.includes(member.id))
+})
+const iAmVirtual = computed(() => hostVirtualFriends.value.some((member) => member.id === uid))
+
+// Everyone else in the room (not the host) who is not in the host's camera
+const notVirtualFriends = computed(() => {
+  return activeMembers.value.filter((member) => member.id !== room.value.hostId && !hostVirtualFriends.value.includes(member))
+})
+
+// Everyone else: while the host has Virtual Friends on, the big view can show the host's camera
+// (everyone together in one shot) instead of mine. It switches to the host's camera each time
+// Virtual Friends turns on, and back to mine when it turns off. The toggle switches between them.
+const virtualFriendsOn = computed(() => !isHost.value && hostVirtualFriends.value.length > 0)
+const viewHostCam = ref(false)
+watch(virtualFriendsOn, (on) => {
+  viewHostCam.value = on
+}, { immediate: true })
+
+// The host's video from the call (null while their video is off)
+const hostStream = computed(() => {
+  const hostId = room.value.hostId
+  const remote = getRemoteUser(hostId)
+  if (!remote || !remote.hasVideo) return null
+  const track = getRemoteVideoTrack(hostId)
+  return track ? new MediaStream([track]) : null
+})
+
+// The host's camera is shown on top of mine. Mine keeps playing underneath, so photos and clips are still from my camera.
+const showingHostCam = computed(() => virtualFriendsOn.value && viewHostCam.value && hostStream.value !== null)
 
 // Someone left the room: take them out of the line-up
 watch(activeMembers, (members) => {
@@ -55,7 +105,7 @@ onMounted(() => setCameraEffects(true))
 onBeforeUnmount(() => setCameraEffects(false))
 
 watch(behindLayerError, (message) => {
-  if (message) showNotice({ title: 'Virtual people unavailable', message: message, icon: 'users' })
+  if (message) showNotice({ title: 'Virtual Friends unavailable', message: message, icon: 'users' })
 })
 
 const mainVideo = ref(null) // the big camera preview (a StreamVideo component)
@@ -310,6 +360,10 @@ async function copyJoinLink() {
             <!-- :mirrored flips only the front camera, so the back camera is not flipped -->
             <StreamVideo ref="mainVideo" :stream="localStream" :mirrored="mirrored" />
 
+            <!-- Everyone else, while Virtual Friends is on: the host's camera (everyone together) over mine.
+                 Not mirrored, like the host's tile in the call. -->
+            <StreamVideo v-if="showingHostCam" class="host-cam-video" :stream="hostStream" :mirrored="false" />
+
             <!-- No camera (yet): a dark box with a camera icon instead of plain black -->
             <div v-if="!localStream && !cameraError" class="camera-waiting">
               <AppIcon name="camera" :size="32" />
@@ -337,28 +391,92 @@ async function copyJoinLink() {
               <span class="d-none d-md-inline">Switch camera</span>
             </button>
 
-            <!-- Host only: opens the Virtual people list (people from the call put into my camera).
+            <!-- Host only: opens the Virtual Friends list (people from the call put into my camera).
                  Shows how many are chosen. On phones, just the icon (and the number).
                  Hidden while a clip records / saves: the REC badge shows in the same spot. -->
             <button
               v-if="localStream && isHost && !recording && !savingClip"
-              class="glass-btn people-behind-btn"
-              :class="{ 'people-on': peopleCount > 0 }"
-              aria-label="Virtual people"
-              :aria-expanded="showPeoplePanel"
-              @click="showPeoplePanel = !showPeoplePanel"
+              class="glass-btn friends-btn"
+              :class="{ 'friends-on': friendsCount > 0 }"
+              aria-label="Virtual Friends"
+              :aria-expanded="showFriendsPanel"
+              @click="showFriendsPanel = !showFriendsPanel"
             >
               <AppIcon name="users" :size="16" />
-              <span class="d-none d-sm-inline">Virtual people</span>
-              <span v-if="peopleCount > 0">({{ peopleCount }})</span>
+              <span class="d-none d-sm-inline">Virtual Friends</span>
+              <span v-if="friendsCount > 0">({{ friendsCount }})</span>
             </button>
 
-            <VirtualPeoplePanel
-              v-if="localStream && isHost && showPeoplePanel"
-              class="people-panel-pos"
+            <VirtualFriendsPanel
+              v-if="localStream && isHost && showFriendsPanel"
+              class="friends-panel-pos"
               :disabled="capturing"
-              @close="showPeoplePanel = false"
+              @close="showFriendsPanel = false"
             />
+
+            <!-- Everyone else: Virtual Friends is host only. Just the icon and a lock; it turns blue while the
+                 host has people in their camera. Tap it to see who is in (and to read why it is locked). -->
+            <button
+              v-if="localStream && !isHost && !recording && !savingClip"
+              class="glass-btn friends-btn host-only-btn"
+              :class="{ 'host-friends-on': hostVirtualFriends.length > 0 }"
+              :aria-label="hostVirtualFriends.length > 0 ? 'Virtual Friends is on (host only)' : 'Virtual Friends (host only)'"
+              :aria-expanded="showHostOnlyInfo"
+              @click="showHostOnlyInfo = !showHostOnlyInfo"
+            >
+              <AppIcon name="users" :size="16" />
+              <AppIcon name="lock" :size="12" class="host-only-lock" />
+            </button>
+
+            <div v-if="localStream && !isHost && showHostOnlyInfo" class="host-only-info friends-panel-pos">
+              <div class="host-only-head">
+                <span class="host-only-title">Virtual Friends</span>
+                <span class="host-only-status" :class="{ on: hostVirtualFriends.length > 0 }">
+                  {{ hostVirtualFriends.length > 0 ? 'ON' : 'OFF' }}
+                </span>
+                <span class="host-only-tag"><AppIcon name="lock" :size="12" /> Host only</span>
+                <button class="host-only-close" aria-label="Close" @click="showHostOnlyInfo = false">
+                  <AppIcon name="close" :size="16" />
+                </button>
+              </div>
+              <p class="host-only-text">
+                Only the room host ({{ room.hostName }}) can add people into their camera, so everyone stands together.
+              </p>
+              <!-- Who is in the host's camera (blue) and who is not (grey) -->
+              <div class="host-only-group in">
+                <p class="host-only-list-title">In the host's camera ({{ hostVirtualFriends.length }})</p>
+                <ul v-if="hostVirtualFriends.length > 0" class="host-only-list">
+                  <li v-for="member in hostVirtualFriends" :key="member.id">
+                    {{ member.name }}<template v-if="member.id === uid"> (you)</template>
+                  </li>
+                </ul>
+                <p v-else class="host-only-empty">No one yet</p>
+              </div>
+
+              <div class="host-only-group out">
+                <p class="host-only-list-title">Not included ({{ notVirtualFriends.length }})</p>
+                <ul v-if="notVirtualFriends.length > 0" class="host-only-list">
+                  <li v-for="member in notVirtualFriends" :key="member.id">
+                    {{ member.name }}<template v-if="member.id === uid"> (you)</template>
+                  </li>
+                </ul>
+                <p v-else class="host-only-empty">Everyone is in</p>
+              </div>
+
+              <p v-if="iAmVirtual" class="host-only-text mt-2 mb-0">Stay in your camera's view so you show up.</p>
+            </div>
+
+            <!-- Everyone else, while Virtual Friends is on: switch the big view between the host's camera and mine -->
+            <div v-if="localStream && virtualFriendsOn" class="cam-view-toggle" role="group" aria-label="Which camera to show">
+              <button :class="{ active: viewHostCam }" :aria-pressed="viewHostCam" :disabled="!hostStream" @click="viewHostCam = true">
+                <AppIcon name="users" :size="14" />
+                <span class="d-none d-sm-inline">Host cam</span>
+              </button>
+              <button :class="{ active: !viewHostCam }" :aria-pressed="!viewHostCam" @click="viewHostCam = false">
+                <AppIcon name="camera" :size="14" />
+                <span class="d-none d-sm-inline">My cam</span>
+              </button>
+            </div>
 
             <!-- The face filters: a row that scrolls behind the shutter button (the middle one is chosen) -->
             <FaceFilterPicker v-if="localStream" class="filter-carousel-pos" :disabled="capturing" />
@@ -594,19 +712,209 @@ async function copyJoinLink() {
   right: 12px;
 }
 
-.people-behind-btn {
+.friends-btn {
   position: absolute;
   top: 12px;
   left: 12px;
 }
 
 /* Some people are behind me: a white ring around the button */
-.people-behind-btn.people-on {
+.friends-btn.friends-on {
   box-shadow: inset 0 0 0 2px #ffffff;
 }
 
-/* The host's Virtual people list: under its button, above the Photo / Video switch, filter row and shutter */
-.people-panel-pos {
+/* Everyone else's Virtual Friends button: a small lock tag says only the host can use it */
+.host-only-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.16);
+}
+
+/* The small lock next to the people icon */
+.host-only-lock {
+  margin-left: -2px;
+  opacity: 0.85;
+}
+
+/* The host has people in their camera: the button turns blue and pulses once */
+.host-only-btn.host-friends-on {
+  background: var(--brand);
+  animation: host-friends-pulse 900ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .host-only-btn.host-friends-on:hover {
+    background: var(--brand);
+    filter: brightness(1.1);
+  }
+}
+
+@keyframes host-friends-pulse {
+  from { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7); }
+  to { box-shadow: 0 0 0 12px rgba(255, 255, 255, 0); }
+}
+
+/* Everyone else's card about Virtual Friends (in the same place as the host's list) */
+.host-only-info {
+  width: 290px;
+  max-width: calc(100% - 24px);
+  padding: 12px;
+  overflow-y: auto;
+  border-radius: 16px;
+  color: #ffffff;
+  background: rgba(14, 16, 32, 0.72);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 24px rgba(14, 16, 32, 0.35);
+}
+
+.host-only-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.host-only-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.host-only-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.host-only-text {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.host-only-status {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* On: the brand blue, like the button */
+.host-only-status.on {
+  color: #ffffff;
+  background: var(--brand);
+}
+
+.host-only-group {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border-radius: 12px;
+}
+
+/* In the host's camera: the brand blue, like the ON label */
+.host-only-group.in {
+  color: #ffffff;
+  background: rgba(47, 91, 234, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(120, 150, 255, 0.5);
+}
+
+/* Not included: a faint grey */
+.host-only-group.out {
+  color: rgba(255, 255, 255, 0.65);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.host-only-list-title {
+  margin: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.host-only-list {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 0.82rem;
+}
+
+.host-only-empty {
+  margin: 4px 0 0;
+  font-size: 0.8rem;
+  opacity: 0.7;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .host-only-btn.host-friends-on {
+    animation: none;
+  }
+}
+
+/* Everyone else: the host's camera, filling the camera view on top of mine */
+.host-cam-video {
+  position: absolute;
+  inset: 0;
+}
+
+/* Everyone else: Host cam / My cam switch, top middle of the camera view */
+.cam-view-toggle {
+  position: absolute;
+  z-index: 10;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(14, 16, 32, 0.55);
+  backdrop-filter: blur(8px);
+}
+
+.cam-view-toggle button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.8);
+  background: transparent;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.cam-view-toggle button.active {
+  color: #0E1020;
+  background: #ffffff;
+}
+
+.cam-view-toggle button:disabled {
+  opacity: 0.5;
+}
+
+/* The host's Virtual Friends list: under its button, above the Photo / Video switch, filter row and shutter */
+.friends-panel-pos {
   position: absolute;
   z-index: 12;
   top: 56px;
@@ -616,7 +924,7 @@ async function copyJoinLink() {
 
 /* Phones held sideways: the filter row is on the right, so the list can use the full height */
 @media (orientation: landscape) and (max-height: 500px) {
-  .people-panel-pos {
+  .friends-panel-pos {
     max-height: calc(100% - 56px - 12px);
   }
 }
@@ -690,7 +998,7 @@ async function copyJoinLink() {
   }
 }
 
-/* "REC" / "Saving clip..." top left (in the Virtual people button's place, which hides while recording) */
+/* "REC" / "Saving clip..." top left (in the Virtual Friends button's place, which hides while recording) */
 .rec-badge {
   position: absolute;
   top: 12px;

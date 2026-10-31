@@ -151,14 +151,16 @@ function attachRemoteVideo(uid, element) {
   }
 }
 
-// The host can put other people behind them (useBehindLayer.js). This is how it gets their video:
-// the browser's own video track inside Agora's, or null while their video is off.
-setRemoteTrackSource((uid) => {
+// Someone's video from the call as the browser's own video track (inside Agora's), or null while their video is off
+function getRemoteVideoTrack(uid) {
   const user = agoraUsers[uid]
   const remote = getRemoteUser(uid)
   if (!user || !user.videoTrack || !remote || !remote.hasVideo) return null
   return user.videoTrack.getMediaStreamTrack()
-})
+}
+
+// The host can put other people behind them (useBehindLayer.js). This is how it gets their video.
+setRemoteTrackSource(getRemoteVideoTrack)
 
 // ---------- Joining and leaving ----------
 
@@ -305,6 +307,7 @@ export function useVideoCall() {
     micBusy,
     remoteUsers,
     getRemoteUser,
+    getRemoteVideoTrack,
     attachRemoteVideo,
     startCall,
     endCall,

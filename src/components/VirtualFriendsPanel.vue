@@ -5,13 +5,14 @@ import { useVideoCall } from '../composables/useVideoCall.js'
 import { useBehindLayer } from '../composables/useBehindLayer.js'
 import { getUid } from '../composables/useAuth.js'
 import { profileOf } from '../profiles.js'
+import { getDeviceType } from '../guest.js'
 import AppIcon from './AppIcon.vue'
 
 // HOST ONLY: choose who stands with the host on their camera, and the LINE-UP: everyone,
 // the host included, from left to right on the host's screen (top of the list = far left).
 // Added people go left / right of the host in turn; the arrows then move anyone anywhere.
 // See useBehindLayer.js.
-// Usage: <VirtualPeoplePanel :disabled="countdown > 0" @close="..." />
+// Usage: <VirtualFriendsPanel :disabled="countdown > 0" @close="..." />
 
 defineProps({
   disabled: { type: Boolean, default: false }, // e.g. while the 3-2-1 countdown runs
@@ -19,6 +20,10 @@ defineProps({
 defineEmits(['close'])
 
 const uid = getUid()
+
+// Cutting people out is heavy work, and some phones' and tablets' graphics do not handle it well,
+// so a host on a phone or tablet is told it works best from a computer
+const onComputer = getDeviceType() === 'Computer'
 const { activeMembers } = useRoom()
 const { getRemoteUser } = useVideoCall()
 const { lineup, behindLayerLoading, addToLineup, removeFromLineup, moveInLineup } = useBehindLayer()
@@ -53,20 +58,29 @@ function hasVideo(id) {
 </script>
 
 <template>
-  <div class="people-panel" :class="{ disabled: disabled }">
+  <div class="friends-panel" :class="{ disabled: disabled }">
     <div class="panel-head">
-      <span class="panel-title">Virtual people</span>
+      <span class="panel-title">Virtual Friends</span>
+      <!-- Only the host has this list; everyone else sees it is host only, and when it is on -->
+      <span class="host-only-tag" title="Only you (the host) can change this. Everyone else sees when it is on.">
+        <AppIcon name="lock" :size="12" /> Host only
+      </span>
       <span v-if="behindLayerLoading" class="panel-loading">Loading...</span>
       <button class="icon-btn" aria-label="Close" @click="$emit('close')">
         <AppIcon name="close" :size="16" />
       </button>
     </div>
 
+    <p v-if="!onComputer" class="panel-device-note">
+      <AppIcon name="laptop" :size="14" />
+      <span>Virtual Friends works best when the host is on a computer or laptop.</span>
+    </p>
+
     <p v-if="others.length === 0" class="panel-empty">Nobody else is in the room yet.</p>
     <p v-else-if="inLineup.length > 0" class="panel-hint">Left to right on your screen</p>
 
     <!-- TransitionGroup: when the order changes, the rows slide to their new places (see .lineup-move) -->
-    <TransitionGroup tag="ul" name="lineup" class="people-list">
+    <TransitionGroup tag="ul" name="lineup" class="friends-list">
       <!-- The line-up, left to right: arrows to move anyone (me too), a tick to remove others -->
       <li
         v-for="(member, index) in inLineup"
@@ -129,7 +143,7 @@ function hasVideo(id) {
 
 <style scoped>
 /* A dark see-through card floating on the camera, like the other camera buttons */
-.people-panel {
+.friends-panel {
   display: flex;
   flex-direction: column;
   width: 290px;
@@ -143,7 +157,7 @@ function hasVideo(id) {
 }
 
 /* During the countdown the order cannot change */
-.people-panel.disabled .people-list {
+.friends-panel.disabled .friends-list {
   opacity: 0.6;
 }
 
@@ -160,6 +174,18 @@ function hasVideo(id) {
   font-weight: 700;
 }
 
+.host-only-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.16);
+}
+
 .panel-loading {
   font-size: 0.75rem;
   color: rgba(255, 255, 255, 0.65);
@@ -170,6 +196,23 @@ function hasVideo(id) {
   padding: 4px;
   font-size: 0.8rem;
   color: rgba(255, 255, 255, 0.65);
+}
+
+.panel-device-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: #FFE7A8;
+  background: rgba(232, 169, 40, 0.18);
+}
+
+.panel-device-note :deep(svg) {
+  margin-top: 1px;
 }
 
 .panel-hint {
@@ -241,7 +284,7 @@ function hasVideo(id) {
 }
 
 /* The list scrolls if there are many people */
-.people-list {
+.friends-list {
   min-height: 0; /* lets the list be shorter than its content (and scroll) inside the card */
   margin: 0;
   padding: 0;

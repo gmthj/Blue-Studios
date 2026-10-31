@@ -14,6 +14,7 @@
 // how sure it is that the pixel is a person (0 to 1). That becomes a "mask": person pixels are kept,
 // everything else becomes see-through. A small face finder (MediaPipe Face Detector) makes everyone
 // roughly the same size: each person is resized so their face is as wide as mine.
+// If a camera has several people in it, they stay together as one group (see GROUP SETTINGS).
 //
 // The other people's videos come from the video call (Agora). The host's device cuts them out
 // itself, and the finished picture is the host's camera that everyone sees.
@@ -26,7 +27,7 @@
 //   resetBehindLayer()                  // when leaving the room
 //
 // Usage in a page (host only):
-//   const { lineup, peopleCount, addToLineup, removeFromLineup, moveInLineup } = useBehindLayer()
+//   const { lineup, friendsCount, addToLineup, removeFromLineup, moveInLineup } = useBehindLayer()
 
 import { ref, computed } from 'vue'
 import { loadMediaPipe, createTask } from '../utils/mediapipe.js'
@@ -51,7 +52,12 @@ const MIN_SIZE = 0.4      // never draw someone shorter than this part of the pi
 const MAX_SIZE = 2.5      // ...or taller than this (in case a face was found wrongly)
 // If I am not in my own picture and my face was never found: size everyone to this face
 // (middle of the picture, eyes 38% down, 15% of the picture's width)
-const DEFAULT_FACE = { x: 0.5, eyeY: 0.38, width: 0.15 }
+const DEFAULT_FACE = { x: 0.5, eyeY: 0.38, width: 0.15, span: 0.15, count: 1 }
+
+// ---------- GROUP SETTINGS (more than one person in a camera) ----------
+// A camera can have a few people in it. They are kept together as one group: sized by their
+// average face, placed by the middle of all their faces, and given a wider spot in the line-up.
+const GROUP_FACE_MIN = 0.6 // faces smaller than this part of the biggest face are ignored (people far behind)
 
 // ---------- WHO COUNTS AS "FOUND" ----------
 // Someone is found when the person part of their mask covers at least FOUND_AREA of their video,
@@ -84,13 +90,13 @@ const behindLayerError = ref('')
 const lineup = ref([])                // member ids, left to right on my screen, me included. [] = nobody.
 
 // How many people (not counting me) are in the line-up
-const peopleCount = computed(() => lineup.value.filter((id) => id !== getUid()).length)
+const friendsCount = computed(() => lineup.value.filter((id) => id !== getUid()).length)
 
 let mirrored = false // my preview is mirrored, so "left" on screen is the right of the canvas
 let getRemoteTrack = () => null // given a uid, their video from the call (set by useVideoCall.js)
 const remoteVideos = new Map()  // uid -> { video, track }: a hidden <video> for each person in the line-up
 
-// One cut-out per video: video element -> { segmenter, maskCanvas, ready, detector, face, rect, ... }
+// One cut-out per video: video element -> { maskCanvas, ready, hasPerson, face, rect, ... } (the tools are shared, see startTools)
 const cutouts = new Map()
 let scratch = null    // a spare canvas, where one person is cut out before being drawn
 let lastDrawTime = 0  // when the last frame was drawn (for gliding)
@@ -145,28 +151,37 @@ function drawBehindLayer(ctx, myVideo, width, height) {
   let anchorX   // the middle of the line-up's anchor: me, or the middle of the picture if I am not found
   let reference // the face everyone is sized and lined up to: { x, eyeY, width }
   if (iAmFound) {
-    // Placed by how many spots they are from me in the line-up, and sized to my face
+    // Placed outwards from me, spot by spot, in line-up order, and sized to my face.
+    // A group (several people in one camera) takes up more room, so the next spot moves out by that much.
     anchorX = me.face ? me.face.x : me.centreX
     reference = me.face
     const myIndex = found.findIndex((entry) => entry.id === myId)
-    spots = foundOthers.map((other) => {
-      const spotsAway = found.indexOf(other) - myIndex // e.g. -2 = two spots to my left on screen
-      const depth = Math.abs(spotsAway)
-      const screenSide = Math.sign(spotsAway)
-      return {
-        video: other.video,
-        depth: depth,
-        scale: Math.pow(DEPTH_SCALE, depth),
-        offset: (mirrored ? -screenSide : screenSide) * (FIRST_SPOT_GAP + (depth - 1) * SLOT_SPACING),
+    spots = []
+    for (const screenSide of [-1, 1]) {
+      let reach = groupExtra(me, reference, 1) / 2 // how far from my middle the people so far reach on this side
+      for (let i = myIndex + screenSide, depth = 1; i >= 0 && i < found.length; i = i + screenSide, depth++) {
+        const video = found[i].video
+        const scale = Math.pow(DEPTH_SCALE, depth)
+        const extra = groupExtra(cutouts.get(video), reference, scale)
+        const distance = reach + (depth === 1 ? FIRST_SPOT_GAP : SLOT_SPACING) + extra / 2
+        reach = distance + extra / 2
+        spots.push({ video: video, depth: depth, scale: scale, offset: (mirrored ? -screenSide : screenSide) * distance })
       }
-    })
+    }
   } else {
     // I am not in my own picture: the others stand in the middle of the picture, side by side,
     // sized to my last face (or a normal face size if mine was never found)
     anchorX = 0.5
     reference = me.face || DEFAULT_FACE
+    let reach = 0
+    const middles = foundOthers.map((other, index) => {
+      const extra = groupExtra(cutouts.get(other.video), reference, 1)
+      const middle = reach + (index > 0 ? SLOT_SPACING : 0) + extra / 2
+      reach = middle + extra / 2
+      return middle
+    })
     spots = foundOthers.map((other, index) => {
-      const screenOffset = (index - (foundOthers.length - 1) / 2) * SLOT_SPACING
+      const screenOffset = middles[index] - reach / 2 // the whole row is centred
       return { video: other.video, depth: 0, scale: 1, offset: mirrored ? -screenOffset : screenOffset }
     })
   }
@@ -211,6 +226,13 @@ function squeezeToFit(spots, anchorX) {
   }
 }
 
+// How much wider than one person a video's group is drawn, as a part of the picture width (0 = one person).
+// Their faces are drawn as wide as reference.width * scale, so the group is resized by the same amount.
+function groupExtra(cutout, reference, scale) {
+  if (!cutout || !cutout.face || !reference) return 0
+  return ((cutout.face.span - cutout.face.width) * reference.width * scale) / cutout.face.width
+}
+
 // Where (and how big) to draw one person: { x, y, height } in canvas pixels
 function placePerson(spot, cutout, reference, anchorX, width, height) {
   const videoWidth = spot.video.videoWidth
@@ -252,7 +274,7 @@ function getRemoteVideo(uid) {
     video.playsInline = true
     video.style.cssText = 'position:fixed; top:0; left:0; width:1px; height:1px; opacity:0; pointer-events:none;'
     document.body.appendChild(video)
-    remote = { video: video, track: null }
+    remote = { video: video, track: null, lastPlayTry: 0 }
     remoteVideos.set(uid, remote)
   }
 
@@ -260,6 +282,12 @@ function getRemoteVideo(uid) {
   if (remote.track !== track) {
     remote.track = track
     remote.video.srcObject = new MediaStream([track])
+    remote.lastPlayTry = performance.now()
+    remote.video.play().catch((error) => console.error(error))
+  }
+  // Phones sometimes pause a hidden video: try to play it again (at most once a second)
+  if (remote.video.paused && performance.now() - remote.lastPlayTry > 1000) {
+    remote.lastPlayTry = performance.now()
     remote.video.play().catch((error) => console.error(error))
   }
   return remote.video
@@ -281,14 +309,118 @@ function forgetUnusedRemoteVideos() {
 
 // ---------- Cutting people out ----------
 
-// The cut-out for this video. The first time, its segmenter and face finder start downloading
-// (ready = false until the first mask is made). After that, the person is found again every time
-// the video has a new frame, and their face a few times a second.
+// ---------- The cut-out tools (shared by every video) ----------
+// ONE segmenter and ONE face finder look at every video in turn (IMAGE mode: each frame is looked at
+// on its own, so frames from different videos can be mixed). Every MediaPipe tool on the GPU uses its
+// own graphics (WebGL) context, and phones allow only a few at once (Chrome on Android: 8). With one
+// tool per video, phones ran out: Chrome quietly dropped the oldest ones, and nobody was ever found.
+let segmenter = null        // the person cut-out tool, once loaded
+let segmenterLoading = false
+let segmenterOnCpu = false  // switched to the CPU because the GPU gave empty masks (see BAD_MASKS_BEFORE_CPU)
+let detector = null         // the face finder, once loaded
+let detectorLoading = false
+let toolsVersion = 0        // goes up when the tools are closed, so a download still in progress is thrown away
+let badMasks = 0            // masks in a row that failed or came back completely empty
+
+// Some phones' GPUs give masks that are all 0 (or fail) without an error. After this many in a row,
+// the segmenter is loaded again on the CPU (slower, but works everywhere).
+const BAD_MASKS_BEFORE_CPU = 30
+
+// Start loading the tools (only once; again after an error or after they were closed)
+function startTools() {
+  if (!segmenter && !segmenterLoading) loadSegmenter()
+  if (!detector && !detectorLoading) loadDetector()
+}
+
+async function loadSegmenter() {
+  const version = toolsVersion
+  segmenterLoading = true
+  behindLayerLoading.value = true
+  try {
+    const { vision, files } = await loadMediaPipe()
+    const options = {
+      baseOptions: { modelAssetPath: SEGMENTER_MODEL_URL },
+      runningMode: 'IMAGE',
+      outputConfidenceMasks: true, // how sure it is, per pixel (gives soft edges)
+      outputCategoryMask: false,
+    }
+    const task = segmenterOnCpu
+      ? await vision.ImageSegmenter.createFromOptions(files, { ...options, baseOptions: { ...options.baseOptions, delegate: 'CPU' } })
+      : await createTask(vision.ImageSegmenter, files, options)
+    if (version !== toolsVersion) {
+      task.close() // the tools were closed while this was downloading
+      return
+    }
+    segmenter = task
+  } catch (error) {
+    console.error(error)
+    if (version !== toolsVersion) return
+    behindLayerError.value = 'Could not load the people layer. Please check your internet and try again.'
+    lineup.value = []
+  } finally {
+    if (version === toolsVersion) {
+      segmenterLoading = false
+      behindLayerLoading.value = false
+    }
+  }
+}
+
+// The face finder is used to make everyone the same size.
+// If it cannot load, people are just drawn at full height instead.
+// It always runs on the CPU: some phones' GPUs (e.g. on Android) quietly find no faces at all,
+// which drew everyone at full height. It is small and only runs a few times a second, so the CPU is fast enough.
+async function loadDetector() {
+  const version = toolsVersion
+  detectorLoading = true
+  try {
+    const { vision, files } = await loadMediaPipe()
+    const task = await vision.FaceDetector.createFromOptions(files, {
+      baseOptions: { modelAssetPath: FACE_DETECTOR_MODEL_URL, delegate: 'CPU' },
+      runningMode: 'IMAGE',
+    })
+    if (version !== toolsVersion) {
+      task.close()
+      return
+    }
+    detector = task
+  } catch (error) {
+    console.error(error)
+  } finally {
+    if (version === toolsVersion) detectorLoading = false
+  }
+}
+
+// Close both tools (leaving the shoot page), freeing their graphics contexts
+function closeTools() {
+  toolsVersion = toolsVersion + 1
+  if (segmenter) segmenter.close()
+  if (detector) detector.close()
+  segmenter = null
+  detector = null
+  segmenterLoading = false
+  detectorLoading = false
+  behindLayerLoading.value = false
+  badMasks = 0
+}
+
+// A mask failed or was completely empty: after too many in a row on the GPU, use the CPU instead
+function countBadMask() {
+  badMasks = badMasks + 1
+  if (badMasks < BAD_MASKS_BEFORE_CPU || segmenterOnCpu || !segmenter) return
+  console.warn('Virtual Friends: the GPU cut-out is not working on this device, using the CPU instead')
+  segmenterOnCpu = true
+  badMasks = 0
+  segmenter.close()
+  segmenter = null
+  loadSegmenter()
+}
+
+// The cut-out for this video. The person is found again every time the video has a new frame,
+// and their face a few times a second (once the shared tools have loaded; ready = false until the first mask).
 function getCutout(video) {
   let cutout = cutouts.get(video)
   if (!cutout) {
     cutout = {
-      segmenter: null,
       maskCanvas: null,
       maskData: null,
       lastMask: null, // the last mask's numbers, mixed into the next one (see MASK_MIXING)
@@ -296,66 +428,20 @@ function getCutout(video) {
       hasPerson: false, // a person is found in the video (see FOUND_AREA)
       centreX: 0.5,   // the middle of the person, from 0 (left edge) to 1 (right edge)
       lastVideoTime: -1,
-      detector: null,
-      face: null,     // { x, eyeY, width } of their face, as parts of the video's width / height (null = not found yet)
+      face: null,     // { x, eyeY, width, span, count } of their face(s), as parts of the video's width / height (null = not found yet)
       lastFaceCheck: 0,
       rect: null,     // where they were drawn last frame: { x, y, height } (for gliding)
     }
     cutouts.set(video, cutout)
-    startSegmenter(cutout)
-    startFaceDetector(cutout)
   }
-  if (cutout.segmenter) {
+  startTools()
+  if (segmenter) {
     findPerson(video, cutout)
   }
-  if (cutout.detector) {
+  if (detector) {
     findFace(video, cutout)
   }
   return cutout
-}
-
-// Each video gets its own segmenter, because it expects one video's frames one after another
-async function startSegmenter(cutout) {
-  behindLayerLoading.value = true
-  try {
-    const { vision, files } = await loadMediaPipe()
-    const segmenter = await createTask(vision.ImageSegmenter, files, {
-      baseOptions: { modelAssetPath: SEGMENTER_MODEL_URL },
-      runningMode: 'VIDEO',
-      outputConfidenceMasks: true, // how sure it is, per pixel (gives soft edges)
-      outputCategoryMask: false,
-    })
-    // The video may have been removed while this was downloading
-    if (cutout.forgotten) {
-      segmenter.close()
-    } else {
-      cutout.segmenter = segmenter
-    }
-  } catch (error) {
-    console.error(error)
-    behindLayerError.value = 'Could not load the people layer. Please check your internet and try again.'
-    lineup.value = []
-  }
-  behindLayerLoading.value = false
-}
-
-// Each video also gets a face finder, used to make everyone the same size.
-// If it cannot load, people are just drawn at full height instead.
-async function startFaceDetector(cutout) {
-  try {
-    const { vision, files } = await loadMediaPipe()
-    const detector = await createTask(vision.FaceDetector, files, {
-      baseOptions: { modelAssetPath: FACE_DETECTOR_MODEL_URL },
-      runningMode: 'VIDEO',
-    })
-    if (cutout.forgotten) {
-      detector.close()
-    } else {
-      cutout.detector = detector
-    }
-  } catch (error) {
-    console.error(error)
-  }
 }
 
 // Look for the biggest face in the video (the person nearest the camera), a few times a second
@@ -366,39 +452,61 @@ function findFace(video, cutout) {
 
   let detections
   try {
-    detections = cutout.detector.detectForVideo(video, now).detections
+    detections = detector.detect(video).detections
   } catch (error) {
     console.error(error)
     return
   }
   if (detections.length === 0) return // keep the last face found
 
-  let biggest = detections[0]
+  // Everyone near the camera: faces at least GROUP_FACE_MIN as big as the biggest one
+  let biggestWidth = 0
   for (const detection of detections) {
-    if (detection.boundingBox.width > biggest.boundingBox.width) biggest = detection
+    biggestWidth = Math.max(biggestWidth, detection.boundingBox.width)
   }
+  const group = detections.filter((detection) => detection.boundingBox.width >= biggestWidth * GROUP_FACE_MIN)
 
-  // The box is in video pixels: turn it into parts of the video's size.
+  // The boxes are in video pixels: turn them into parts of the video's size.
   // The eye line is the height of the eyes: the first two of the face finder's points
   // (right eye, left eye; the others are the nose, mouth and ears), already as parts of the video's size.
   // If the eyes are missing, guess them at 40% down the face box.
-  const box = biggest.boundingBox
-  const eyes = biggest.keypoints.slice(0, 2)
-  const eyeY = eyes.length === 2
-    ? (eyes[0].y + eyes[1].y) / 2
-    : (box.originY + box.height * 0.4) / video.videoHeight
+  let left = Infinity
+  let right = -Infinity
+  let totalWidth = 0
+  let totalEyeY = 0
+  for (const detection of group) {
+    const box = detection.boundingBox
+    const eyes = detection.keypoints.slice(0, 2)
+    totalEyeY = totalEyeY + (eyes.length === 2
+      ? (eyes[0].y + eyes[1].y) / 2
+      : (box.originY + box.height * 0.4) / video.videoHeight)
+    totalWidth = totalWidth + box.width
+    left = Math.min(left, box.originX)
+    right = Math.max(right, box.originX + box.width)
+  }
   const face = {
-    x: (box.originX + box.width / 2) / video.videoWidth,
-    eyeY: eyeY,
-    width: box.width / video.videoWidth,
+    x: (left + right) / 2 / video.videoWidth,          // the middle of the group's faces
+    eyeY: totalEyeY / group.length,                    // their average eye line
+    width: totalWidth / group.length / video.videoWidth, // their average face width (for sizing)
+    span: (right - left) / video.videoWidth,           // from the left edge of the leftmost face to the right edge of the rightmost
+    count: group.length,
   }
 
-  // Ignore tiny changes (the face finder's wobble). The gliding in drawBehindLayer smooths the rest.
   const old = cutout.face
   if (old) {
+    // The number of faces changed: only believe it if the next check says the same
+    // (the face finder sometimes misses a face for a moment, which would make the group jump)
+    if (face.count !== old.count && cutout.newCount !== face.count) {
+      cutout.newCount = face.count
+      return
+    }
+    cutout.newCount = 0
+
+    // Ignore tiny changes (the face finder's wobble). The gliding in drawBehindLayer smooths the rest.
     const moved = Math.abs(face.x - old.x) > FACE_MOVE_IGNORE || Math.abs(face.eyeY - old.eyeY) > FACE_MOVE_IGNORE
     const resized = Math.abs(face.width - old.width) / old.width > FACE_SIZE_IGNORE
-    if (!moved && !resized) return
+      || Math.abs(face.span - old.span) > FACE_MOVE_IGNORE
+    if (!moved && !resized && face.count === old.count) return
   }
   cutout.face = face
 }
@@ -409,15 +517,23 @@ function findPerson(video, cutout) {
   cutout.lastVideoTime = video.currentTime
 
   try {
-    cutout.segmenter.segmentForVideo(video, performance.now(), (result) => {
+    segmenter.segment(video, (result) => {
       // The last mask is "person" (if there are two, the first one is "background")
       const masks = result.confidenceMasks
-      if (!masks || masks.length === 0) return
+      if (!masks || masks.length === 0) return countBadMask()
       const mask = masks[masks.length - 1]
-      updateMask(cutout, mask.width, mask.height, mask.getAsFloat32Array())
+      const sure = mask.getAsFloat32Array()
+      // A real camera picture never gives exactly 0 everywhere: an all-0 mask means the GPU is not working
+      if (sure.some((value) => value > 0)) {
+        badMasks = 0
+      } else {
+        countBadMask()
+      }
+      updateMask(cutout, mask.width, mask.height, sure)
     })
   } catch (error) {
     console.error(error)
+    countBadMask()
   }
 }
 
@@ -487,15 +603,10 @@ function drawCutout(ctx, video, cutout, x, y, width, height) {
   ctx.drawImage(scratch, x, y, width, height)
 }
 
-// Close the segmenters and face finders of videos that are no longer used (e.g. a person was removed)
+// Forget the cut-outs of videos that are no longer used (e.g. a person was removed)
 function forgetUnusedCutouts(videosInUse) {
-  for (const [video, cutout] of cutouts) {
-    if (!videosInUse.includes(video)) {
-      cutout.forgotten = true
-      if (cutout.segmenter) cutout.segmenter.close()
-      if (cutout.detector) cutout.detector.close()
-      cutouts.delete(video)
-    }
+  for (const video of [...cutouts.keys()]) {
+    if (!videosInUse.includes(video)) cutouts.delete(video)
   }
 }
 
@@ -551,13 +662,14 @@ function setRemoteTrackSource(getTrack) {
   getRemoteTrack = getTrack
 }
 
-// Stop all the work (hidden videos, segmenters, face finders) but keep the line-up,
+// Stop all the work (hidden videos, the segmenter and face finder) but keep the line-up,
 // so it comes back when the layer is drawn again
 function releaseBehindLayer() {
   for (const uid of [...remoteVideos.keys()]) {
     removeRemoteVideo(uid)
   }
   forgetUnusedCutouts([])
+  closeTools()
 }
 
 // Leaving the room: empty line-up, and close everything
@@ -569,7 +681,7 @@ function resetBehindLayer() {
 export function useBehindLayer() {
   return {
     lineup,
-    peopleCount,
+    friendsCount,
     behindLayerLoading,
     behindLayerError,
     addToLineup,
