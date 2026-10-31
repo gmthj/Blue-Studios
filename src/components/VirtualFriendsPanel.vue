@@ -26,13 +26,13 @@ const uid = getUid()
 const onComputer = getDeviceType() === 'Computer'
 const { activeMembers } = useRoom()
 const { getRemoteUser } = useVideoCall()
-const { lineup, alignMode, setAlignMode, behindLayerLoading, addToLineup, removeFromLineup, moveInLineup } = useBehindLayer()
+const { lineup, alignMode, setAlignMode, resetManualSpots, behindLayerLoading, addToLineup, removeFromLineup, moveInLineup } = useBehindLayer()
 
 // How people are placed on my camera (see ALIGNMENT MODES in useBehindLayer.js). Manual comes later.
 const ALIGN_MODES = [
   { id: 'auto', label: 'Auto', hint: 'Everyone is sized to you and lined up beside you.' },
   { id: 'free', label: 'Free', hint: 'Everyone shows up where they stand in their own camera. Move closer to look bigger, or to the side to stand at the side.' },
-  { id: 'manual', label: 'Manual', hint: '', soon: true },
+  { id: 'manual', label: 'Manual', hint: 'Drag people on your camera to move them. Pinch or scroll to resize.' },
 ]
 const alignHint = computed(() => ALIGN_MODES.find((mode) => mode.id === alignMode.value).hint)
 
@@ -84,21 +84,25 @@ function hasVideo(id) {
       <span>Virtual Friends works best when the host is on a computer or laptop.</span>
     </p>
 
-    <!-- How people are placed: Auto / Free / Manual (coming soon) -->
+    <!-- How people are placed: Auto / Free / Manual -->
     <div class="align-modes" role="group" aria-label="Alignment">
       <button
         v-for="mode in ALIGN_MODES"
         :key="mode.id"
         :class="{ active: alignMode === mode.id }"
         :aria-pressed="alignMode === mode.id"
-        :disabled="disabled || mode.soon"
-        :title="mode.soon ? 'Coming soon' : mode.hint"
+        :disabled="disabled"
+        :title="mode.hint"
         @click="setAlignMode(mode.id)"
       >
-        {{ mode.label }}<span v-if="mode.soon" class="soon">Soon</span>
+        {{ mode.label }}
       </button>
     </div>
-    <p class="panel-hint">{{ alignHint }}</p>
+    <p class="panel-hint align-hint">
+      <span>{{ alignHint }}</span>
+      <!-- Manual: put everyone back where Auto would put them -->
+      <button v-if="alignMode === 'manual'" class="reset-btn" :disabled="disabled" @click="resetManualSpots">Reset</button>
+    </p>
 
     <p v-if="others.length === 0" class="panel-empty">Nobody else is in the room yet.</p>
     <p v-else-if="inLineup.length > 0" class="panel-hint">Left to right on your screen</p>
@@ -274,13 +278,26 @@ function hasVideo(id) {
   opacity: 0.5;
 }
 
-.align-modes .soon {
-  padding: 0 5px;
+.align-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.reset-btn {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 2px 10px;
+  border: 0;
   border-radius: 999px;
-  font-size: 0.6rem;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 0.72rem;
   font-weight: 700;
-  text-transform: uppercase;
-  background: rgba(255, 255, 255, 0.18);
+}
+
+.reset-btn:disabled {
+  opacity: 0.5;
 }
 
 .panel-hint {

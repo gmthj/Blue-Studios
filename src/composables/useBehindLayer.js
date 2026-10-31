@@ -20,7 +20,9 @@
 //   'auto'   everyone is sized to my face and lined up beside me (all of the above)
 //   'free'   everyone keeps their size and place from their own camera: they move themselves around.
 //            Standing at the side of their camera puts them at the side; closer to it makes them bigger.
-//   'manual' (coming later) the host drags people into place
+//   'manual' the host drags people into place on their camera and pinches / scrolls to resize them.
+//            Everyone starts where 'auto' would put them. Each person is pinned by their face
+//            (or their middle), so they stay put if they move a little in their own camera.
 //
 // The other people's videos come from the video call (Agora). The host's device cuts them out
 // itself, and the finished picture is the host's camera that everyone sees.
@@ -108,12 +110,29 @@ const cutouts = new Map()
 let scratch = null    // a spare canvas, where one person is cut out before being drawn
 let lastDrawTime = 0  // when the last frame was drawn (for gliding)
 
+// ---------- MANUAL MODE ----------
+// Where the host put each person: uid -> { x, y, height, order }
+//   x, y:   where their face (eye line) goes, as parts of the picture's width / height
+//   height: how tall their whole video is drawn, as a part of the picture's height
+//   order:  who is in front (higher = drawn later = in front). The last one moved comes to the front.
+const manualSpots = new Map()
+let nextOrder = 1
+const MANUAL_MIN_HEIGHT = 0.15 // the smallest a person's video can be made (part of the picture's height)
+const MANUAL_MAX_HEIGHT = 3    // ...and the biggest
+const NO_FACE_EYE_Y = 0.4      // if someone's face is not found, they are pinned at this height of their video
+// The people drawn in the last frame, in drawing order: [{ id, video, cutout, rect, drawWidth }],
+// and the picture's size then. Used to find who is under the host's finger.
+let drawnOthers = []
+let pictureWidth = 1
+let pictureHeight = 1
+
 // ---------- Drawing ----------
 
 // Draws the whole picture (see the top of this file). Returns false if there is nothing to do
 // (or it is still loading), and then the camera should be drawn normally.
 function drawBehindLayer(ctx, myVideo, width, height) {
   const myId = getUid()
+  drawnOthers = [] // nobody drawn yet this frame (stays empty if the layer is not drawn)
 
   // The line-up, skipping people whose video is off (or not connected yet)
   const entries = []
@@ -159,7 +178,7 @@ function drawBehindLayer(ctx, myVideo, width, height) {
   let reference // the face everyone is sized and lined up to: { x, eyeY, width }
   if (alignMode.value === 'free') {
     // Free: nobody is moved or resized, so no anchor, reference or line-up spots (see placeAsInCamera)
-    spots = foundOthers.map((other) => ({ video: other.video, depth: 0, scale: 1, offset: 0 }))
+    spots = foundOthers.map((other) => ({ id: other.id, video: other.video, depth: 0, scale: 1, offset: 0 }))
   } else if (iAmFound) {
     // Placed outwards from me, spot by spot, in line-up order, and sized to my face.
     // A group (several people in one camera) takes up more room, so the next spot moves out by that much.
@@ -175,7 +194,7 @@ function drawBehindLayer(ctx, myVideo, width, height) {
         const extra = groupExtra(cutouts.get(video), reference, scale)
         const distance = reach + (depth === 1 ? FIRST_SPOT_GAP : SLOT_SPACING) + extra / 2
         reach = distance + extra / 2
-        spots.push({ video: video, depth: depth, scale: scale, offset: (mirrored ? -screenSide : screenSide) * distance })
+        spots.push({ id: found[i].id, video: video, depth: depth, scale: scale, offset: (mirrored ? -screenSide : screenSide) * distance })
       }
     }
   } else {
@@ -192,20 +211,39 @@ function drawBehindLayer(ctx, myVideo, width, height) {
     })
     spots = foundOthers.map((other, index) => {
       const screenOffset = middles[index] - reach / 2 // the whole row is centred
-      return { video: other.video, depth: 0, scale: 1, offset: mirrored ? -screenOffset : screenOffset }
+      return { id: other.id, video: other.video, depth: 0, scale: 1, offset: mirrored ? -screenOffset : screenOffset }
     })
   }
   if (alignMode.value !== 'free') squeezeToFit(spots, anchorX)
   spots.sort((a, b) => b.depth - a.depth) // the furthest from me are drawn first, so the nearer ones cover them
 
+  const manual = alignMode.value === 'manual'
+  const targets = new Map()
   for (const spot of spots) {
     const cutout = cutouts.get(spot.video)
-    const target = alignMode.value === 'free'
+    let target = alignMode.value === 'free'
       ? placeAsInCamera(spot, cutout, width, height)
       : placePerson(spot, cutout, reference, anchorX, width, height)
+    if (manual) {
+      // Someone new to manual mode is pinned where auto put them; after that, where the host put them
+      if (!manualSpots.has(spot.id)) manualSpots.set(spot.id, toManualSpot(target, spot.video, cutout, width, height))
+      target = placeManually(manualSpots.get(spot.id), spot.video, cutout, width, height)
+    }
+    targets.set(spot, target)
+  }
+  // Manual: the person the host moved last is in front
+  if (manual) spots.sort((a, b) => manualSpots.get(a.id).order - manualSpots.get(b.id).order)
 
-    // Glide from where they were drawn last time towards where they should be now
-    if (!cutout.rect) {
+  drawnOthers = []
+  pictureWidth = width
+  pictureHeight = height
+  for (const spot of spots) {
+    const cutout = cutouts.get(spot.video)
+    const target = targets.get(spot)
+
+    // Glide from where they were drawn last time towards where they should be now.
+    // Not while arranging by hand: the person follows the finger straight away.
+    if (!cutout.rect || manual) {
       cutout.rect = target
     } else {
       cutout.rect = {
@@ -217,6 +255,7 @@ function drawBehindLayer(ctx, myVideo, width, height) {
     const rect = cutout.rect
     const drawWidth = rect.height * (spot.video.videoWidth / spot.video.videoHeight)
     drawCutout(ctx, spot.video, cutout, rect.x, rect.y, drawWidth, rect.height)
+    drawnOthers.push({ id: spot.id, video: spot.video, cutout: cutout, rect: rect, drawWidth: drawWidth })
   }
 
   // 3. Me, cut out, on top
@@ -256,6 +295,38 @@ function placeAsInCamera(spot, cutout, width, height) {
   const theirCentreX = cutout.face ? cutout.face.x : cutout.centreX
   const x = theirCentreX * width - theirCentreX * drawWidth
   return { x: x, y: 0, height: drawHeight }
+}
+
+// MANUAL mode: the point each person is pinned by, as parts of their video's width / height:
+// their face (eye line), or their middle if their face is not found
+function pinPoint(cutout) {
+  if (cutout.face) return { x: cutout.face.x, y: cutout.face.eyeY }
+  return { x: cutout.centreX, y: NO_FACE_EYE_Y }
+}
+
+// MANUAL mode: turn a place on the picture ({ x, y, height } in canvas pixels) into a manual spot
+function toManualSpot(target, video, cutout, width, height) {
+  const drawWidth = target.height * (video.videoWidth / video.videoHeight)
+  const pin = pinPoint(cutout)
+  nextOrder = nextOrder + 1
+  return {
+    x: (target.x + pin.x * drawWidth) / width,
+    y: (target.y + pin.y * target.height) / height,
+    height: target.height / height,
+    order: nextOrder,
+  }
+}
+
+// MANUAL mode: where to draw one person from their manual spot: { x, y, height } in canvas pixels
+function placeManually(manualSpot, video, cutout, width, height) {
+  const drawHeight = manualSpot.height * height
+  const drawWidth = drawHeight * (video.videoWidth / video.videoHeight)
+  const pin = pinPoint(cutout)
+  return {
+    x: manualSpot.x * width - pin.x * drawWidth,
+    y: manualSpot.y * height - pin.y * drawHeight,
+    height: drawHeight,
+  }
 }
 
 // Where (and how big) to draw one person: { x, y, height } in canvas pixels
@@ -586,13 +657,31 @@ function updateMask(cutout, maskWidth, maskHeight, sure) {
   const pixels = cutout.maskData.data // 4 numbers per pixel: red, green, blue, see-through-ness
   let total = 0
   let totalX = 0
+  // The box around the person (in mask pixels), for the host's selection box in manual mode
+  let left = maskWidth
+  let right = -1
+  let top = maskHeight
+  let bottom = -1
   for (let i = 0; i < mixed.length; i++) {
     const solid = Math.min(Math.max((mixed[i] - EDGE_LOW) / (EDGE_HIGH - EDGE_LOW), 0), 1)
     pixels[i * 4 + 3] = solid * 255
     total = total + solid
-    totalX = totalX + solid * (i % maskWidth)
+    const column = i % maskWidth
+    totalX = totalX + solid * column
+    if (solid > 0.5) {
+      const row = (i - column) / maskWidth
+      if (column < left) left = column
+      if (column > right) right = column
+      if (row < top) top = row
+      if (row > bottom) bottom = row
+    }
   }
   cutout.maskCanvas.getContext('2d').putImageData(cutout.maskData, 0, 0)
+
+  // The box as parts of the video's width / height (null if nobody is found)
+  cutout.box = right >= 0
+    ? { left: left / maskWidth, right: (right + 1) / maskWidth, top: top / maskHeight, bottom: (bottom + 1) / maskHeight }
+    : null
 
   // The person's middle. Kept as it was if nobody is found.
   if (total > 0) {
@@ -672,6 +761,67 @@ function setAlignMode(mode) {
   alignMode.value = mode
 }
 
+// ---------- Arranging by hand (manual mode) ----------
+// All places here are parts of the picture's width / height (0 to 1), not mirrored:
+// the page turns the finger's place on the (maybe mirrored) preview into these first.
+
+// Who is under this point (the person in front first), or null. Only their solid part counts,
+// not the see-through area around them.
+function personAt(x, y) {
+  const px = x * pictureWidth
+  const py = y * pictureHeight
+  for (let i = drawnOthers.length - 1; i >= 0; i--) {
+    const { id, cutout, rect, drawWidth } = drawnOthers[i]
+    const u = (px - rect.x) / drawWidth
+    const v = (py - rect.y) / rect.height
+    if (u < 0 || u >= 1 || v < 0 || v >= 1 || !cutout.maskData) continue
+    const maskX = Math.floor(u * cutout.maskCanvas.width)
+    const maskY = Math.floor(v * cutout.maskCanvas.height)
+    const solid = cutout.maskData.data[(maskY * cutout.maskCanvas.width + maskX) * 4 + 3]
+    if (solid > 128) return id
+  }
+  return null
+}
+
+// The box around a person as drawn now: { left, right, top, bottom }, or null if they are not drawn
+function personBox(id) {
+  const drawn = drawnOthers.find((other) => other.id === id)
+  if (!drawn || !drawn.cutout.box) return null
+  const { rect, drawWidth, cutout } = drawn
+  return {
+    left: (rect.x + cutout.box.left * drawWidth) / pictureWidth,
+    right: (rect.x + cutout.box.right * drawWidth) / pictureWidth,
+    top: (rect.y + cutout.box.top * rect.height) / pictureHeight,
+    bottom: (rect.y + cutout.box.bottom * rect.height) / pictureHeight,
+  }
+}
+
+// Move someone by dx, dy, and bring them to the front. Their pin point stays inside the picture.
+function movePerson(id, dx, dy) {
+  const spot = manualSpots.get(id)
+  if (!spot) return
+  spot.x = Math.min(Math.max(spot.x + dx, 0), 1)
+  spot.y = Math.min(Math.max(spot.y + dy, 0), 1)
+  nextOrder = nextOrder + 1
+  spot.order = nextOrder
+}
+
+// Make someone bigger (factor > 1) or smaller (< 1), keeping the point aroundX, aroundY where it is
+function resizePerson(id, factor, aroundX, aroundY) {
+  const spot = manualSpots.get(id)
+  if (!spot) return
+  const newHeight = Math.min(Math.max(spot.height * factor, MANUAL_MIN_HEIGHT), MANUAL_MAX_HEIGHT)
+  const real = newHeight / spot.height // after the limits
+  spot.height = newHeight
+  spot.x = Math.min(Math.max(aroundX + (spot.x - aroundX) * real, 0), 1)
+  spot.y = Math.min(Math.max(aroundY + (spot.y - aroundY) * real, 0), 1)
+}
+
+// Put everyone back where auto mode would put them (they are pinned there again next frame)
+function resetManualSpots() {
+  manualSpots.clear()
+}
+
 // Take out anyone who is no longer in the room (memberIds = everyone still here)
 function keepOnlyMembers(memberIds) {
   const stillHere = lineup.value.filter((id) => id === getUid() || memberIds.includes(id))
@@ -705,6 +855,8 @@ function releaseBehindLayer() {
 // Leaving the room: empty line-up, and close everything
 function resetBehindLayer() {
   lineup.value = []
+  manualSpots.clear()
+  drawnOthers = []
   releaseBehindLayer()
 }
 
@@ -714,6 +866,11 @@ export function useBehindLayer() {
     friendsCount,
     alignMode,
     setAlignMode,
+    personAt,
+    personBox,
+    movePerson,
+    resizePerson,
+    resetManualSpots,
     behindLayerLoading,
     behindLayerError,
     addToLineup,

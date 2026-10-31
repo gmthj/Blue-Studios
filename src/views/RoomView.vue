@@ -14,6 +14,7 @@ import { getFaceFilter } from '../filters/faceFilters.js'
 import StreamVideo from '../components/StreamVideo.vue'
 import FaceFilterPicker from '../components/FaceFilterPicker.vue'
 import VirtualFriendsPanel from '../components/VirtualFriendsPanel.vue'
+import ManualArrange from '../components/ManualArrange.vue'
 import RoomGallery from '../components/RoomGallery.vue'
 import StageBar from '../components/StageBar.vue'
 import AppIcon from '../components/AppIcon.vue'
@@ -40,7 +41,7 @@ watch(faceFilterError, (message) => {
 })
 
 // The layer behind me: only the host can add people behind them
-const { lineup, friendsCount, behindLayerError, keepOnlyMembers } = useBehindLayer()
+const { lineup, friendsCount, alignMode, behindLayerError, keepOnlyMembers } = useBehindLayer()
 const isHost = computed(() => room.value.hostId === uid)
 
 const showFriendsPanel = ref(false) // the host's list of people to put behind them is open
@@ -363,6 +364,14 @@ async function copyJoinLink() {
             <!-- Everyone else, while Virtual Friends is on: the host's camera (everyone together) over mine.
                  Not mirrored, like the host's tile in the call. -->
             <StreamVideo v-if="showingHostCam" class="host-cam-video" :stream="hostStream" :mirrored="false" />
+
+            <!-- Host, Virtual Friends in Manual mode: drag people on my camera, pinch / scroll to resize them -->
+            <ManualArrange
+              v-if="localStream && isHost && alignMode === 'manual' && friendsCount > 0"
+              :video="mainVideo ? mainVideo.videoElem : null"
+              :mirrored="mirrored"
+              :disabled="capturing"
+            />
 
             <!-- No camera (yet): a dark box with a camera icon instead of plain black -->
             <div v-if="!localStream && !cameraError" class="camera-waiting">
