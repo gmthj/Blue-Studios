@@ -350,7 +350,7 @@ async function joinRoom() {
       <div class="room-col">
         <div v-if="closedCode" class="alert alert-info">Room {{ closedCode }} was closed.</div>
 
-        <div class="room-card">
+        <div class="room-card glass">
           <div class="card-name">
             <label for="nameInput" class="field-label">Your name</label>
             <input
@@ -454,7 +454,7 @@ async function joinRoom() {
       <p class="eyebrow">How it works</p>
       <div class="row g-3">
         <div v-for="feature in FEATURES" :key="feature.title" class="col-12 col-md-4 feature-col">
-          <div class="feature-card">
+          <div class="feature-card glass">
             <span class="feature-icon"><AppIcon :name="feature.icon" :size="20" /></span>
             <div>
               <h2 class="feature-title">{{ feature.title }}</h2>
@@ -483,6 +483,18 @@ async function joinRoom() {
 
   font-family: 'Plus Jakarta Sans', var(--bs-body-font-family);
   color: var(--ink);
+}
+
+/* Tropical beach photo behind the whole screen (fixed, so it stays put while the page scrolls),
+   with a soft white wash on top so the text stays easy to read */
+.landing::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.55)),
+    url('/images/beautiful-tropical-beach-sea-ocean-with-white-cloud-blue-sky-copyspace.jpg') center / cover no-repeat;
 }
 
 /* Bootstrap buttons in the brand blue (Bootstrap 5.3 reads these variables), with rounder corners */
@@ -657,12 +669,29 @@ async function joinRoom() {
   }
 }
 
+/* Liquid glass: see-through white that blurs the beach behind it, a bright rim along the top edge
+   and a soft shadow underneath. Shared by the room card and the feature cards. */
+.glass {
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.62), rgba(255, 255, 255, 0.38));
+  -webkit-backdrop-filter: blur(20px) saturate(170%);
+  backdrop-filter: blur(20px) saturate(170%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.25),
+    0 12px 32px rgba(20, 23, 43, 0.1);
+}
+
+/* Browsers without backdrop blur get a more solid card so the text stays readable */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .glass {
+    background: rgba(255, 255, 255, 0.9);
+  }
+}
+
 .room-card {
   padding: 20px;
-  border: 1px solid var(--line);
   border-radius: 20px;
-  background: #ffffff;
-  box-shadow: 0 1px 2px rgba(20, 23, 43, 0.04), 0 12px 32px rgba(20, 23, 43, 0.06);
 }
 
 @media (min-width: 576px) {
@@ -1050,9 +1079,7 @@ async function joinRoom() {
   gap: 16px;
   height: 100%;
   padding: 20px;
-  border: 1px solid var(--line);
   border-radius: 20px;
-  background: #ffffff;
 }
 
 .feature-icon {
