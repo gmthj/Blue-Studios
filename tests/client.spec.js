@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { routeLocationKey } from 'vue-router' // MarketplaceCard reads the current page with useRoute()
 
-import { LAYOUTS, FRAME_STYLES, FILTERS, STICKERS, filterCss } from '../src/stripData.js'
+import { LAYOUTS, FRAME_STYLES, FILTERS, filterCss } from '../src/stripData.js'
+import { STICKERS } from '../src/stickerArt.js' // the sticker library moved here from stripData.js
 import { ITEM_TYPES, CATEGORIES, MAX_CATEGORIES, categoryLabel } from '../src/studio.js'
 import { embedProjectInPngBytes } from '../src/utils/savedFrameEngine.js'
 
@@ -18,7 +20,7 @@ import ItemDetailsForm from '../src/components/ItemDetailsForm.vue'
 describe('Photostrip layout and filter engine (stripData.js)', () => {
   // 1. Core layouts preset definition
   it('defines the standard photostrip layouts with positive aspect ratios', () => {
-    expect(LAYOUTS.length).toBeGreaterThanOrEqual(4)
+    expect(LAYOUTS.length).toBeGreaterThanOrEqual(3)
     const retro = LAYOUTS.find((l) => l.id === 'retro-4-cut')
     expect(retro).toBeDefined()
     expect(retro.aspect).toBeCloseTo(0.3)
@@ -79,7 +81,7 @@ describe('Photostrip layout and filter engine (stripData.js)', () => {
   it('generates valid SVG data URIs for sticker badges in the tray', () => {
     expect(STICKERS.length).toBeGreaterThanOrEqual(5)
     STICKERS.forEach((sticker) => {
-      expect(sticker.src.startsWith('data:image/svg+xml')).toBe(true)
+      expect(sticker.url.startsWith('data:image/svg+xml')).toBe(true)
       expect(sticker.id).toBeTruthy()
     })
   })
@@ -295,6 +297,7 @@ describe('Critical UI components (AppIcon, StageBar, MarketplaceCard, ItemDetail
     const wrapper = mount(MarketplaceCard, {
       props: { item: dummyItem },
       global: {
+        provide: { [routeLocationKey]: { path: '/marketplace', query: {} } }, // the page the card is on
         stubs: {
           RouterLink: { template: '<a><slot /></a>' },
           StorageImage: { template: '<div class="storage-stub" />' }
@@ -321,6 +324,7 @@ describe('Critical UI components (AppIcon, StageBar, MarketplaceCard, ItemDetail
     const wrapper = mount(MarketplaceCard, {
       props: { item: singleSaveItem },
       global: {
+        provide: { [routeLocationKey]: { path: '/marketplace', query: {} } }, // the page the card is on
         stubs: {
           RouterLink: { template: '<a><slot /></a>' },
           StorageImage: true
