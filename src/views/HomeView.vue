@@ -296,8 +296,57 @@ async function joinRoom() {
 <template>
   <!-- Landing page: what Blue Studios is, plus creating or joining a room straight away -->
   <div class="landing">
-    <!-- FIRST SCREEN: only the room card, in the middle of the screen under the navbar -->
-    <section class="room-screen">
+    <!--
+      HERO: a CSS grid with 3 parts (intro, room card, photostrip picture). Each screen shape places them
+      differently (see HERO LAYOUT in the styles). The room card is always on screen without scrolling.
+        phones:                      room card, then the intro, then the photostrip
+        phones held sideways and
+        tablets held upright:        a wide two-column card on top, then the intro next to the photostrip
+        lg (992px) and up:           intro | room card | photostrip (a smaller one below xl)
+      Everything shows on every screen; only the places change.
+    -->
+    <section class="hero">
+      <div class="hero-intro">
+        <span class="hero-badge"><AppIcon name="sparkle" :size="13" /> Free &middot; no booth needed</span>
+        <h1 class="hero-title">Take a photostrip together, from anywhere.</h1>
+        <p class="hero-lead">
+          Create a room, share a 4-digit code and shoot on one synchronised countdown, with friends on their own
+          phones and laptops.
+        </p>
+      </div>
+
+      <!-- Photostrips that change every few seconds, just a picture (aria-hidden: screen readers skip it) -->
+      <div class="strip-scene" aria-hidden="true">
+        <!-- The stage keeps the same size for every template, so the page does not jump when the strip changes.
+             :key changes for every strip, so Vue makes a new one: the new strip slides in while the old one fades out. -->
+        <div class="strip-stage">
+          <Transition name="strip-swap">
+            <div
+              :key="currentStrip.key"
+              class="strip"
+              :style="{ '--aspect': currentStrip.aspect, '--tilt': currentStrip.tilt + 'deg' }"
+            >
+              <!-- The photos sit under the template, each one in its slot (x, y, w, h are percentages).
+                   Each photo is 1% bigger than its hole on every side, so no thin gap shows at the edges. -->
+              <img
+                v-for="(photo, i) in currentStrip.photos"
+                :key="i"
+                :src="photo.src"
+                class="strip-photo"
+                :style="{
+                  left: photo.slot.x - 1 + '%',
+                  top: photo.slot.y - 1 + '%',
+                  width: photo.slot.w + 2 + '%',
+                  height: photo.slot.h + 2 + '%',
+                }"
+                alt=""
+              />
+              <img :src="currentStrip.src" class="strip-template" alt="" />
+            </div>
+          </Transition>
+        </div>
+      </div>
+
       <div class="room-col">
         <div v-if="closedCode" class="alert alert-info">Room {{ closedCode }} was closed.</div>
 
@@ -346,10 +395,9 @@ async function joinRoom() {
                 >{{ joinCode[i - 1] }}</span>
               </div>
 
-              <!-- When a full code is typed (or it came from a QR code), Join becomes the main button:
-                   filled, and it grows to fill the rest of the row -->
+              <!-- When a full code is typed (or it came from a QR code), Join becomes the main button: filled in -->
               <button
-                class="btn btn-join ms-auto"
+                class="btn btn-join"
                 :class="codeComplete ? 'btn-primary join-ready' : 'btn-outline-primary'"
                 :disabled="!codeComplete || loading"
                 @click="joinRoom"
@@ -401,64 +449,6 @@ async function joinRoom() {
       </div>
     </section>
 
-    <!--
-      INTRO, below the room card, with Bootstrap's grid:
-        below lg (992px):  just the intro (the photostrip picture is hidden)
-        lg and up:         two columns: intro | photostrip picture
-    -->
-    <section class="row g-5 align-items-center hero">
-      <div class="col-12 col-lg-6">
-        <span class="hero-badge"><AppIcon name="sparkle" :size="13" /> Free &middot; no booth needed</span>
-        <h1 class="hero-title">Take a photostrip together, from anywhere.</h1>
-        <p class="hero-lead">
-          Create a room, share a 4-digit code and shoot on one synchronised countdown, with friends on their own
-          phones and laptops.
-        </p>
-        <div class="d-flex flex-wrap gap-2">
-          <router-link v-if="isAccount" to="/studio" class="btn btn-primary btn-lg">Go to My Studio</router-link>
-          <router-link v-else to="/login?mode=signup" class="btn btn-primary btn-lg">Get started</router-link>
-          <a href="#how-it-works" class="btn btn-light btn-lg btn-soft">
-            <AppIcon name="play" :size="16" /> How it works
-          </a>
-        </div>
-      </div>
-
-      <div class="col-lg-6 d-none d-lg-flex justify-content-center">
-        <div class="strip-scene" aria-hidden="true">
-          <!-- The stage keeps the same size for every template, so the page does not jump when the strip changes.
-               :key changes for every strip, so Vue makes a new one: the new strip slides in while the old one fades out. -->
-          <div class="strip-stage">
-            <Transition name="strip-swap">
-              <div
-                :key="currentStrip.key"
-                class="strip"
-                :style="{ '--aspect': currentStrip.aspect, '--tilt': currentStrip.tilt + 'deg' }"
-              >
-                <!-- The photos sit under the template, each one in its slot (x, y, w, h are percentages).
-                     Each photo is 1% bigger than its hole on every side, so no thin gap shows at the edges. -->
-                <img
-                  v-for="(photo, i) in currentStrip.photos"
-                  :key="i"
-                  :src="photo.src"
-                  class="strip-photo"
-                  :style="{
-                    left: photo.slot.x - 1 + '%',
-                    top: photo.slot.y - 1 + '%',
-                    width: photo.slot.w + 2 + '%',
-                    height: photo.slot.h + 2 + '%',
-                  }"
-                  alt=""
-                />
-                <img :src="currentStrip.src" class="strip-template" alt="" />
-              </div>
-            </Transition>
-          </div>
-          <span class="sticker sticker-white"><AppIcon name="users" :size="14" /> 4 friends &middot; 3 cities</span>
-          <span class="sticker sticker-pink">main character energy</span>
-        </div>
-      </div>
-    </section>
-
     <!-- FEATURES: 1 column on phones, 3 from md (768px) up -->
     <section id="how-it-works" class="features">
       <p class="eyebrow">How it works</p>
@@ -489,7 +479,6 @@ async function joinRoom() {
   --ink: #14172B;
   --muted: #6B7080;
   --line: #E3E6EE;
-  --pink: #EC4176;
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
 
   font-family: 'Plus Jakarta Sans', var(--bs-body-font-family);
@@ -546,30 +535,64 @@ async function joinRoom() {
   transform: scale(0.97);
 }
 
-/* ---------- FIRST SCREEN ----------
-   Exactly the visible screen under the navbar (57px tall + 24px space under it) and the page's bottom
-   space (16px), with the room card in the middle. Taller content (a phone held sideways) just makes it
-   taller. */
-.room-screen {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: calc(100vh - 81px - 16px);  /* for older browsers */
-  min-height: calc(100dvh - 81px - 16px); /* 100dvh = the visible screen height */
-  padding-bottom: 24px; /* a little more space under the card than above, so it looks centred */
-}
-
-/* ---------- INTRO ---------- */
+/* ---------- HERO LAYOUT ----------
+   One grid, its parts placed by name (grid-template-areas) for each screen shape.
+   Phones: the room card first, so it is on screen straight away, then the intro, then the photostrip. */
 .hero {
-  margin-top: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas:
+    'card'
+    'intro'
+    'strip';
+  align-items: center;
+  gap: 40px;
+  padding-top: 8px;
   margin-bottom: 64px;
 }
 
+.hero-intro {
+  grid-area: intro;
+}
+
+.room-col {
+  grid-area: card;
+}
+
+.strip-scene {
+  grid-area: strip;
+}
+
+/* Tablets held upright, and phones held sideways (too short for the card on top of the intro):
+   a wide card across the top, then the intro with the photostrip next to it */
+@media (min-width: 768px) and (max-width: 991.98px) and (min-height: 501px),
+  (max-width: 991.98px) and (orientation: landscape) and (max-height: 500px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr) 14rem;
+    grid-template-areas:
+      'card card'
+      'intro strip';
+    gap: 32px 40px;
+    padding-top: 24px;
+  }
+}
+
+/* lg: intro | room card | a narrow photostrip */
 @media (min-width: 992px) {
   .hero {
-    margin-top: 32px;
+    grid-template-columns: minmax(0, 1fr) 22rem 9rem;
+    grid-template-areas: 'intro card strip';
+    gap: 36px;
+    padding-top: 32px;
     margin-bottom: 96px;
+  }
+}
+
+/* xl: intro | room card | photostrip, all full size */
+@media (min-width: 1200px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr) 25rem minmax(0, 0.55fr);
+    gap: 48px;
   }
 }
 
@@ -590,10 +613,17 @@ async function joinRoom() {
 .hero-title {
   margin-bottom: 20px;
   font-size: clamp(2.4rem, 1.2rem + 4.2vw, 4.4rem);
+  text-wrap: balance; /* lines of similar length, no single word left on the last line */
   font-weight: 800;
   line-height: 1.04;
   letter-spacing: -0.035em;
-  text-wrap: balance; /* lines of similar length, no single word left on the last line */
+}
+
+/* lg / xl: the intro shares the row, so the headline is a little smaller */
+@media (min-width: 992px) {
+  .hero-title {
+    font-size: clamp(2.6rem, 0.4rem + 3.2vw, 4rem);
+  }
 }
 
 .hero-lead {
@@ -606,10 +636,25 @@ async function joinRoom() {
 }
 
 /* ---------- ROOM CARD ---------- */
-/* The max width is on the column, so the "Room was closed" alert and the card are always the same width */
-.room-col {
-  width: 100%;
-  max-width: 30rem;
+/* The "Room was closed" alert sits in the same column, so it is always as wide as the card */
+
+/* Laptops with short screens: a tighter card, so all of it fits under the navbar */
+@media (min-width: 992px) and (max-height: 760px) {
+  .hero {
+    padding-top: 16px;
+  }
+
+  .room-card {
+    padding: 20px 24px;
+  }
+
+  .name-input {
+    margin-bottom: 16px;
+  }
+
+  .or-divider {
+    margin: 16px 0 12px;
+  }
 }
 
 .room-card {
@@ -667,10 +712,11 @@ async function joinRoom() {
 }
 
 /* The 4 boxes. The real input covers them all, so a tap anywhere on them types into it.
-   min-width: 0 lets the boxes shrink on very narrow phones, so the Join button still fits. */
+   They share the row with Join (flex: 1), so there is never an empty gap between them and the button. */
 .code-boxes {
   position: relative;
   display: flex;
+  flex: 1 1 auto;
   gap: 8px;
   min-width: 0;
 }
@@ -689,9 +735,9 @@ async function joinRoom() {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 56px;
-  min-width: 36px;
-  flex-shrink: 1;
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 72px;
   height: clamp(52px, 14vw, 62px);
   border: 1.5px solid var(--line);
   border-radius: 12px;
@@ -739,13 +785,13 @@ async function joinRoom() {
 
 .btn-join {
   flex-shrink: 0;
+  min-width: 84px;
   height: clamp(52px, 14vw, 62px);
   padding: 0 clamp(14px, 4vw, 24px);
 }
 
-/* Full code: Join takes all the space left next to the boxes, with bigger text */
+/* Full code: Join gets bigger text (filled in by the class in the template) */
 .btn-join.join-ready {
-  flex-grow: 1;
   font-size: 1.15rem;
 }
 
@@ -848,19 +894,15 @@ async function joinRoom() {
   font-size: 0.875rem;
 }
 
-/* Phones held sideways: the screen is too short for the card's parts one under the other, so the
-   name and the code sit side by side, with Create underneath. The smaller hints are hidden. */
-@media (orientation: landscape) and (max-height: 500px) {
-  .room-col {
-    max-width: none;
-  }
-
+/* Wide card (tablets held upright, phones held sideways): the name and the code side by side,
+   Create across the bottom. align-items: end lines the name box up with the code boxes. */
+@media (min-width: 768px) and (max-width: 991.98px) and (min-height: 501px),
+  (max-width: 991.98px) and (orientation: landscape) and (max-height: 500px) {
   .room-card {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto; /* the code boxes keep their size, the name box takes the rest */
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
     align-items: end;
-    gap: 12px 20px;
-    padding: 16px 20px;
+    gap: 0 32px;
   }
 
   .card-create,
@@ -869,31 +911,52 @@ async function joinRoom() {
   }
 
   .name-input {
+    height: clamp(52px, 14vw, 62px);
     margin-bottom: 0;
   }
 
-  /* The same as the "Your name" label next to it, so the two line up */
-  .card-heading {
-    margin-bottom: 6px;
-    font-size: 0.85rem;
-    font-weight: 600;
-  }
-
-  .card-join .card-sub,
-  .card-create .card-sub,
-  .or-divider {
-    display: none;
-  }
-
-  .room-error {
-    margin-top: 0;
+  .btn-create:not(.create-quiet) {
+    max-width: 24rem;
+    margin: 0 auto;
+    display: flex;
   }
 }
 
-/* ---------- PHOTOSTRIP PICTURE (next to the intro, lg and up) ---------- */
+/* Phones held sideways: the screen is short, so the card is a little tighter.
+   (max-width too: a short desktop window is also landscape and short, but has room for the normal card) */
+@media (max-width: 991.98px) and (orientation: landscape) and (max-height: 500px) {
+  .room-card {
+    gap: 0 20px;
+    padding: 16px 20px;
+  }
+
+  .or-divider {
+    margin: 14px 0 10px;
+  }
+}
+
+/* ---------- PHOTOSTRIP PICTURE ----------
+   Shown on every screen. Below xl it is smaller (a narrow column or under the intro).
+   On phones it is centred under the intro. */
 .strip-scene {
   position: relative;
-  padding: 24px 64px;
+  width: 100%;
+  min-width: 0;
+  padding: 24px 0;
+}
+
+@media (max-width: 1199.98px) {
+  .strip-stage {
+    height: 320px;
+  }
+}
+
+@media (max-width: 767.98px) and (orientation: portrait) {
+  .strip-scene {
+    width: 15rem;
+    justify-self: center;
+    padding-top: 0;
+  }
 }
 
 /* Every template fits inside this box (as big as it can, keeping its shape), so the page never jumps.
@@ -901,8 +964,9 @@ async function joinRoom() {
 .strip-stage {
   display: grid;
   place-items: center;
-  width: clamp(280px, 25vw, 340px);
-  height: clamp(460px, 42vw, 560px);
+  width: 100%;
+  /* never taller than the window (minus the navbar), so a short laptop window does not cut it off */
+  height: min(clamp(380px, 31vw, 460px), max(240px, 100svh - 140px));
   container-type: size;
 }
 
@@ -958,47 +1022,6 @@ async function joinRoom() {
   width: 100%;
   height: 100%;
   border-radius: 6px;
-}
-
-.sticker {
-  position: absolute;
-  z-index: 1; /* above the strip */
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 16px;
-  border-radius: 999px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  white-space: nowrap;
-  box-shadow: 0 8px 20px rgba(20, 23, 43, 0.12);
-  animation: sticker-in 400ms var(--ease-out) backwards;
-}
-
-.sticker-white {
-  top: 22%;
-  right: 0;
-  color: var(--ink);
-  background: #ffffff;
-  rotate: -6deg;
-  animation-delay: 350ms;
-}
-
-.sticker-pink {
-  bottom: 22%;
-  left: 0;
-  color: #ffffff;
-  background: var(--pink);
-  rotate: 5deg;
-  animation-delay: 500ms;
-}
-
-/* scale, not rotate, so it does not fight the tilt (that is set with the separate rotate property) */
-@keyframes sticker-in {
-  from {
-    opacity: 0;
-    scale: 0.85;
-  }
 }
 
 /* ---------- FEATURES ---------- */
@@ -1079,10 +1102,9 @@ async function joinRoom() {
   }
 }
 
-/* Reduced motion: the strip and stickers just appear, nothing slides, tilts or shrinks */
+/* Reduced motion: the strip just appears, nothing slides or tilts */
 @media (prefers-reduced-motion: reduce) {
-  .strip,
-  .sticker {
+  .strip {
     animation: none;
   }
 
