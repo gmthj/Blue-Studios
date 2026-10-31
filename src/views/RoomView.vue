@@ -28,7 +28,7 @@ const uid = getUid()
 const guestName = getGuestName()
 
 const { code, room, roomRef, activeMembers } = useRoom()
-const { localStream, mirrored, cameras, cameraIndex, cameraError, switchingCamera, switchCamera } = useVideoCall()
+const { localStream, mirrored, cameras, cameraIndex, cameraError, switchingCamera, switchCamera, getRemoteUser, getRemoteVideoTrack } = useVideoCall()
 const { faceFilterId, faceFilterLoading, faceFilterError } = useFaceFilter()
 const { fullscreen } = useFullscreen() // fullscreen hides the header, so the page gets its height too
 
@@ -68,6 +68,27 @@ const hostVirtualPeople = computed(() => {
   return activeMembers.value.filter((member) => member.id !== room.value.hostId && ids.includes(member.id))
 })
 const iAmVirtual = computed(() => hostVirtualPeople.value.some((member) => member.id === uid))
+
+// Everyone else: while the host has Virtual people on, the big view can show the host's camera
+// (everyone together in one shot) instead of mine. It switches to the host's camera each time
+// Virtual people turns on, and back to mine when it turns off. The toggle switches between them.
+const virtualPeopleOn = computed(() => !isHost.value && hostVirtualPeople.value.length > 0)
+const viewHostCam = ref(false)
+watch(virtualPeopleOn, (on) => {
+  viewHostCam.value = on
+}, { immediate: true })
+
+// The host's video from the call (null while their video is off)
+const hostStream = computed(() => {
+  const hostId = room.value.hostId
+  const remote = getRemoteUser(hostId)
+  if (!remote || !remote.hasVideo) return null
+  const track = getRemoteVideoTrack(hostId)
+  return track ? new MediaStream([track]) : null
+})
+
+// The host's camera is shown on top of mine. Mine keeps playing underneath, so photos and clips are still from my camera.
+const showingHostCam = computed(() => virtualPeopleOn.value && viewHostCam.value && hostStream.value !== null)
 
 // Someone left the room: take them out of the line-up
 watch(activeMembers, (members) => {
@@ -334,6 +355,10 @@ async function copyJoinLink() {
             <!-- :mirrored flips only the front camera, so the back camera is not flipped -->
             <StreamVideo ref="mainVideo" :stream="localStream" :mirrored="mirrored" />
 
+            <!-- Everyone else, while Virtual people is on: the host's camera (everyone together) over mine.
+                 Not mirrored, like the host's tile in the call. -->
+            <StreamVideo v-if="showingHostCam" class="host-cam-video" :stream="hostStream" :mirrored="false" />
+
             <!-- No camera (yet): a dark box with a camera icon instead of plain black -->
             <div v-if="!localStream && !cameraError" class="camera-waiting">
               <AppIcon name="camera" :size="32" />
@@ -425,6 +450,18 @@ async function copyJoinLink() {
                 <p v-if="iAmVirtual" class="host-only-text">Stay in your camera's view so you show up.</p>
               </template>
               <p v-else class="host-only-status">Off right now</p>
+            </div>
+
+            <!-- Everyone else, while Virtual people is on: switch the big view between the host's camera and mine -->
+            <div v-if="localStream && virtualPeopleOn" class="cam-view-toggle" role="group" aria-label="Which camera to show">
+              <button :class="{ active: viewHostCam }" :aria-pressed="viewHostCam" :disabled="!hostStream" @click="viewHostCam = true">
+                <AppIcon name="users" :size="14" />
+                <span class="d-none d-sm-inline">Host cam</span>
+              </button>
+              <button :class="{ active: !viewHostCam }" :aria-pressed="!viewHostCam" @click="viewHostCam = false">
+                <AppIcon name="camera" :size="14" />
+                <span class="d-none d-sm-inline">My cam</span>
+              </button>
             </div>
 
             <!-- The face filters: a row that scrolls behind the shutter button (the middle one is chosen) -->
@@ -781,6 +818,51 @@ async function copyJoinLink() {
   .host-only-btn.host-people-on {
     animation: none;
   }
+}
+
+/* Everyone else: the host's camera, filling the camera view on top of mine */
+.host-cam-video {
+  position: absolute;
+  inset: 0;
+}
+
+/* Everyone else: Host cam / My cam switch, top middle of the camera view */
+.cam-view-toggle {
+  position: absolute;
+  z-index: 10;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(14, 16, 32, 0.55);
+  backdrop-filter: blur(8px);
+}
+
+.cam-view-toggle button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.8);
+  background: transparent;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.cam-view-toggle button.active {
+  color: #0E1020;
+  background: #ffffff;
+}
+
+.cam-view-toggle button:disabled {
+  opacity: 0.5;
 }
 
 /* The host's Virtual people list: under its button, above the Photo / Video switch, filter row and shutter */
