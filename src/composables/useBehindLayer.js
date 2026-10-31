@@ -18,7 +18,7 @@
 //
 // ALIGNMENT MODES (the host picks one, see alignMode):
 //   'auto'   everyone is sized to my face and lined up beside me (all of the above)
-//   'self'   everyone keeps their size and place from their own camera: they move themselves around.
+//   'free'   everyone keeps their size and place from their own camera: they move themselves around.
 //            Standing at the side of their camera puts them at the side; closer to it makes them bigger.
 //   'manual' (coming later) the host drags people into place
 //
@@ -94,7 +94,7 @@ const EDGE_HIGH = 0.75
 const behindLayerLoading = ref(false) // true while the cut-out model downloads
 const behindLayerError = ref('')
 const lineup = ref([])                // member ids, left to right on my screen, me included. [] = nobody.
-const alignMode = ref('auto')         // 'auto', 'self' or 'manual' (see ALIGNMENT MODES at the top)
+const alignMode = ref('auto')         // 'auto', 'free' or 'manual' (see ALIGNMENT MODES at the top)
 
 // How many people (not counting me) are in the line-up
 const friendsCount = computed(() => lineup.value.filter((id) => id !== getUid()).length)
@@ -157,8 +157,8 @@ function drawBehindLayer(ctx, myVideo, width, height) {
   let spots
   let anchorX   // the middle of the line-up's anchor: me, or the middle of the picture if I am not found
   let reference // the face everyone is sized and lined up to: { x, eyeY, width }
-  if (alignMode.value === 'self') {
-    // Self: nobody is moved or resized, so no anchor, reference or line-up spots (see placeAsInCamera)
+  if (alignMode.value === 'free') {
+    // Free: nobody is moved or resized, so no anchor, reference or line-up spots (see placeAsInCamera)
     spots = foundOthers.map((other) => ({ video: other.video, depth: 0, scale: 1, offset: 0 }))
   } else if (iAmFound) {
     // Placed outwards from me, spot by spot, in line-up order, and sized to my face.
@@ -195,12 +195,12 @@ function drawBehindLayer(ctx, myVideo, width, height) {
       return { video: other.video, depth: 0, scale: 1, offset: mirrored ? -screenOffset : screenOffset }
     })
   }
-  if (alignMode.value !== 'self') squeezeToFit(spots, anchorX)
+  if (alignMode.value !== 'free') squeezeToFit(spots, anchorX)
   spots.sort((a, b) => b.depth - a.depth) // the furthest from me are drawn first, so the nearer ones cover them
 
   for (const spot of spots) {
     const cutout = cutouts.get(spot.video)
-    const target = alignMode.value === 'self'
+    const target = alignMode.value === 'free'
       ? placeAsInCamera(spot, cutout, width, height)
       : placePerson(spot, cutout, reference, anchorX, width, height)
 
@@ -245,7 +245,7 @@ function groupExtra(cutout, reference, scale) {
   return ((cutout.face.span - cutout.face.width) * reference.width * scale) / cutout.face.width
 }
 
-// SELF mode: where to draw one person so they look as they do in their own camera: { x, y, height }.
+// FREE mode: where to draw one person so they look as they do in their own camera: { x, y, height }.
 // Their whole video is as tall as my picture (so standing closer to their camera makes them bigger),
 // and their middle is at the same part of my picture's width as of their video's
 // (so standing at the side of their camera puts them at the side of mine).
@@ -667,7 +667,7 @@ function moveInLineup(index, direction) {
   lineup.value = order
 }
 
-// Change how people are placed: 'auto', 'self' or 'manual' (see ALIGNMENT MODES at the top)
+// Change how people are placed: 'auto', 'free' or 'manual' (see ALIGNMENT MODES at the top)
 function setAlignMode(mode) {
   alignMode.value = mode
 }

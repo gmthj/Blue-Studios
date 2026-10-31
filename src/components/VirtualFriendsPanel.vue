@@ -31,7 +31,7 @@ const { lineup, alignMode, setAlignMode, behindLayerLoading, addToLineup, remove
 // How people are placed on my camera (see ALIGNMENT MODES in useBehindLayer.js). Manual comes later.
 const ALIGN_MODES = [
   { id: 'auto', label: 'Auto', hint: 'Everyone is sized to you and lined up beside you.' },
-  { id: 'self', label: 'Self', hint: 'Everyone shows up where they stand in their own camera. Move closer to look bigger, or to the side to stand at the side.' },
+  { id: 'free', label: 'Free', hint: 'Everyone shows up where they stand in their own camera. Move closer to look bigger, or to the side to stand at the side.' },
   { id: 'manual', label: 'Manual', hint: '', soon: true },
 ]
 const alignHint = computed(() => ALIGN_MODES.find((mode) => mode.id === alignMode.value).hint)
@@ -84,7 +84,7 @@ function hasVideo(id) {
       <span>Virtual Friends works best when the host is on a computer or laptop.</span>
     </p>
 
-    <!-- How people are placed: Auto / Self / Manual (coming soon) -->
+    <!-- How people are placed: Auto / Free / Manual (coming soon) -->
     <div class="align-modes" role="group" aria-label="Alignment">
       <button
         v-for="mode in ALIGN_MODES"
