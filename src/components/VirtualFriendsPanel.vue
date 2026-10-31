@@ -47,6 +47,23 @@ const inLineup = computed(() => {
 })
 const notInLineup = computed(() => others.value.filter((member) => !lineup.value.includes(member.id)))
 
+// The rows of the list: { member, chosen, spot }.
+// Auto: the line-up in order (spot = its place, 0 = first), then everyone taken out.
+// Free / Manual: the order does nothing, so everyone stays in one fixed order (me first, then the room's
+// order) and ticking someone on or off does not move their row.
+const rows = computed(() => {
+  if (showOrder.value) {
+    return [
+      ...inLineup.value.map((member, index) => ({ member: member, chosen: true, spot: index })),
+      ...notInLineup.value.map((member) => ({ member: member, chosen: false, spot: -1 })),
+    ]
+  }
+  const me = activeMembers.value.find((member) => member.id === uid)
+  return [me, ...others.value]
+    .filter((member) => member)
+    .map((member) => ({ member: member, chosen: lineup.value.includes(member.id), spot: -1 }))
+})
+
 // The row just moved with an arrow: drawn above the row it swaps with while they slide past each other
 const lastMoved = ref('')
 let lastMovedTimer = null
@@ -125,62 +142,51 @@ function hasVideo(id) {
 
     <!-- TransitionGroup: when the order changes, the rows slide to their new places (see .lineup-move) -->
     <TransitionGroup tag="ul" name="lineup" class="friends-list">
-      <!-- The line-up, left to right: arrows to move anyone (me too), a tick to remove others -->
+      <!-- One row per person. Auto: the line-up left to right (arrows move anyone, me too), then the people
+           taken out. A filled tick takes someone out, an empty one adds them back (left or right of me, taking turns). -->
       <li
-        v-for="(member, index) in inLineup"
-        :key="member.id"
-        class="person chosen"
-        :class="{ me: member.id === uid, lifted: lastMoved === member.id }"
+        v-for="row in rows"
+        :key="row.member.id"
+        class="person"
+        :class="{ chosen: row.chosen, me: row.member.id === uid, lifted: lastMoved === row.member.id }"
       >
-        <span v-if="showOrder" class="spot-number">{{ index + 1 }}</span>
-        <img :src="profileOf(member.id).avatar" class="avatar" alt="" />
+        <span v-if="showOrder" class="spot-number">{{ row.chosen ? row.spot + 1 : '' }}</span>
+        <img :src="profileOf(row.member.id).avatar" class="avatar" alt="" />
         <span class="person-text">
-          <span class="person-name">{{ member.name }}<template v-if="member.id === uid"> (you)</template></span>
-          <span v-if="!hasVideo(member.id)" class="person-note">camera off</span>
+          <span class="person-name">{{ row.member.name }}<template v-if="row.member.id === uid"> (you)</template></span>
+          <span v-if="!hasVideo(row.member.id)" class="person-note">camera off</span>
         </span>
-        <button
-          v-if="showOrder"
-          class="icon-btn"
-          :aria-label="'Move ' + member.name + ' left'"
-          :disabled="disabled || index === 0"
-          @click="move(index, -1, member.id)"
-        >
-          <AppIcon name="chevron" :size="16" class="flip" />
-        </button>
-        <button
-          v-if="showOrder"
-          class="icon-btn"
-          :aria-label="'Move ' + member.name + ' right'"
-          :disabled="disabled || index === inLineup.length - 1"
-          @click="move(index, 1, member.id)"
-        >
-          <AppIcon name="chevron" :size="16" />
-        </button>
-        <span class="end-slot">
+        <template v-if="showOrder && row.chosen">
           <button
-            v-if="member.id !== uid"
+            class="icon-btn"
+            :aria-label="'Move ' + row.member.name + ' left'"
+            :disabled="disabled || row.spot === 0"
+            @click="move(row.spot, -1, row.member.id)"
+          >
+            <AppIcon name="chevron" :size="16" class="flip" />
+          </button>
+          <button
+            class="icon-btn"
+            :aria-label="'Move ' + row.member.name + ' right'"
+            :disabled="disabled || row.spot === inLineup.length - 1"
+            @click="move(row.spot, 1, row.member.id)"
+          >
+            <AppIcon name="chevron" :size="16" />
+          </button>
+        </template>
+        <span class="end-slot">
+          <!-- I cannot be taken out, so a "Host" label instead of a tick -->
+          <span v-if="row.member.id === uid" class="host-badge">Host</span>
+          <button
+            v-else-if="row.chosen"
             class="tick on"
-            :aria-label="'Remove ' + member.name"
+            :aria-label="'Remove ' + row.member.name"
             :disabled="disabled"
-            @click="removeFromLineup(member.id)"
+            @click="removeFromLineup(row.member.id)"
           >
             <AppIcon name="check" :size="14" :stroke-width="3" />
           </button>
-          <!-- I cannot be removed, so a "Host" label instead of a tick -->
-          <span v-else class="host-badge">Host</span>
-        </span>
-      </li>
-
-      <!-- Not in the line-up: an empty tick to add them (left or right of me, taking turns) -->
-      <li v-for="member in notInLineup" :key="member.id" class="person">
-        <span v-if="showOrder" class="spot-number"></span>
-        <img :src="profileOf(member.id).avatar" class="avatar" alt="" />
-        <span class="person-text">
-          <span class="person-name">{{ member.name }}</span>
-          <span v-if="!hasVideo(member.id)" class="person-note">camera off</span>
-        </span>
-        <span class="end-slot">
-          <button class="tick" :aria-label="'Add ' + member.name" :disabled="disabled" @click="addToLineup(member.id)"></button>
+          <button v-else class="tick" :aria-label="'Add ' + row.member.name" :disabled="disabled" @click="addToLineup(row.member.id)"></button>
         </span>
       </li>
     </TransitionGroup>
