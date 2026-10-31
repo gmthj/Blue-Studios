@@ -26,7 +26,15 @@ const uid = getUid()
 const onComputer = getDeviceType() === 'Computer'
 const { activeMembers } = useRoom()
 const { getRemoteUser } = useVideoCall()
-const { lineup, behindLayerLoading, addToLineup, removeFromLineup, moveInLineup } = useBehindLayer()
+const { lineup, alignMode, setAlignMode, behindLayerLoading, addToLineup, removeFromLineup, moveInLineup } = useBehindLayer()
+
+// How people are placed on my camera (see ALIGNMENT MODES in useBehindLayer.js). Manual comes later.
+const ALIGN_MODES = [
+  { id: 'auto', label: 'Auto', hint: 'Everyone is sized to you and lined up beside you.' },
+  { id: 'self', label: 'Self', hint: 'Everyone shows up where they stand in their own camera. Move closer to look bigger, or to the side to stand at the side.' },
+  { id: 'manual', label: 'Manual', hint: '', soon: true },
+]
+const alignHint = computed(() => ALIGN_MODES.find((mode) => mode.id === alignMode.value).hint)
 
 // Everyone in the room except me
 const others = computed(() => activeMembers.value.filter((member) => member.id !== uid))
@@ -75,6 +83,22 @@ function hasVideo(id) {
       <AppIcon name="laptop" :size="14" />
       <span>Virtual Friends works best when the host is on a computer or laptop.</span>
     </p>
+
+    <!-- How people are placed: Auto / Self / Manual (coming soon) -->
+    <div class="align-modes" role="group" aria-label="Alignment">
+      <button
+        v-for="mode in ALIGN_MODES"
+        :key="mode.id"
+        :class="{ active: alignMode === mode.id }"
+        :aria-pressed="alignMode === mode.id"
+        :disabled="disabled || mode.soon"
+        :title="mode.soon ? 'Coming soon' : mode.hint"
+        @click="setAlignMode(mode.id)"
+      >
+        {{ mode.label }}<span v-if="mode.soon" class="soon">Soon</span>
+      </button>
+    </div>
+    <p class="panel-hint">{{ alignHint }}</p>
 
     <p v-if="others.length === 0" class="panel-empty">Nobody else is in the room yet.</p>
     <p v-else-if="inLineup.length > 0" class="panel-hint">Left to right on your screen</p>
@@ -213,6 +237,50 @@ function hasVideo(id) {
 
 .panel-device-note :deep(svg) {
   margin-top: 1px;
+}
+
+.align-modes {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 6px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.align-modes button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.85);
+  background: transparent;
+  font-size: 0.78rem;
+  font-weight: 600;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.align-modes button.active {
+  color: #0E1020;
+  background: #ffffff;
+}
+
+.align-modes button:disabled {
+  opacity: 0.5;
+}
+
+.align-modes .soon {
+  padding: 0 5px;
+  border-radius: 999px;
+  font-size: 0.6rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.18);
 }
 
 .panel-hint {
