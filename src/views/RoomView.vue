@@ -41,7 +41,7 @@ watch(faceFilterError, (message) => {
 })
 
 // The layer behind me: only the host can add people behind them
-const { lineup, friendsCount, alignMode, behindLayerError, keepOnlyMembers } = useBehindLayer()
+const { activeLineup, friendsCount, alignMode, behindLayerError, syncLineupWithRoom } = useBehindLayer()
 const isHost = computed(() => room.value.hostId === uid)
 
 const showFriendsPanel = ref(false) // the host's list of people to put behind them is open
@@ -50,7 +50,7 @@ const showHostOnlyInfo = ref(false) // everyone else: the card saying Virtual Fr
 // The host's line-up is only on the host's device, so the host saves it in the room (virtualFriends)
 // for everyone else to see that Virtual Friends is on, and who is in it
 watch(
-  lineup,
+  activeLineup,
   (ids) => {
     if (!isHost.value) return
     const saved = room.value.virtualFriends || []
@@ -96,10 +96,15 @@ const hostStream = computed(() => {
 // The host's camera is shown on top of mine. Mine keeps playing underneath, so photos and clips are still from my camera.
 const showingHostCam = computed(() => virtualFriendsOn.value && viewHostCam.value && hostStream.value !== null)
 
-// Someone left the room: take them out of the line-up
-watch(activeMembers, (members) => {
-  keepOnlyMembers(members.map((member) => member.id))
-})
+// Everyone in the room is in the line-up (unless the host took them out): add people who join,
+// take out people who leave
+watch(
+  activeMembers,
+  (members) => {
+    if (isHost.value) syncLineupWithRoom(members.map((member) => member.id))
+  },
+  { immediate: true }
+)
 
 // Face stickers and the people layer only run on this (shoot) page, not during the other stages
 onMounted(() => setCameraEffects(true))

@@ -35,7 +35,7 @@
 //   resetBehindLayer()                  // when leaving the room
 //
 // Usage in a page (host only):
-//   const { lineup, friendsCount, addToLineup, removeFromLineup, moveInLineup } = useBehindLayer()
+//   const { lineup, friendsOn, setFriendsOn, friendsCount, addToLineup, removeFromLineup, moveInLineup } = useBehindLayer()
 
 import { ref, computed } from 'vue'
 import { loadMediaPipe, createTask } from '../utils/mediapipe.js'
@@ -95,11 +95,16 @@ const EDGE_HIGH = 0.75
 // ---------- Shared state (refs, so pages update automatically) ----------
 const behindLayerLoading = ref(false) // true while the cut-out model downloads
 const behindLayerError = ref('')
-const lineup = ref([])                // member ids, left to right on my screen, me included. [] = nobody.
+const lineup = ref([])                // member ids, left to right on my screen, me included. Everyone in the room
+                                      // is in it, except the people the host took out (removedIds).
+const friendsOn = ref(false)          // the host turned Virtual Friends on (the lineup is only drawn while on)
+const removedIds = ref([])            // the people the host took out (they are not added back when they rejoin)
+// The line-up that is drawn: the lineup while on, nobody while off
+const activeLineup = computed(() => (friendsOn.value ? lineup.value : []))
 const alignMode = ref('auto')         // 'auto', 'free' or 'manual' (see ALIGNMENT MODES at the top)
 
 // How many people (not counting me) are in the line-up
-const friendsCount = computed(() => lineup.value.filter((id) => id !== getUid()).length)
+const friendsCount = computed(() => activeLineup.value.filter((id) => id !== getUid()).length)
 
 let mirrored = false // my preview is mirrored, so "left" on screen is the right of the canvas
 let getRemoteTrack = () => null // given a uid, their video from the call (set by useVideoCall.js)
@@ -136,7 +141,7 @@ function drawBehindLayer(ctx, myVideo, width, height) {
 
   // The line-up, skipping people whose video is off (or not connected yet)
   const entries = []
-  for (const id of lineup.value) {
+  for (const id of activeLineup.value) {
     if (id === myId) {
       entries.push({ id: id, video: myVideo })
     } else {
@@ -399,7 +404,7 @@ function removeRemoteVideo(uid) {
 // Remove the hidden <video>s of people the host took out of the line-up
 function forgetUnusedRemoteVideos() {
   for (const uid of [...remoteVideos.keys()]) {
-    if (!lineup.value.includes(uid)) removeRemoteVideo(uid)
+    if (!activeLineup.value.includes(uid)) removeRemoteVideo(uid)
   }
 }
 
@@ -452,7 +457,7 @@ async function loadSegmenter() {
     console.error(error)
     if (version !== toolsVersion) return
     behindLayerError.value = 'Could not load the people layer. Please check your internet and try again.'
-    lineup.value = []
+    friendsOn.value = false
   } finally {
     if (version === toolsVersion) {
       segmenterLoading = false
@@ -726,11 +731,23 @@ function forgetUnusedCutouts(videosInUse) {
 
 // ---------- The line-up (host only) ----------
 
-// Add someone. They go to the far left or the far right of the line-up, taking turns:
+// Turn Virtual Friends on or off. The line-up (and who was taken out) is kept while off.
+function setFriendsOn(on) {
+  behindLayerError.value = ''
+  friendsOn.value = on
+}
+
+// Add someone (back). They go to the far left or the far right of the line-up, taking turns:
 // left if there are no more people on my left than on my right, otherwise right.
 function addToLineup(id) {
   behindLayerError.value = ''
+  removedIds.value = removedIds.value.filter((other) => other !== id)
+  placeInLineup(id)
+}
+
+function placeInLineup(id) {
   const myId = getUid()
+  if (lineup.value.includes(id)) return
   if (lineup.value.length === 0) {
     lineup.value = [id, myId]
     return
@@ -741,10 +758,10 @@ function addToLineup(id) {
   lineup.value = onMyLeft <= onMyRight ? [id, ...lineup.value] : [...lineup.value, id]
 }
 
-// Remove someone. If only I am left, the line-up is empty (the layer turns off).
+// Take someone out. They stay out (even if they leave and come back) until the host adds them again.
 function removeFromLineup(id) {
-  const rest = lineup.value.filter((other) => other !== id)
-  lineup.value = rest.length > 1 ? rest : []
+  if (!removedIds.value.includes(id)) removedIds.value = [...removedIds.value, id]
+  lineup.value = lineup.value.filter((other) => other !== id)
 }
 
 // Swap the person at this place with their neighbour on the left (-1) or right (+1)
@@ -822,11 +839,15 @@ function resetManualSpots() {
   manualSpots.clear()
 }
 
-// Take out anyone who is no longer in the room (memberIds = everyone still here)
-function keepOnlyMembers(memberIds) {
-  const stillHere = lineup.value.filter((id) => id === getUid() || memberIds.includes(id))
-  if (stillHere.length !== lineup.value.length) {
-    lineup.value = stillHere.length > 1 ? stillHere : []
+// Keep the line-up the same as the room (memberIds = everyone here now, me included):
+// people who left are taken out, and everyone new is added, unless the host took them out before.
+function syncLineupWithRoom(memberIds) {
+  const myId = getUid()
+  const stillHere = lineup.value.filter((id) => id === myId || memberIds.includes(id))
+  if (stillHere.length !== lineup.value.length) lineup.value = stillHere
+  if (!lineup.value.includes(myId)) lineup.value = [...lineup.value, myId]
+  for (const id of memberIds) {
+    if (id !== myId && !removedIds.value.includes(id)) placeInLineup(id)
   }
 }
 
@@ -855,6 +876,8 @@ function releaseBehindLayer() {
 // Leaving the room: empty line-up, and close everything
 function resetBehindLayer() {
   lineup.value = []
+  friendsOn.value = false
+  removedIds.value = []
   manualSpots.clear()
   drawnOthers = []
   releaseBehindLayer()
@@ -863,6 +886,9 @@ function resetBehindLayer() {
 export function useBehindLayer() {
   return {
     lineup,
+    activeLineup,
+    friendsOn,
+    setFriendsOn,
     friendsCount,
     alignMode,
     setAlignMode,
@@ -876,7 +902,7 @@ export function useBehindLayer() {
     addToLineup,
     removeFromLineup,
     moveInLineup,
-    keepOnlyMembers,
+    syncLineupWithRoom,
   }
 }
 

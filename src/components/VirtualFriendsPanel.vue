@@ -26,7 +26,7 @@ const uid = getUid()
 const onComputer = getDeviceType() === 'Computer'
 const { activeMembers } = useRoom()
 const { getRemoteUser } = useVideoCall()
-const { lineup, alignMode, setAlignMode, resetManualSpots, behindLayerLoading, addToLineup, removeFromLineup, moveInLineup } = useBehindLayer()
+const { lineup, friendsOn, setFriendsOn, alignMode, setAlignMode, resetManualSpots, behindLayerLoading, addToLineup, removeFromLineup, moveInLineup } = useBehindLayer()
 
 // How people are placed on my camera (see ALIGNMENT MODES in useBehindLayer.js). Manual comes later.
 const ALIGN_MODES = [
@@ -34,6 +34,8 @@ const ALIGN_MODES = [
   { id: 'free', label: 'Free', hint: 'Everyone shows up where they stand in their own camera. Move closer to look bigger, or to the side to stand at the side.' },
   { id: 'manual', label: 'Manual', hint: 'Drag people on your camera to move them. Pinch or scroll to resize.' },
 ]
+// Only Auto lines people up in list order. In Free and Manual the order does nothing, so it is hidden.
+const showOrder = computed(() => alignMode.value === 'auto')
 const alignHint = computed(() => ALIGN_MODES.find((mode) => mode.id === alignMode.value).hint)
 
 // Everyone in the room except me
@@ -74,6 +76,18 @@ function hasVideo(id) {
         <AppIcon name="lock" :size="12" /> Host only
       </span>
       <span v-if="behindLayerLoading" class="panel-loading">Loading...</span>
+      <!-- On / off: everyone in the room is added; the ticks below take people out -->
+      <button
+        class="on-switch"
+        :class="{ on: friendsOn }"
+        role="switch"
+        :aria-checked="friendsOn"
+        aria-label="Virtual Friends on"
+        :disabled="disabled"
+        @click="setFriendsOn(!friendsOn)"
+      >
+        <span class="on-knob"></span>
+      </button>
       <button class="icon-btn" aria-label="Close" @click="$emit('close')">
         <AppIcon name="close" :size="16" />
       </button>
@@ -104,8 +118,10 @@ function hasVideo(id) {
       <button v-if="alignMode === 'manual'" class="reset-btn" :disabled="disabled" @click="resetManualSpots">Reset</button>
     </p>
 
+    <p v-if="!friendsOn" class="panel-hint">Turn on to put everyone ticked below into your camera.</p>
+
     <p v-if="others.length === 0" class="panel-empty">Nobody else is in the room yet.</p>
-    <p v-else-if="inLineup.length > 0" class="panel-hint">Left to right on your screen</p>
+    <p v-else-if="inLineup.length > 0 && showOrder" class="panel-hint">Left to right on your screen</p>
 
     <!-- TransitionGroup: when the order changes, the rows slide to their new places (see .lineup-move) -->
     <TransitionGroup tag="ul" name="lineup" class="friends-list">
@@ -116,13 +132,14 @@ function hasVideo(id) {
         class="person chosen"
         :class="{ me: member.id === uid, lifted: lastMoved === member.id }"
       >
-        <span class="spot-number">{{ index + 1 }}</span>
+        <span v-if="showOrder" class="spot-number">{{ index + 1 }}</span>
         <img :src="profileOf(member.id).avatar" class="avatar" alt="" />
         <span class="person-text">
           <span class="person-name">{{ member.name }}<template v-if="member.id === uid"> (you)</template></span>
           <span v-if="!hasVideo(member.id)" class="person-note">camera off</span>
         </span>
         <button
+          v-if="showOrder"
           class="icon-btn"
           :aria-label="'Move ' + member.name + ' left'"
           :disabled="disabled || index === 0"
@@ -131,6 +148,7 @@ function hasVideo(id) {
           <AppIcon name="chevron" :size="16" class="flip" />
         </button>
         <button
+          v-if="showOrder"
           class="icon-btn"
           :aria-label="'Move ' + member.name + ' right'"
           :disabled="disabled || index === inLineup.length - 1"
@@ -155,7 +173,7 @@ function hasVideo(id) {
 
       <!-- Not in the line-up: an empty tick to add them (left or right of me, taking turns) -->
       <li v-for="member in notInLineup" :key="member.id" class="person">
-        <span class="spot-number"></span>
+        <span v-if="showOrder" class="spot-number"></span>
         <img :src="profileOf(member.id).avatar" class="avatar" alt="" />
         <span class="person-text">
           <span class="person-name">{{ member.name }}</span>
@@ -298,6 +316,50 @@ function hasVideo(id) {
 
 .reset-btn:disabled {
   opacity: 0.5;
+}
+
+/* The on / off switch in the header */
+.on-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 36px;
+  height: 20px;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.25);
+  transition: background-color 150ms ease;
+}
+
+.on-switch.on {
+  background: var(--brand, #2F5BEA);
+}
+
+.on-switch:disabled {
+  opacity: 0.5;
+}
+
+.on-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(14, 16, 32, 0.3);
+  transition: transform 180ms var(--ease-out, ease-out);
+}
+
+.on-switch.on .on-knob {
+  transform: translateX(16px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .on-knob {
+    transition: none;
+  }
 }
 
 .panel-hint {
