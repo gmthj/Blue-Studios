@@ -14,6 +14,7 @@ import { getFaceFilter } from '../filters/faceFilters.js'
 import StreamVideo from '../components/StreamVideo.vue'
 import FaceFilterPicker from '../components/FaceFilterPicker.vue'
 import VirtualFriendsPanel from '../components/VirtualFriendsPanel.vue'
+import ManualArrange from '../components/ManualArrange.vue'
 import RoomGallery from '../components/RoomGallery.vue'
 import StageBar from '../components/StageBar.vue'
 import AppIcon from '../components/AppIcon.vue'
@@ -40,7 +41,7 @@ watch(faceFilterError, (message) => {
 })
 
 // The layer behind me: only the host can add people behind them
-const { lineup, friendsCount, behindLayerError, keepOnlyMembers } = useBehindLayer()
+const { activeLineup, friendsCount, alignMode, behindLayerError, syncLineupWithRoom } = useBehindLayer()
 const isHost = computed(() => room.value.hostId === uid)
 
 const showFriendsPanel = ref(false) // the host's list of people to put behind them is open
@@ -49,7 +50,7 @@ const showHostOnlyInfo = ref(false) // everyone else: the card saying Virtual Fr
 // The host's line-up is only on the host's device, so the host saves it in the room (virtualFriends)
 // for everyone else to see that Virtual Friends is on, and who is in it
 watch(
-  lineup,
+  activeLineup,
   (ids) => {
     if (!isHost.value) return
     const saved = room.value.virtualFriends || []
@@ -95,10 +96,15 @@ const hostStream = computed(() => {
 // The host's camera is shown on top of mine. Mine keeps playing underneath, so photos and clips are still from my camera.
 const showingHostCam = computed(() => virtualFriendsOn.value && viewHostCam.value && hostStream.value !== null)
 
-// Someone left the room: take them out of the line-up
-watch(activeMembers, (members) => {
-  keepOnlyMembers(members.map((member) => member.id))
-})
+// Everyone in the room is in the line-up (unless the host took them out): add people who join,
+// take out people who leave
+watch(
+  activeMembers,
+  (members) => {
+    if (isHost.value) syncLineupWithRoom(members.map((member) => member.id))
+  },
+  { immediate: true }
+)
 
 // Face stickers and the people layer only run on this (shoot) page, not during the other stages
 onMounted(() => setCameraEffects(true))
@@ -363,6 +369,14 @@ async function copyJoinLink() {
             <!-- Everyone else, while Virtual Friends is on: the host's camera (everyone together) over mine.
                  Not mirrored, like the host's tile in the call. -->
             <StreamVideo v-if="showingHostCam" class="host-cam-video" :stream="hostStream" :mirrored="false" />
+
+            <!-- Host, Virtual Friends in Manual mode: drag people on my camera, pinch / scroll to resize them -->
+            <ManualArrange
+              v-if="localStream && isHost && alignMode === 'manual' && friendsCount > 0"
+              :video="mainVideo ? mainVideo.videoElem : null"
+              :mirrored="mirrored"
+              :disabled="capturing"
+            />
 
             <!-- No camera (yet): a dark box with a camera icon instead of plain black -->
             <div v-if="!localStream && !cameraError" class="camera-waiting">

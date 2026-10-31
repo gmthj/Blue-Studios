@@ -14,7 +14,7 @@ import AppIcon from './AppIcon.vue'
 // See useBehindLayer.js.
 // Usage: <VirtualFriendsPanel :disabled="countdown > 0" @close="..." />
 
-defineProps({
+const props = defineProps({
   disabled: { type: Boolean, default: false }, // e.g. while the 3-2-1 countdown runs
 })
 defineEmits(['close'])
@@ -26,7 +26,27 @@ const uid = getUid()
 const onComputer = getDeviceType() === 'Computer'
 const { activeMembers } = useRoom()
 const { getRemoteUser } = useVideoCall()
-const { lineup, behindLayerLoading, addToLineup, removeFromLineup, moveInLineup } = useBehindLayer()
+const { lineup, friendsOn, setFriendsOn, alignMode, setAlignMode, resetManualSpots, behindLayerLoading, addToLineup, removeFromLineup, moveInLineup } = useBehindLayer()
+
+// How people are placed on my camera (see ALIGNMENT MODES in useBehindLayer.js). Manual comes later.
+const ALIGN_MODES = [
+  { id: 'auto', label: 'Auto', hint: 'Everyone is sized to you and lined up beside you.' },
+  { id: 'free', label: 'Free', hint: 'Everyone shows up where they stand in their own camera. Move closer to look bigger, or to the side to stand at the side.' },
+  { id: 'manual', label: 'Manual', hint: 'Drag people on your camera to move them. Pinch or scroll to resize.' },
+]
+// Only Auto lines people up in list order. In Free and Manual the order does nothing, so it is hidden.
+const showOrder = computed(() => alignMode.value === 'auto')
+const alignHint = computed(() => ALIGN_MODES.find((mode) => mode.id === alignMode.value).hint)
+
+// Clicking a row adds the person, or takes them out (not my own row)
+function toggle(row) {
+  if (props.disabled || row.member.id === uid) return
+  if (row.chosen) {
+    removeFromLineup(row.member.id)
+  } else {
+    addToLineup(row.member.id)
+  }
+}
 
 // Everyone in the room except me
 const others = computed(() => activeMembers.value.filter((member) => member.id !== uid))
@@ -36,6 +56,23 @@ const inLineup = computed(() => {
   return lineup.value.map((id) => activeMembers.value.find((member) => member.id === id)).filter((member) => member)
 })
 const notInLineup = computed(() => others.value.filter((member) => !lineup.value.includes(member.id)))
+
+// The rows of the list: { member, chosen, spot }.
+// Auto: the line-up in order (spot = its place, 0 = first), then everyone taken out.
+// Free / Manual: the order does nothing, so everyone stays in one fixed order (me first, then the room's
+// order) and ticking someone on or off does not move their row.
+const rows = computed(() => {
+  if (showOrder.value) {
+    return [
+      ...inLineup.value.map((member, index) => ({ member: member, chosen: true, spot: index })),
+      ...notInLineup.value.map((member) => ({ member: member, chosen: false, spot: -1 })),
+    ]
+  }
+  const me = activeMembers.value.find((member) => member.id === uid)
+  return [me, ...others.value]
+    .filter((member) => member)
+    .map((member) => ({ member: member, chosen: lineup.value.includes(member.id), spot: -1 }))
+})
 
 // The row just moved with an arrow: drawn above the row it swaps with while they slide past each other
 const lastMoved = ref('')
@@ -61,80 +98,114 @@ function hasVideo(id) {
   <div class="friends-panel" :class="{ disabled: disabled }">
     <div class="panel-head">
       <span class="panel-title">Virtual Friends</span>
-      <!-- Only the host has this list; everyone else sees it is host only, and when it is on -->
-      <span class="host-only-tag" title="Only you (the host) can change this. Everyone else sees when it is on.">
-        <AppIcon name="lock" :size="12" /> Host only
-      </span>
       <span v-if="behindLayerLoading" class="panel-loading">Loading...</span>
       <button class="icon-btn" aria-label="Close" @click="$emit('close')">
         <AppIcon name="close" :size="16" />
       </button>
     </div>
 
+    <!-- On / off, the main control: a big bar that turns blue when on.
+         Everyone in the room is added; the rows below take people out. -->
+    <button
+      class="on-bar"
+      :class="{ on: friendsOn }"
+      role="switch"
+      :aria-checked="friendsOn"
+      :disabled="disabled"
+      @click="setFriendsOn(!friendsOn)"
+    >
+      <span class="on-text">
+        <span class="on-title">{{ friendsOn ? 'On' : 'Off' }}</span>
+        <span class="on-sub">{{ friendsOn ? 'Friends are in your camera' : 'Put friends into your camera' }}</span>
+      </span>
+      <span class="on-switch"><span class="on-knob"></span></span>
+    </button>
+
     <p v-if="!onComputer" class="panel-device-note">
       <AppIcon name="laptop" :size="14" />
       <span>Virtual Friends works best when the host is on a computer or laptop.</span>
     </p>
 
+    <!-- How people are placed: Auto / Free / Manual -->
+    <div class="align-modes" role="group" aria-label="Alignment">
+      <button
+        v-for="mode in ALIGN_MODES"
+        :key="mode.id"
+        :class="{ active: alignMode === mode.id }"
+        :aria-pressed="alignMode === mode.id"
+        :disabled="disabled"
+        :title="mode.hint"
+        @click="setAlignMode(mode.id)"
+      >
+        {{ mode.label }}
+      </button>
+    </div>
+    <p class="panel-hint align-hint">
+      <span>{{ alignHint }}</span>
+      <!-- Manual: put everyone back where Auto would put them -->
+      <button v-if="alignMode === 'manual'" class="reset-btn" :disabled="disabled" @click="resetManualSpots">Reset</button>
+    </p>
+
+
     <p v-if="others.length === 0" class="panel-empty">Nobody else is in the room yet.</p>
-    <p v-else-if="inLineup.length > 0" class="panel-hint">Left to right on your screen</p>
+    <p v-else-if="inLineup.length > 0 && showOrder" class="panel-hint">Left to right on your screen</p>
 
     <!-- TransitionGroup: when the order changes, the rows slide to their new places (see .lineup-move) -->
     <TransitionGroup tag="ul" name="lineup" class="friends-list">
-      <!-- The line-up, left to right: arrows to move anyone (me too), a tick to remove others -->
+      <!-- One row per person. Auto: the line-up left to right (arrows move anyone, me too), then the people
+           taken out. A filled tick takes someone out, an empty one adds them back (left or right of me, taking turns). -->
+      <!-- The whole row (not just the tick) adds / takes out the person. My own row cannot be clicked. -->
       <li
-        v-for="(member, index) in inLineup"
-        :key="member.id"
-        class="person chosen"
-        :class="{ me: member.id === uid, lifted: lastMoved === member.id }"
+        v-for="row in rows"
+        :key="row.member.id"
+        class="person"
+        :class="{
+          chosen: row.chosen,
+          me: row.member.id === uid,
+          lifted: lastMoved === row.member.id,
+          clickable: row.member.id !== uid && !disabled,
+        }"
+        :role="row.member.id !== uid ? 'checkbox' : null"
+        :aria-checked="row.member.id !== uid ? row.chosen : null"
+        :aria-disabled="row.member.id !== uid ? disabled : null"
+        :tabindex="row.member.id !== uid && !disabled ? 0 : null"
+        @click="toggle(row)"
+        @keydown.enter.prevent="toggle(row)"
+        @keydown.space.prevent="toggle(row)"
       >
-        <span class="spot-number">{{ index + 1 }}</span>
-        <img :src="profileOf(member.id).avatar" class="avatar" alt="" />
+        <span v-if="showOrder" class="spot-number">{{ row.chosen ? row.spot + 1 : '' }}</span>
+        <img :src="profileOf(row.member.id).avatar" class="avatar" alt="" />
         <span class="person-text">
-          <span class="person-name">{{ member.name }}<template v-if="member.id === uid"> (you)</template></span>
-          <span v-if="!hasVideo(member.id)" class="person-note">camera off</span>
+          <span class="person-name">{{ row.member.name }}<template v-if="row.member.id === uid"> (you)</template></span>
+          <span v-if="!hasVideo(row.member.id)" class="person-note">camera off</span>
         </span>
-        <button
-          class="icon-btn"
-          :aria-label="'Move ' + member.name + ' left'"
-          :disabled="disabled || index === 0"
-          @click="move(index, -1, member.id)"
-        >
-          <AppIcon name="chevron" :size="16" class="flip" />
-        </button>
-        <button
-          class="icon-btn"
-          :aria-label="'Move ' + member.name + ' right'"
-          :disabled="disabled || index === inLineup.length - 1"
-          @click="move(index, 1, member.id)"
-        >
-          <AppIcon name="chevron" :size="16" />
-        </button>
-        <span class="end-slot">
+        <template v-if="showOrder && row.chosen">
           <button
-            v-if="member.id !== uid"
-            class="tick on"
-            :aria-label="'Remove ' + member.name"
-            :disabled="disabled"
-            @click="removeFromLineup(member.id)"
+            class="icon-btn"
+            :aria-label="'Move ' + row.member.name + ' left'"
+            :disabled="disabled || row.spot === 0"
+            @click.stop="move(row.spot, -1, row.member.id)"
+            @keydown.stop
           >
-            <AppIcon name="check" :size="14" :stroke-width="3" />
+            <AppIcon name="chevron" :size="16" class="flip" />
           </button>
-          <!-- I cannot be removed, so a "Host" label instead of a tick -->
-          <span v-else class="host-badge">Host</span>
-        </span>
-      </li>
-
-      <!-- Not in the line-up: an empty tick to add them (left or right of me, taking turns) -->
-      <li v-for="member in notInLineup" :key="member.id" class="person">
-        <span class="spot-number"></span>
-        <img :src="profileOf(member.id).avatar" class="avatar" alt="" />
-        <span class="person-text">
-          <span class="person-name">{{ member.name }}</span>
-          <span v-if="!hasVideo(member.id)" class="person-note">camera off</span>
-        </span>
+          <button
+            class="icon-btn"
+            :aria-label="'Move ' + row.member.name + ' right'"
+            :disabled="disabled || row.spot === inLineup.length - 1"
+            @click.stop="move(row.spot, 1, row.member.id)"
+            @keydown.stop
+          >
+            <AppIcon name="chevron" :size="16" />
+          </button>
+        </template>
         <span class="end-slot">
-          <button class="tick" :aria-label="'Add ' + member.name" :disabled="disabled" @click="addToLineup(member.id)"></button>
+          <!-- I cannot be taken out, so a "Host" label instead of a tick -->
+          <span v-if="row.member.id === uid" class="host-badge">Host</span>
+          <!-- Just a picture of the tick: the whole row is the button -->
+          <span v-else class="tick" :class="{ on: row.chosen, disabled: disabled }" aria-hidden="true">
+            <AppIcon v-if="row.chosen" name="check" :size="14" :stroke-width="3" />
+          </span>
         </span>
       </li>
     </TransitionGroup>
@@ -174,18 +245,6 @@ function hasVideo(id) {
   font-weight: 700;
 }
 
-.host-only-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 2px 6px;
-  border-radius: 999px;
-  font-size: 0.68rem;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.85);
-  background: rgba(255, 255, 255, 0.16);
-}
-
 .panel-loading {
   font-size: 0.75rem;
   color: rgba(255, 255, 255, 0.65);
@@ -213,6 +272,151 @@ function hasVideo(id) {
 
 .panel-device-note :deep(svg) {
   margin-top: 1px;
+}
+
+.align-modes {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 6px;
+  padding: 3px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.align-modes button {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.85);
+  background: transparent;
+  font-size: 0.78rem;
+  font-weight: 600;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.align-modes button.active {
+  color: #0E1020;
+  background: #ffffff;
+}
+
+.align-modes button:disabled {
+  opacity: 0.5;
+}
+
+.align-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.reset-btn {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 2px 10px;
+  border: 0;
+  border-radius: 999px;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.reset-btn:disabled {
+  opacity: 0.5;
+}
+
+/* The on / off bar under the header: the main control, so it is big and turns blue when on */
+.on-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 14px;
+  color: #ffffff;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.12);
+  transition: background-color 180ms ease, transform 160ms var(--ease-out, ease-out);
+}
+
+.on-bar.on {
+  background: var(--brand, #2F5BEA);
+}
+
+.on-bar:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.on-bar:disabled {
+  opacity: 0.5;
+}
+
+.on-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.on-title {
+  font-size: 0.95rem;
+  font-weight: 800;
+}
+
+.on-sub {
+  font-size: 0.72rem;
+  color: rgba(255, 255, 255, 0.75);
+}
+
+.on-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 44px;
+  height: 26px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.3);
+  transition: background-color 180ms ease;
+}
+
+.on-bar.on .on-switch {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.on-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(14, 16, 32, 0.35);
+  transition: transform 200ms var(--ease-out, ease-out);
+}
+
+.on-bar.on .on-knob {
+  transform: translateX(18px);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .on-bar:not(:disabled):not(.on):hover {
+    background: rgba(255, 255, 255, 0.18);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .on-bar,
+  .on-knob {
+    transition: none;
+  }
 }
 
 .panel-hint {
@@ -373,8 +577,18 @@ function hasVideo(id) {
 }
 
 .icon-btn:disabled,
-.tick:disabled {
+.tick.disabled {
   opacity: 0.35;
+}
+
+/* A row that can be clicked (everyone but me) */
+.person.clickable {
+  cursor: pointer;
+}
+
+.person:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: -2px;
 }
 
 /* The chevron icon points down; flipped, it points up */
@@ -387,7 +601,11 @@ function hasVideo(id) {
     background: rgba(255, 255, 255, 0.22);
   }
 
-  .tick:not(:disabled):not(.on):hover {
+  .person.clickable:hover {
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .person.clickable:hover .tick:not(.on) {
     border-color: #ffffff;
   }
 }
