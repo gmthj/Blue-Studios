@@ -587,8 +587,8 @@ onMounted(loadTracks)
     <div class="col-12 col-lg-9">
       <div class="row g-3">
         <!-- DECK A: each @event calls a function above with the value DeckCard emitted.
-             Full width in simple mode, a third of the row in the DJ booth. -->
-        <div class="col-12" :class="{ 'col-md-5': djMode }">
+             Full width in simple mode, 5 of 12 columns in the DJ booth (also on a sideways phone: see .deck-col). -->
+        <div class="col-12 deck-col" :class="{ 'col-md-5': djMode }">
           <DeckCard
             label="Deck A"
             :simple="!djMode"
@@ -611,7 +611,7 @@ onMounted(loadTracks)
         </div>
         <!-- MIXER (crossfader): DJ booth only. <Transition> slides it in and fades it out (see .deck-* styles) -->
         <Transition name="deck">
-        <div v-if="djMode" class="col-12 col-md-2">
+        <div v-if="djMode" class="col-12 col-md-2 mixer-col">
           <div class="card h-100">
             <div class="card-body d-flex flex-column justify-content-end text-center">
               <h2 class="h6">Mixer</h2>
@@ -635,7 +635,7 @@ onMounted(loadTracks)
         </Transition>
         <!-- DECK B: DJ booth only -->
         <Transition name="deck">
-        <div v-if="djMode" class="col-12 col-md-5">
+        <div v-if="djMode" class="col-12 col-md-5 deck-col">
           <DeckCard
             label="Deck B"
             color="#7c3aed"
@@ -814,6 +814,25 @@ onMounted(loadTracks)
 
   .track:hover {
     transform: none;
+  }
+}
+
+/* A phone turned sideways (short and wide). Safari leaves out the Dynamic Island, so the page is about
+   750px wide: under Bootstrap's md (768px), so col-md-5 would not apply and the decks would stack.
+   Put the DJ booth side by side anyway, like a laptop: Deck A 5 | mixer 2 | Deck B 5 (of 12 columns).
+   .deck-col.col-md-5 = only in the DJ booth (in simple mode Deck A has no col-md-5, so it stays full width). */
+@media (max-height: 500px) and (orientation: landscape) {
+  .deck-col.col-md-5 {
+    width: 41.66666667%; /* the same numbers Bootstrap uses (41.67% + 16.67% + 41.67% is over 100%, so Deck B wrapped) */
+  }
+
+  .mixer-col {
+    width: 16.66666667%;
+  }
+
+  /* The mixer is only about 125px wide here: no extra space between letters, so "CROSSFADER" fits on one line */
+  .mixer-label {
+    letter-spacing: 0;
   }
 }
 </style>
