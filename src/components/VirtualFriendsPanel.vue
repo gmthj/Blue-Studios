@@ -5,6 +5,7 @@ import { useVideoCall } from '../composables/useVideoCall.js'
 import { useBehindLayer } from '../composables/useBehindLayer.js'
 import { getUid } from '../composables/useAuth.js'
 import { profileOf } from '../profiles.js'
+import { getDeviceType } from '../guest.js'
 import AppIcon from './AppIcon.vue'
 
 // HOST ONLY: choose who stands with the host on their camera, and the LINE-UP: everyone,
@@ -19,6 +20,10 @@ defineProps({
 defineEmits(['close'])
 
 const uid = getUid()
+
+// Cutting people out is heavy work, and some phones' and tablets' graphics do not handle it well,
+// so a host on a phone or tablet is told it works best from a computer
+const onComputer = getDeviceType() === 'Computer'
 const { activeMembers } = useRoom()
 const { getRemoteUser } = useVideoCall()
 const { lineup, behindLayerLoading, addToLineup, removeFromLineup, moveInLineup } = useBehindLayer()
@@ -65,6 +70,11 @@ function hasVideo(id) {
         <AppIcon name="close" :size="16" />
       </button>
     </div>
+
+    <p v-if="!onComputer" class="panel-device-note">
+      <AppIcon name="laptop" :size="14" />
+      <span>Virtual Friends works best when the host is on a computer or laptop.</span>
+    </p>
 
     <p v-if="others.length === 0" class="panel-empty">Nobody else is in the room yet.</p>
     <p v-else-if="inLineup.length > 0" class="panel-hint">Left to right on your screen</p>
@@ -186,6 +196,23 @@ function hasVideo(id) {
   padding: 4px;
   font-size: 0.8rem;
   color: rgba(255, 255, 255, 0.65);
+}
+
+.panel-device-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: #FFE7A8;
+  background: rgba(232, 169, 40, 0.18);
+}
+
+.panel-device-note :deep(svg) {
+  margin-top: 1px;
 }
 
 .panel-hint {

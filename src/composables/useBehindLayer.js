@@ -367,13 +367,15 @@ async function loadSegmenter() {
 
 // The face finder is used to make everyone the same size.
 // If it cannot load, people are just drawn at full height instead.
+// It always runs on the CPU: some phones' GPUs (e.g. on Android) quietly find no faces at all,
+// which drew everyone at full height. It is small and only runs a few times a second, so the CPU is fast enough.
 async function loadDetector() {
   const version = toolsVersion
   detectorLoading = true
   try {
     const { vision, files } = await loadMediaPipe()
-    const task = await createTask(vision.FaceDetector, files, {
-      baseOptions: { modelAssetPath: FACE_DETECTOR_MODEL_URL },
+    const task = await vision.FaceDetector.createFromOptions(files, {
+      baseOptions: { modelAssetPath: FACE_DETECTOR_MODEL_URL, delegate: 'CPU' },
       runningMode: 'IMAGE',
     })
     if (version !== toolsVersion) {
