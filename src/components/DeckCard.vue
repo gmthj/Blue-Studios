@@ -92,22 +92,22 @@ const bars = computed(function () {
 <template>
   <div class="card h-100">
     <div class="card-body">
-      <p class="small text-muted mb-0">{{ simple ? 'Your song' : label }}</p>
-      <div class="d-flex justify-content-between align-items-center">
-        <h2 class="h5 mb-0">{{ track ? track.name : 'No song yet' }}</h2>
-        <!-- musicinfo.speed is Jamendo's rough speed: low / medium / high -->
-        <span v-if="track && track.musicinfo" class="badge rounded-pill text-bg-light border text-capitalize">
-          {{ track.musicinfo.speed }}
-        </span>
-      </div>
-      <p v-if="loading" class="small text-muted mb-0">Loading song...</p>
-      <p v-else-if="track" class="small text-muted mb-0">{{ track.artist_name }}</p>
-      <p v-else class="small text-muted mb-0">Press {{ simple ? 'Use' : label.slice(-1) }} on a song to load it here.</p>
+      <!-- The song name and the record. Laptops: the name on top, a big record under it (column-reverse).
+           Phones: a small record beside the name, so the deck is much shorter (see .deck-head styles). -->
+      <div class="deck-head">
+        <!-- The record spins while this deck is playing (the "spinning" class turns the animation on) -->
+        <div class="vinyl" :class="{ spinning: playing }" aria-hidden="true">
+          <div class="vinyl-label" :style="{ background: color }">
+            <div class="vinyl-hole"></div>
+          </div>
+        </div>
 
-      <!-- The record spins while this deck is playing (the "spinning" class turns the animation on) -->
-      <div class="vinyl my-4 mx-auto" :class="{ spinning: playing }" aria-hidden="true">
-        <div class="vinyl-label" :style="{ background: color }">
-          <div class="vinyl-hole"></div>
+        <div class="deck-info">
+          <p class="small text-muted mb-0">{{ simple ? 'Your song' : label }}</p>
+          <h2 class="h5 mb-0 song-name">{{ track ? track.name : 'No song yet' }}</h2>
+          <p v-if="loading" class="small text-muted mb-0">Loading song...</p>
+          <p v-else-if="track" class="small text-muted mb-0">{{ track.artist_name }}</p>
+          <p v-else class="small text-muted mb-0">Press {{ simple ? 'Use' : label.slice(-1) }} on a song to load it here.</p>
         </div>
       </div>
 
@@ -186,6 +186,20 @@ const bars = computed(function () {
   display: flex;
   align-items: center;
   justify-content: center;
+  margin: 1.5rem auto; /* auto left and right = centred under the name */
+}
+
+/* A very long word (longer than the whole line) breaks onto the next line instead of sticking out of the card.
+   Normal names wrap between words. */
+.song-name {
+  overflow-wrap: break-word;
+  min-width: 0;
+}
+
+/* Laptops: column-reverse puts the name (the 2nd box) on top and the record (the 1st box) under it */
+.deck-head {
+  display: flex;
+  flex-direction: column-reverse;
 }
 
 /* Spin while playing: one full turn every 2 seconds, forever */
@@ -237,5 +251,41 @@ const bars = computed(function () {
   height: 10px;
   border-radius: 50%;
   background: white;
+}
+
+/* Phones (portrait, and landscape too: Safari leaves out the Dynamic Island, so the page is under 768px),
+   and any phone turned sideways (short and wide):
+   a small record beside the song name, so the whole deck fits on a lot less screen */
+@media (max-width: 767.98px), (max-height: 500px) and (orientation: landscape) {
+  .deck-head {
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .vinyl {
+    width: 72px;
+    height: 72px;
+    margin: 0;
+    flex-shrink: 0; /* long song names can't squash the record */
+  }
+
+  .vinyl-label {
+    width: 28px;
+    height: 28px;
+    border-width: 2px;
+  }
+
+  .vinyl-hole {
+    width: 6px;
+    height: 6px;
+  }
+
+  /* min-width 0: lets a long song name wrap instead of pushing the card wider */
+  .deck-info {
+    flex: 1;
+    min-width: 0;
+  }
 }
 </style>
