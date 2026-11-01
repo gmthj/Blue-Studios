@@ -198,3 +198,27 @@ export function cropSource(imageWidth, imageHeight, w, h, crop) {
     sh: sh,
   }
 }
+
+// ---------- PICK PAGE: EVERY FRAME MUST BE FILLED ----------
+// The room can only leave the Pick page (Next / Export) once every slot of the strip has a photo or video.
+
+// The slots that are still empty, as indexes (0 = the first slot).
+// isFilled(index) is given by the page, because only the page knows the room's photos and videos.
+export function emptySlotIndexes(slotCount, isFilled) {
+  const empty = []
+  for (let i = 0; i < slotCount; i++) {
+    if (!isFilled(i)) empty.push(i)
+  }
+  return empty
+}
+
+// The message for the popup, counting frames from 1 the way people do:
+//   [1]       -> 'Frame 2 is still empty.'
+//   [1, 3]    -> 'Frames 2 and 4 are still empty.'
+//   [0, 1, 3] -> 'Frames 1, 2 and 4 are still empty.'
+export function emptySlotsMessage(indexes) {
+  const names = indexes.map((i) => String(i + 1))
+  if (names.length === 0) return ''
+  if (names.length === 1) return 'Frame ' + names[0] + ' is still empty.'
+  return 'Frames ' + names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] + ' are still empty.'
+}

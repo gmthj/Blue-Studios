@@ -25,7 +25,8 @@ const props = defineProps({
   mode: { type: String, default: 'pick' },              // 'pick' or 'decorate' (anything else: just show the strip, no editing)
   clips: { type: Array, default: () => [] },            // every clip recorded in the room: a slot can hold one (see clips.js)
   editedVideos: { type: Object, default: () => ({}) },  // the saved edited videos: { editId: { name, entries } } (see resolveEditedVideos in clips.js)
-  selectedSlot: { type: Number, default: null },        // the slot to highlight
+  selectedSlot: { type: Number, default: null },
+  flashEmpty: { type: Boolean, default: false },         // Pick page: briefly mark the empty slots red (tried to move on too early)        // the slot to highlight
   selectedStickerId: { type: Number, default: null },   // the sticker to outline
 })
 
@@ -474,7 +475,8 @@ function onStripClick(event) {
       v-for="(slot, index) in layout.slots"
       :key="index"
       class="slot"
-      :class="[frameStyle.shape, { highlight: hoverSlot === index || selectedSlot === index, croppable: canCrop(index), panning: panningIndex === index }]"
+      :data-test="'slot-' + index"
+      :class="[frameStyle.shape, { highlight: hoverSlot === index || selectedSlot === index, croppable: canCrop(index), 'flash-empty': flashEmpty && !(photoIn(index) || clipIn(index) || editedIn(index)), panning: panningIndex === index }]"
       :style="{ left: slot.x + '%', top: slot.y + '%', width: slot.w + '%', height: slot.h + '%' }"
       @click.stop="onSlotClick(index)"
       @pointerdown="onPanStart($event, index)"
@@ -676,6 +678,23 @@ function onStripClick(event) {
 .slot.highlight {
   border: 3px solid #2F5BEA;
   background: rgba(47, 91, 234, 0.15);
+}
+
+/* An empty slot after trying to move on: red, with a small shake */
+.slot.flash-empty {
+  border: 3px solid #E5484D;
+  background: rgba(229, 72, 77, 0.12);
+  animation: slot-shake 0.4s ease 2;
+}
+
+.slot.flash-empty .slot-empty {
+  color: #C9353A;
+}
+
+@keyframes slot-shake {
+  0%, 100% { translate: 0 0; }
+  25% { translate: -3px 0; }
+  75% { translate: 3px 0; }
 }
 
 .slot-empty {
