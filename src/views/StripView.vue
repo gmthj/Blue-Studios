@@ -3,7 +3,7 @@ import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import { useAuth } from '../composables/useAuth.js'
-import { LAYOUTS, FRAME_STYLES, saveFields, saveField, cropOf, MAX_ZOOM } from '../stripData.js'
+import { LAYOUTS, FRAME_STYLES, saveFields, saveField, cropOf, MAX_ZOOM, emptySlotIndexes, emptySlotsMessage } from '../stripData.js'
 import { listMyItems, getFileUrl, templateFrameFields } from '../studio.js'
 import { getItem, listMySaved } from '../marketplace.js'
 import { loadSavedFramesFromDB } from '../utils/savedFrameEngine.js'
@@ -11,7 +11,7 @@ import { resolveEditedVideos, editedVideoList } from '../clips.js'
 import EditedVideoThumb from '../components/EditedVideoThumb.vue'
 import ClipThumb from '../components/ClipThumb.vue'
 import StageBar from '../components/StageBar.vue'
-import { askConfirm } from '../composables/useDialog.js'
+import { askConfirm, showNotice } from '../composables/useDialog.js'
 import PhotoStrip from '../components/PhotoStrip.vue'
 
 // The "Pick" page (a child of RoomLayout.vue): choose a frame and drag photos into it.
@@ -218,6 +218,30 @@ const filledCount = computed(() => {
   return count
 })
 
+// ---------- EVERY FRAME MUST BE FILLED ----------
+// The slots still without a photo or video. The room can only move on (Next / Export) when this is empty.
+const emptySlots = computed(() => emptySlotIndexes(layout.value.slots.length, (i) => slotHasMedia(i)))
+const flashEmpty = ref(false) // briefly true after trying to move on too early: the empty slots light up red
+let flashTimer = null
+
+// Next / Export: only when every frame has something in it. Otherwise say which frames are empty, and
+// make them flash on the strip, instead of moving everyone on.
+async function tryLeavePick(stage) {
+  if (emptySlots.value.length > 0) {
+    flashEmpty.value = true
+    clearTimeout(flashTimer)
+    flashTimer = setTimeout(() => (flashEmpty.value = false), 1600)
+    await showNotice({
+      title: 'Fill every frame to continue',
+      message: emptySlotsMessage(emptySlots.value) + ' Drag a photo or video into each frame before moving on.',
+      confirmLabel: 'OK',
+      icon: 'layout',
+    })
+    return
+  }
+  await goToStage(stage)
+}
+
 // Used to show a tick on photos that are already on the strip
 function isUsed(photoId) {
   return Object.values(slotPhotos.value).includes(photoId)
@@ -336,7 +360,7 @@ function stepZoom(step) {
 // To start with: a device with no precise pointer (no mouse or trackpad) is a phone or tablet.
 // After that, whatever the person actually uses wins: a finger tap switches to the phone tip,
 // a mouse or trackpad click switches to the laptop tip (useful for laptops with a touchscreen).
-const usesTouch = ref(!window.matchMedia('(any-pointer: fine)').matches)
+const usesTouch = ref(window.matchMedia ? !window.matchMedia('(any-pointer: fine)').matches : false) // (older browsers and tests have no matchMedia)
 
 function onAnyPointerDown(event) {
   usesTouch.value = event.pointerType === 'touch'
@@ -501,6 +525,7 @@ async function goToStage(stage) {
           :crops="shownCrops"
           :stickers="room.stripStickers || []"
           :selected-slot="cropSlot"
+          :flash-empty="flashEmpty"
           @drop-photo="placePhoto"
           @slot-click="onSlotClick"
           @clear-slot="clearSlot"
@@ -678,7 +703,7 @@ async function goToStage(stage) {
           {{ filledCount }} of {{ layout.slots.length }} slots filled · Slots: photo or clip
         </p>
 
-        <button class="btn btn-outline-primary w-100 mb-2" :disabled="filledCount === 0" @click="goToStage('export')">
+        <button class="btn btn-outline-primary w-100 mb-2" data-test="pick-export" @click="tryLeavePick('export')">
           Export
         </button>
 
@@ -687,7 +712,7 @@ async function goToStage(stage) {
         <button class="btn btn-outline-secondary w-100 mb-2" :disabled="filledCount === 0 && clips.length === 0" @click="goToStage('video')">
           Edit video
         </button>
-        <button class="btn btn-primary w-100" :disabled="filledCount === 0" @click="goToStage('decorate')">
+        <button class="btn btn-primary w-100" data-test="pick-next" @click="tryLeavePick('decorate')">
           Next
         </button>
       </div>
@@ -696,6 +721,7 @@ async function goToStage(stage) {
 </template>
 
 <style scoped>
+
 /* The reposition bar under the strip: a white card like the other panels, in the brand blue.
    position: sticky + bottom keeps it on screen at the bottom of the window while the strip is in view,
    so on a long strip (or a phone) the zoom slider can be used without scrolling down to it. */
