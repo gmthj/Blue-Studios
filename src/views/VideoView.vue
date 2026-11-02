@@ -1,6 +1,7 @@
 <script setup>
 // ref: a value Vue watches (the page updates when it changes). computed: a value worked out from other values.
 import { ref, computed } from 'vue'
+import { playSound } from '../sounds.js'
 // updateDoc changes some fields of a Firestore document without touching the others. deleteField() removes a field.
 import { updateDoc, deleteField } from 'firebase/firestore'
 // useRoom gives the shared room data (the same for every page in the room)
@@ -169,6 +170,7 @@ async function saveEdit() {
   }
   await updateDoc(roomRef(), changes)
   message.value = 'Saved as ' + name + '! Make another, or go back to Pick.'
+  playSound('success')
 }
 
 // Cancel: stop changing a saved edit, and empty the timeline (the saved edit stays as it was)

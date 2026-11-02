@@ -3,6 +3,7 @@ import { ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { FACE_FILTERS } from '../filters/faceFilters.js'
 import { useFaceFilter } from '../composables/useFaceFilter.js'
 import AppIcon from './AppIcon.vue'
+import { playSound } from '../sounds.js'
 
 // A row of round filter buttons that scrolls BEHIND the shutter button, like Instagram / TikTok.
 // The filter in the middle (under the shutter) is the chosen one: swipe to change it, or tap a filter
@@ -56,13 +57,22 @@ function middleFilterId() {
   return closestId
 }
 
-// While swiping, the scroll event fires many times. Wait until it has stopped for a moment,
-// then use the filter that ended up in the middle.
+// While swiping, the scroll event fires many times. Each time a new filter reaches the middle it
+// ticks (like turning a dial). Once the scrolling has stopped for a moment, the filter that ended up
+// in the middle is chosen, with a click.
+let tickedId = null // the filter that was in the middle at the last tick
 function onScroll() {
+  const nowInMiddle = middleFilterId()
+  if (tickedId !== null && nowInMiddle !== tickedId) playSound('filterTick')
+  tickedId = nowInMiddle
+
   clearTimeout(scrollTimer)
   scrollTimer = setTimeout(() => {
     const id = middleFilterId()
-    if (id !== faceFilterId.value) setFaceFilter(id)
+    if (id !== faceFilterId.value) {
+      setFaceFilter(id)
+      playSound('filter')
+    }
   }, 120)
 }
 
@@ -101,6 +111,7 @@ onBeforeUnmount(() => clearTimeout(scrollTimer))
       :aria-label="filter.name"
       :title="filter.name"
       :disabled="disabled"
+      data-sound="none"
       @click="scrollToFilter(filter.id, true)"
     >
       <img v-if="filter.thumbnail" :src="filter.thumbnail" alt="" draggable="false" />

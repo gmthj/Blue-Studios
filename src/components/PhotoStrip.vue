@@ -2,6 +2,7 @@
 import { ref, computed, watch } from 'vue'
 import { filterCss, cropOf, cropPositionCss, cropZoomCss, MAX_ZOOM } from '../stripData.js'
 import ClipSequencePlayer from './ClipSequencePlayer.vue'
+import AppIcon from './AppIcon.vue'
 import { CLIP_SECONDS } from '../clips.js'
 
 // One photostrip, drawn from data in layers: frame background -> photo slots -> stickers.
@@ -536,7 +537,7 @@ function onStripClick(event) {
       >&times;</button>
 
       <span v-if="mode === 'pick' && editedIn(index)" class="media-badge edited">✂ {{ editedIn(index).name }}</span>
-      <span v-else-if="mode === 'pick' && clipIn(index)" class="media-badge">▶ video</span>
+      <span v-else-if="mode === 'pick' && clipIn(index)" class="media-badge"><AppIcon name="play-fill" :size="8" /> video</span>
     </div>
 
     <!-- Stickers, always above the slots (z-index 10 + z, so a bigger z is in front).
@@ -759,6 +760,9 @@ function onStripClick(event) {
   position: absolute;
   left: 4px;
   bottom: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   background: #1A1A2E;
   color: #fff;
   font-size: 0.6rem;

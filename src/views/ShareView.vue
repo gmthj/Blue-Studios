@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { playSound } from '../sounds.js'
 import { useRoute, useRouter } from 'vue-router'
 import { runTransaction, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
@@ -161,10 +162,15 @@ onBeforeUnmount(() => {
 // ---------- THE FINISHED SHARE ----------
 
 const share = ref(null)
+let firstCheck = true // the first check runs when the page opens
 watch(
   () => job.value && job.value.status === 'done' && job.value.shareId,
   async (id) => {
+    const justFinished = !firstCheck
+    firstCheck = false
     share.value = id ? await getShare(id).catch((error) => console.error(error) || null) : null
+    // A happy sound when the strip has just been made (not when opening a strip that was already done)
+    if (share.value && justFinished) playSound('success')
   },
   { immediate: true }
 )
@@ -199,6 +205,7 @@ async function saveToStudio() {
     const blob = await (await fetch(share.value.fileUrl)).blob() // the file is in Storage, so this works on any device
     await saveStripFile({ title: share.value.title, file: blob, format: share.value.format, shareId: share.value.id })
     saveMessage.value = 'Saved to My Studio!'
+    playSound('success')
   } catch (error) {
     console.error(error)
     saveMessage.value = 'Could not save. Please try again.'

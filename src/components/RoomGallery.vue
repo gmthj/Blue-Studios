@@ -192,7 +192,9 @@ async function goToStrip() {
     gap: 6px;
   }
 
-  .shot-photos img {
+  /* Photos and clips are the same size: they fill their column, in the shape of a photo */
+  .shot-photos img,
+  .shot-photos .clip {
     width: 100%;
     height: auto;
     aspect-ratio: 4 / 3;
@@ -201,13 +203,9 @@ async function goToStrip() {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .shot-photos img {
-    transition: none;
-  }
-
+  .shot-photos img,
   .shot-photos .clip {
-    width: 100%;
-    height: auto;
+    transition: none;
   }
 }
 </style>

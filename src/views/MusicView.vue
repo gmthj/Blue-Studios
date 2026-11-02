@@ -1,5 +1,6 @@
 <script setup>
 import { updateDoc } from 'firebase/firestore'
+import { playSound } from '../sounds.js'
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import axios from 'axios'
 import * as Tone from 'tone'   // NEW: not in syllabus (your X-factor)
@@ -293,6 +294,7 @@ async function useMix() {
     // 2. Save its location on the room, for Jun Han's Export page
     await updateDoc(roomRef(), { music: { audioPath: audioPath, duration: MAX_EDIT_SECONDS } })
     saved.value = true
+    playSound('success')
   } catch (error) {
     console.error(error)
     errorMessage.value = 'Could not save the mix. Please try again.'

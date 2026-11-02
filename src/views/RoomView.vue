@@ -19,6 +19,7 @@ import RoomGallery from '../components/RoomGallery.vue'
 import StageBar from '../components/StageBar.vue'
 import AppIcon from '../components/AppIcon.vue'
 import { showNotice } from '../composables/useDialog.js'
+import { playSound } from '../sounds.js'
 
 // The camera page (a child of RoomLayout.vue, which has already joined the room and the call)
 // Photo mode: everyone's camera takes a photo when the countdown ends.
@@ -208,6 +209,7 @@ async function pressShutter() {
 function startCountdown() {
   const videoMode = captureMode.value === 'video' // decided now, so a late mode change does not matter
   countdown.value = COUNTDOWN_SECONDS
+  playSound('tick') // a beep for each number: 3, 2, 1
   const photoInMs = COUNTDOWN_SECONDS * 1000 // the photo is taken when the countdown reaches 0
 
   // Flash on, FLASH_BEFORE_MS before the photo (Math.max: never less than 0 ms from now)
@@ -221,12 +223,15 @@ function startCountdown() {
 
   countdownTimer = setInterval(() => {
     countdown.value = countdown.value - 1
+    if (countdown.value > 0) playSound('tick')
 
     if (countdown.value === 0) {
       clearInterval(countdownTimer)
       if (videoMode) {
+        playSound('recStart')
         takeClip()
       } else {
+        playSound('shutter')
         takePhoto()
       }
 
@@ -278,6 +283,7 @@ async function takeClip() {
   recording.value = true
   try {
     const blob = await recordStream(localStream.value, CLIP_SECONDS)
+    playSound('recStop')
     recording.value = false
     savingClip.value = true
     await uploadClip(code.value, blob, { name: guestName, shotNumber: shotNumber, mirrored: isMirrored })
@@ -292,6 +298,7 @@ async function takeClip() {
 async function copyJoinLink() {
   try {
     await navigator.clipboard.writeText(joinLink)
+    playSound('copy')
     copied.value = true
     setTimeout(() => {
       copied.value = false

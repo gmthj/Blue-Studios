@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { playSound } from '../sounds.js'
 import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import { getGuestName } from '../guest.js'
@@ -377,6 +378,7 @@ async function addSticker(src, x, y, width = 45, extra = {}) {
     ...extra,
   }
   selectedStickerId.value = sticker.id // select it, so the size / rotate sliders show
+  playSound('pop')
   await saveStickers([...stickers.value, sticker])
 }
 
@@ -394,6 +396,7 @@ function moveSticker(id, x, y) {
 
 async function deleteSticker(id) {
   selectedStickerId.value = null
+  playSound('remove')
   await saveStickers(stickers.value.filter((s) => s.id !== id))
 }
 
@@ -576,6 +579,7 @@ async function saveToStudio() {
     const image = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.92))
     await saveStrip({ title: 'Room ' + code.value + ' · ' + new Date().toLocaleDateString(), image: image })
     saveMessage.value = 'Saved to My Studio!'
+    playSound('success')
   } catch (error) {
     console.error(error)
     saveMessage.value = 'Could not save. Please try again.'
@@ -596,7 +600,7 @@ async function saveToStudio() {
         <!-- Each preview is the selected photo with that filter's CSS -->
         <div class="row g-2 mb-3">
           <div v-for="f in FILTERS" :key="f.id" class="col-6">
-            <button class="filter-btn w-100" :class="{ active: currentEdit.filter === f.id }" @click="updateEdit('filter', f.id)">
+            <button class="filter-btn w-100" :class="{ active: currentEdit.filter === f.id }" data-sound="filter" @click="updateEdit('filter', f.id)">
               <img v-if="selectedPhoto" :src="selectedPhoto.image" alt="" :style="{ filter: f.css }" />
               <span v-else class="filter-empty" :style="{ filter: f.css }"></span>
               <span class="small d-block mt-1">{{ f.name }}</span>

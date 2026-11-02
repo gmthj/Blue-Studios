@@ -1,5 +1,6 @@
 <script setup>
 import { ref, watch } from 'vue'
+import { playSound } from '../sounds.js'
 import QRCode from 'qrcode'
 import { shareLink } from '../shares.js'
 
@@ -28,6 +29,7 @@ watch(
 async function copyLink() {
   try {
     await navigator.clipboard.writeText(link.value)
+    playSound('copy')
     copied.value = true
     setTimeout(() => (copied.value = false), 2000)
   } catch (error) {
