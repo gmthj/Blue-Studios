@@ -4,6 +4,9 @@ import './styles/pages.css' // the look of Marketplace, My Studio and Admin (onl
 import App from './App.vue'
 import router from './router.js'
 import { startAuth } from './composables/useAuth.js'
+import { startUiSounds } from './sounds.js'
+
+startUiSounds() // a little sound for every button, switch and slider (sounds.js)
 
 // Wait until we know who is signed in (or have signed in as a guest) before showing any page,
 // so every page can use getUid() straight away.

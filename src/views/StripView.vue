@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { playSound } from '../sounds.js'
 import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import { useAuth } from '../composables/useAuth.js'
@@ -276,6 +277,7 @@ async function placePhoto(index, photoId) {
   }
   selectedPhotoId.value = null
   cropSlot.value = index // show the reposition bar for what was just placed
+  playSound('pop')
   await updateDoc(roomRef(), changes)
 }
 
@@ -286,6 +288,7 @@ async function clearSlot(index) {
   changes['stripEdits.' + index] = null
   changes['stripCrops.' + index] = null
   if (cropSlot.value === index) cropSlot.value = null
+  playSound('remove')
   await updateDoc(roomRef(), changes)
 }
 
@@ -450,11 +453,12 @@ async function goToStage(stage) {
         <section v-if="editedList.length > 0" class="mb-3">
           <h3 class="h6 mb-2"><span class="badge edited-badge">✂ Edited videos</span></h3>
           <div class="row g-2 session-box edited-box">
-            <div v-for="edit in editedList" :key="edit.id" class="col-4">
+            <div v-for="edit in editedList" :key="edit.id" class="col-6">
               <div
                 class="thumb video-thumb edited"
                 :class="{ selected: edit.id === selectedPhotoId }"
                 draggable="true"
+                data-sound="click"
                 @dragstart="onPhotoDragStart($event, edit)"
                 @click="selectPhoto(edit.id)"
               >
@@ -471,17 +475,18 @@ async function goToStage(stage) {
           </div>
         </section>
 
-        <!-- Scrolls up and down through the sessions; 3 photos per row in each session (col-4) -->
+        <!-- Scrolls up and down through the sessions; 2 per row in each session (col-6), like the gallery on the camera page -->
         <div class="gallery-scroll">
           <section v-for="session in sessions" :key="session.shotNumber" class="mb-3">
             <h3 class="h6 mb-2">Session {{ session.shotNumber }}</h3>
             <div class="row g-2 session-box">
-              <div v-for="photo in session.photos" :key="photo.id" class="col-4">
+              <div v-for="photo in session.photos" :key="photo.id" class="col-6">
                 <div class="thumb" :class="{ selected: photo.id === selectedPhotoId }">
                   <img
                     :src="photo.image"
                     :alt="'Photo by ' + photo.name"
                     draggable="true"
+                    data-sound="click"
                     @dragstart="onPhotoDragStart($event, photo)"
                     @click="selectPhoto(photo.id)"
                   />
@@ -490,12 +495,13 @@ async function goToStage(stage) {
                 </div>
               </div>
 
-              <!-- The session's unedited clips: drag or tap like a photo. The "▶ play" label plays it right here. -->
-              <div v-for="clip in session.clips" :key="clip.id" class="col-4">
+              <!-- The session's unedited clips: drag or tap like a photo. The round play button plays it right here. -->
+              <div v-for="clip in session.clips" :key="clip.id" class="col-6">
                 <div
                   class="thumb clip-thumb"
                   :class="{ selected: clip.id === selectedPhotoId }"
                   draggable="true"
+                  data-sound="click"
                   @dragstart="onPhotoDragStart($event, clip)"
                   @click="selectPhoto(clip.id)"
                 >
@@ -843,7 +849,7 @@ async function goToStage(stage) {
 }
 
 .video-thumb {
-  aspect-ratio: 4 / 5;
+  aspect-ratio: 4 / 3; /* the same shape as a photo (and as the gallery on the camera page) */
   background: #000;
   cursor: grab;
 }
@@ -872,14 +878,19 @@ async function goToStage(stage) {
   border-color: #2F5BEA;
 }
 
-/* An unedited clip is the same shape as a photo. The video inside ignores the mouse, so the whole tile is dragged. */
+/* An unedited clip is exactly the size of a photo: the full width of its column, in the same 4:3 shape.
+   The video is laid over the tile (absolute), so its own size cannot stretch or shrink the tile.
+   The video ignores the mouse, so the whole tile is dragged. */
 .clip-thumb :deep(.clip) {
-  aspect-ratio: 4 / 5;
+  width: 100%;
+  aspect-ratio: 4 / 3;
   border-radius: 0;
   cursor: grab;
 }
 
 .clip-thumb :deep(video) {
+  position: absolute;
+  inset: 0;
   pointer-events: none;
 }
 
@@ -895,7 +906,7 @@ async function goToStage(stage) {
 
 .thumb img {
   width: 100%;
-  aspect-ratio: 4 / 5;
+  aspect-ratio: 4 / 3; /* the same shape as the photos taken (and the gallery on the camera page) */
   object-fit: cover;
   display: block;
   cursor: grab;

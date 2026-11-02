@@ -1,8 +1,9 @@
 <script setup>
 import { ref } from 'vue'
 import ClipSequencePlayer from './ClipSequencePlayer.vue'
+import PlayBadge from './PlayBadge.vue'
 
-// One edited video in the Pick gallery: it shows the first frame, and the "▶ play" label in the top-right
+// One edited video in the Pick gallery: it shows the first frame, and a round play button in the top-right
 // corner plays the whole edit right here (once, no loop). Tapping the rest of the tile does nothing here,
 // because the Pick page uses the tile to choose the video for a slot (like ClipThumb with badge-plays).
 // Usage: <EditedVideoThumb :edited="edited" />   edited = { name, entries, ... } (see resolveEditedVideos in clips.js)
@@ -28,7 +29,7 @@ function toggle() {
   <div class="tile" :title="edited.name + ' (' + edited.entries.length + ' clips)'">
     <!-- bare: just the picture, filling the tile. No autoplay: it only plays when the label is pressed. -->
     <ClipSequencePlayer ref="player" bare :entries="edited.entries" @playing="(value) => (playing = value)" />
-    <button class="badge text-bg-dark play-badge" @click.stop="toggle">{{ playing ? '❚❚ pause' : '▶ play' }}</button>
+    <PlayBadge class="play-badge" :size="26" :playing="playing" button @toggle="toggle" />
   </div>
 </template>
 
@@ -46,13 +47,10 @@ function toggle() {
   pointer-events: none;
 }
 
-/* The label is in the top-right corner, away from the name tag in the bottom-left */
+/* The play button is in the top-right corner, away from the name tag in the bottom-left */
 .play-badge {
   position: absolute;
-  right: 3px;
-  top: 3px;
-  font-size: 0.6rem;
-  border: none;
-  cursor: pointer;
+  right: 4px;
+  top: 4px;
 }
 </style>

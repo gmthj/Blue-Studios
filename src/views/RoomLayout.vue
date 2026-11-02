@@ -13,6 +13,7 @@ import { showNotice } from '../composables/useDialog.js'
 import { useRoom, ROOM_STAGES } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
 import { useFullscreen } from '../composables/useFullscreen.js'
+import { playSound } from '../sounds.js'
 import VideoCallCard from '../components/VideoCallCard.vue'
 import MessagePage from '../components/MessagePage.vue'
 
@@ -35,7 +36,7 @@ const startTemplateId = typeof route.query.template === 'string' ? route.query.t
 // 'loading' | 'ready' | 'notFound' | 'full' | 'closed'
 const status = ref('loading')
 
-const { room, roomRef, enterRoom, exitRoom, saveProgress } = useRoom()
+const { room, roomRef, activeMembers, enterRoom, exitRoom, saveProgress } = useRoom()
 const { startCall, endCall } = useVideoCall()
 const { exitFullscreen } = useFullscreen()
 
@@ -141,6 +142,34 @@ function followStage() {
 // Check again whenever the room document changes, or the URL changes
 watch(room, followStage)
 watch(() => route.path, followStage)
+
+// ---------- SOUNDS (sounds.js) ----------
+// A rising chime when the whole room moves on to a later step, a falling one when it goes back
+// to an earlier step (not when I first arrive)
+watch(
+  () => room.value && room.value.stage,
+  (stage, oldStage) => {
+    if (status.value !== 'ready' || !oldStage || stage === oldStage) return
+    const newIndex = ROOM_STAGES.findIndex((item) => item.id === stage)
+    const oldIndex = ROOM_STAGES.findIndex((item) => item.id === oldStage)
+    playSound(newIndex > oldIndex ? 'stageForward' : 'stageBack')
+  }
+)
+
+// A chime when someone joins the room, and a different one when someone leaves.
+// The people already here when I arrive are taken as they are, without a sound.
+let memberIds = null // the ids of everyone in the room last time (null = not loaded yet)
+watch(activeMembers, (members) => {
+  if (status.value !== 'ready' || members.length === 0) return
+  const ids = members.map((member) => member.id)
+  if (memberIds !== null) {
+    const someoneJoined = ids.some((id) => id !== uid && !memberIds.includes(id))
+    const someoneLeft = memberIds.some((id) => id !== uid && !ids.includes(id))
+    if (someoneJoined) playSound('join')
+    else if (someoneLeft) playSound('leave')
+  }
+  memberIds = ids
+})
 </script>
 
 <template>

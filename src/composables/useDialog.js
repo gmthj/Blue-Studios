@@ -1,4 +1,5 @@
 import { ref } from 'vue'
+import { playSound } from '../sounds.js'
 
 // IN-APP POPUPS instead of the browser's alert(), confirm() and prompt().
 // The browser's own boxes look different on every browser, cannot be styled, and on phones
@@ -27,6 +28,7 @@ function open(kind, options, cancelValue) {
   if (dialog.value) {
     dialog.value.resolve(dialog.value.cancelValue)
   }
+  playSound(options.danger ? 'warn' : 'open')
   return new Promise((resolve) => {
     dialog.value = {
       kind,

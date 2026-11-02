@@ -7,6 +7,7 @@ import { useFullscreen } from '../composables/useFullscreen.js'
 import { getUid } from '../composables/useAuth.js'
 import { askConfirm } from '../composables/useDialog.js'
 import { profileOf } from '../profiles.js'
+import { soundOn, toggleSound } from '../sounds.js'
 import AppIcon from './AppIcon.vue'
 
 // The bar at the top of the room pages: the room code, the steps, everyone in the room,
@@ -141,6 +142,17 @@ async function closeRoom() {
 
       <!-- Room buttons. Just icons on phones, words next to the icons on bigger screens. -->
       <div class="room-actions">
+        <!-- Sound effects on / off (countdown beeps, shutter...). Remembered on this device, see sounds.js -->
+        <button
+          type="button"
+          class="bar-btn"
+          :title="soundOn ? 'Turn sounds off' : 'Turn sounds on'"
+          :aria-label="soundOn ? 'Turn sounds off' : 'Turn sounds on'"
+          :aria-pressed="!soundOn"
+          @click="toggleSound"
+        >
+          <AppIcon :name="soundOn ? 'volume' : 'volume-x'" :size="16" />
+        </button>
         <button
           type="button"
           class="bar-btn"

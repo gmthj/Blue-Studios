@@ -3,10 +3,11 @@
 import { ref, onMounted } from 'vue'
 // getFileUrl(path) turns a Storage path into a link we can play
 import { getFileUrl } from '../studio.js'
+import PlayBadge from './PlayBadge.vue'
 
 // One recorded clip in the gallery. It shows the first frame; tap it to play, tap again to pause.
 // Usage: <ClipThumb :clip="clip" />
-// badge-plays: only the "▶ play" label plays and pauses it, and tapping the rest of the tile does nothing here
+// badge-plays: only the round play button plays and pauses it, and tapping the rest of the tile does nothing here
 // (the Pick page uses the tile to choose the clip for a slot, so a tap must not also play it).
 // Usage: <ClipThumb :clip="clip" badge-plays />
 
@@ -65,10 +66,11 @@ function toggle() {
     ></video>
     <!-- While there is no link yet: "..." , or "Could not load" if it failed -->
     <span v-else class="small text-muted">{{ failed ? 'Could not load' : '...' }}</span>
-    <!-- A small label so it is clear this tile is a video, not a photo -->
-    <!-- With badge-plays the label is a button of its own (.stop: the tap does not also choose the tile) -->
-    <button v-if="badgePlays" class="badge text-bg-dark clip-badge clip-badge-btn" @click.stop="toggle">{{ playing ? '❚❚ pause' : '▶ play' }}</button>
-    <span v-else class="badge text-bg-dark clip-badge">▶ video</span>
+    <!-- A round play sign, so it is clear this tile is a video, not a photo -->
+    <!-- With badge-plays it is a button of its own in the corner (the tap does not also choose the tile) -->
+    <PlayBadge v-if="badgePlays" class="clip-badge-btn" :size="26" :playing="playing" button @toggle="toggle" />
+    <!-- Otherwise it sits in the middle while paused, and fades away while the clip plays -->
+    <PlayBadge v-else-if="src" class="clip-badge" :class="{ hidden: playing }" :size="30" />
   </div>
 </template>
 
@@ -100,24 +102,24 @@ video.mirrored {
   transform: scaleX(-1);
 }
 
-/* The "▶ video" label sits in the bottom-left corner and does not block taps */
+/* The play sign in the middle of the tile. It does not block taps (the whole tile plays and pauses). */
 .clip-badge {
   position: absolute;
-  left: 3px;
-  bottom: 3px;
-  font-size: 0.6rem;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   pointer-events: none;
+  transition: opacity 200ms ease;
 }
 
-/* The label as a button: it must take taps, and it has no button border.
-   It sits in the top-right corner, because the name tag of the person who recorded it is in the bottom-left. */
+.clip-badge.hidden {
+  opacity: 0;
+}
+
+/* The play button sits in the top-right corner, because the name tag of the person who recorded it is in the bottom-left */
 .clip-badge-btn {
-  left: auto;
-  bottom: auto;
-  right: 3px;
-  top: 3px;
-  pointer-events: auto;
-  border: none;
-  cursor: pointer;
+  position: absolute;
+  right: 4px;
+  top: 4px;
 }
 </style>

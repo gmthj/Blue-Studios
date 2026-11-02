@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { playSound } from './sounds.js'
 import HomeView from './views/HomeView.vue'
 import LoginView from './views/LoginView.vue'
 import RoomLayout from './views/RoomLayout.vue'
@@ -76,6 +77,14 @@ router.beforeEach((to) => {
   if (to.meta.requiresAdmin && !isAdmin.value) {
     return { path: '/' }
   }
+})
+
+// A soft "whoosh" when going to another page. Not inside a room: moving between its steps has its own sounds.
+router.afterEach((to, from) => {
+  if (!from.matched.length) return // the first page when the app opens
+  if (to.path === from.path) return
+  if (to.path.startsWith('/room/') && from.path.startsWith('/room/')) return
+  playSound('page')
 })
 
 export default router

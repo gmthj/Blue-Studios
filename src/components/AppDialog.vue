@@ -1,5 +1,6 @@
 <script setup>
 import { ref, watch, nextTick } from 'vue'
+import { playSound } from '../sounds.js'
 import { dialog, answer, cancelDialog } from '../composables/useDialog.js'
 import AppIcon from './AppIcon.vue'
 
@@ -63,6 +64,7 @@ function onBackdropClick(event) {
 async function copyText() {
   try {
     await navigator.clipboard.writeText(dialog.value.copyText)
+    playSound('copy')
     copied.value = true
   } catch (error) {
     console.error(error)

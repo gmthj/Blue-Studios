@@ -5,6 +5,7 @@
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 // getClipUrl(clip) gives a local "blob:" address of the clip's video (downloaded once, then remembered)
 import { getClipUrl } from '../clips.js'
+import AppIcon from './AppIcon.vue'
 
 // Plays the edited video: the clips of the timeline one after another, each from its start to its end.
 // Usage: <ClipSequencePlayer :entries="entries" />   entries = [ { clip, start, end } ] (see resolveTimeline in clips.js)
@@ -251,13 +252,14 @@ function positionStyle(entry) {
         preload="auto"
       ></video>
       <!-- Text on top of the screen: a hint when stopped, "Loading..." while the first clip loads -->
-      <div v-if="!playing" class="screen-text">{{ entries.length === 0 ? 'Add clips to the timeline' : '▶ Press Play' }}</div>
+      <div v-if="!playing" class="screen-text">{{ entries.length === 0 ? 'Add clips to the timeline' : 'Press Play all' }}</div>
       <div v-else-if="loading" class="screen-text">Loading...</div>
     </div>
     <div class="d-flex align-items-center gap-2 mt-2">
       <!-- One button: Play all when stopped, Stop while playing. Disabled when the timeline is empty. -->
-      <button class="btn btn-dark btn-sm" :disabled="entries.length === 0" @click="playing ? stop() : play()">
-        {{ playing ? 'Stop' : '▶ Play all' }}
+      <button class="btn btn-dark btn-sm d-inline-flex align-items-center gap-1" :disabled="entries.length === 0" @click="playing ? stop() : play()">
+        <AppIcon :name="playing ? 'stop-fill' : 'play-fill'" :size="12" />
+        {{ playing ? 'Stop' : 'Play all' }}
       </button>
       <span v-if="playing" class="small text-muted">Clip {{ index + 1 }} of {{ entries.length }}</span>
       <span v-if="error" class="small text-danger">{{ error }}</span>
