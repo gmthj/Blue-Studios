@@ -1024,14 +1024,14 @@ async function saveToStudio() {
 
 .tray-scroll-hint.top {
   top: 0;
-  height: 24px;
-  background: linear-gradient(to bottom, rgba(15, 23, 42, 0.15) 0%, rgba(15, 23, 42, 0) 100%);
+  height: 20px;
+  background: linear-gradient(to bottom, rgba(15, 23, 42, 0.08) 0%, rgba(15, 23, 42, 0) 100%);
 }
 
 .tray-scroll-hint.bottom {
   bottom: 0;
-  height: 36px;
-  background: linear-gradient(to top, rgba(15, 23, 42, 0.18) 0%, rgba(15, 23, 42, 0.05) 50%, rgba(15, 23, 42, 0) 100%);
+  height: 30px;
+  background: linear-gradient(to top, rgba(15, 23, 42, 0.1) 0%, rgba(15, 23, 42, 0.02) 60%, rgba(15, 23, 42, 0) 100%);
 }
 
 .tray-scroll-hint.visible {
@@ -1339,8 +1339,8 @@ async function saveToStudio() {
   background: #fff;
   margin: 0 -16px;
   padding: 14px 16px 0;
-  border-top: 1px solid rgba(15, 23, 42, 0.15);
-  box-shadow: 0 -14px 32px -2px rgba(15, 23, 42, 0.32), 0 -4px 12px -1px rgba(15, 23, 42, 0.18);
+  border-top: 1px solid rgba(15, 23, 42, 0.1);
+  box-shadow: 0 -10px 24px -2px rgba(15, 23, 42, 0.2), 0 -3px 8px -1px rgba(15, 23, 42, 0.1);
   clip-path: inset(-50px 0 0 0);
 }
 
