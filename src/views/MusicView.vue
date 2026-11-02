@@ -300,8 +300,26 @@ async function useMix() {
   saving.value = false
 }
 
+// ----- Keep the preview up to date -----
+// After Preview has been pressed once, any change to the mix makes a new preview by itself.
+// setTimeout (Week 3) waits until you've stopped moving a slider for 0.5 s,
+// so it doesn't render 30 times while you drag.
+let refreshTimer = null
+
+watch(
+  // loadingA/loadingB instead of trackA/trackB: a new song is only ready once it has finished downloading
+  [loadingA, loadingB, speedA, speedB, volumeA, volumeB, soundCrossfade, startA, startB],
+  function () {
+    if (!previewUrl.value) return                  // no preview yet: nothing to update
+    if (loadingA.value || loadingB.value) return   // wait for the song to finish downloading
+    clearTimeout(refreshTimer)                     // still moving: cancel the last countdown
+    refreshTimer = setTimeout(makeMix, 500)
+  }
+)
+
 // Leaving the page: stop the music and free everything, otherwise it keeps playing on other pages!
 onBeforeUnmount(function () {
+  clearTimeout(refreshTimer)   // a preview update that hasn't started yet won't run after you leave
   stopAndRemove(playerA)
   stopAndRemove(playerB)
   gainA.dispose()
@@ -663,8 +681,11 @@ onMounted(loadTracks)
               <h2 class="h5 mb-0">Your mix</h2>
               <p class="small text-muted">{{ MAX_EDIT_SECONDS }} s · the same length as your video</p>
               <WaveformBars :bars="mixBars" class="mb-3" />
-              <!-- Shows up after Preview has made the mix -->
-              <audio v-if="previewUrl" :src="previewUrl" controls class="w-100 mb-3"></audio>
+              <!-- Shows up after Preview has made the mix. After that it updates by itself when the mix changes. -->
+              <audio v-if="previewUrl" :src="previewUrl" controls class="w-100 mb-1"></audio>
+              <p v-if="previewUrl" class="small text-muted mb-3">
+                {{ rendering ? 'Updating preview...' : 'Preview matches your sliders' }}
+              </p>
               <div class="d-flex flex-wrap gap-2 justify-content-end">
                 <button class="btn btn-outline-secondary" :disabled="rendering" @click="makeMix">
                   {{ rendering ? 'Rendering...' : '▷ Preview' }}
