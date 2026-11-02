@@ -103,7 +103,7 @@ function formatDate(timestamp) {
             <!-- Button to start new frame -->
             <button
               type="button"
-              class="btn btn-sm btn-outline-primary rounded-pill px-2 px-sm-3 py-1 fw-semibold d-flex align-items-center gap-1"
+              class="btn btn-sm btn-outline-secondary px-2 px-sm-3 py-1 d-flex align-items-center gap-1"
               style="font-size: 0.82rem;"
               title="Start a new blank photostrip frame"
               @click="startNewBlankFrame"
@@ -118,7 +118,7 @@ function formatDate(timestamp) {
             <!-- Router link to full studio -->
             <router-link
               to="/studio"
-              class="btn btn-sm btn-light border rounded-pill px-2 px-sm-3 py-1 text-secondary text-decoration-none fw-semibold d-flex align-items-center gap-1"
+              class="btn btn-sm btn-outline-secondary px-2 px-sm-3 py-1 text-decoration-none d-flex align-items-center gap-1"
               style="font-size: 0.82rem;"
               title="View full My Studio page"
             >
@@ -201,7 +201,7 @@ function formatDate(timestamp) {
               }}
             </p>
             <button
-              class="btn btn-primary rounded-pill px-4 py-2 fw-semibold shadow-sm d-inline-flex align-items-center gap-2"
+              class="btn btn-primary px-4 py-2 shadow-sm d-inline-flex align-items-center gap-2"
               @click="startNewBlankFrame"
             >
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
@@ -264,7 +264,7 @@ function formatDate(timestamp) {
                   <!-- Hover Action Overlay -->
                   <div class="template-hover-action">
                     <button
-                      class="btn btn-primary btn-sm rounded-pill fw-bold px-3 py-1 shadow-sm d-flex align-items-center gap-1"
+                      class="btn btn-primary btn-sm px-3 py-1 shadow-sm d-flex align-items-center gap-1"
                       style="font-size: 0.8rem;"
                       @click.stop="handleSelect(template)"
                     >
@@ -316,7 +316,7 @@ function formatDate(timestamp) {
         <div class="px-4 py-3 bg-white border-top d-flex align-items-center justify-content-end flex-shrink-0">
           <button
             type="button"
-            class="btn btn-dark btn-sm rounded-pill px-4 fw-semibold"
+            class="btn btn-primary btn-sm px-4"
             style="font-size: 0.82rem;"
             @click="closeMyTemplatesDrawer"
           >
@@ -381,7 +381,7 @@ function formatDate(timestamp) {
               <!-- Switch without saving -->
               <button
                 type="button"
-                class="btn btn-outline-danger btn-sm rounded-pill px-3 flex-grow-1"
+                class="btn btn-outline-danger btn-sm px-3 flex-grow-1"
                 :disabled="isSwitchingWorkspace"
                 @click="confirmSwitchWithoutSaving"
               >
@@ -391,7 +391,7 @@ function formatDate(timestamp) {
               <!-- Save current frame & switch -->
               <button
                 type="button"
-                class="btn btn-primary btn-sm rounded-pill fw-bold px-3 flex-grow-1 shadow-sm d-flex align-items-center justify-content-center gap-1"
+                class="btn btn-primary btn-sm px-3 flex-grow-1 shadow-sm d-flex align-items-center justify-content-center gap-1"
                 :disabled="isSwitchingWorkspace"
                 @click="confirmSaveAndSwitch"
               >
@@ -458,7 +458,7 @@ function formatDate(timestamp) {
   height: 68px;
   border-radius: 50%;
   background-color: rgba(37, 99, 235, 0.08);
-  color: #2563eb;
+  color: var(--brand, #2F5BEA);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -469,10 +469,12 @@ function formatDate(timestamp) {
   cursor: pointer;
 }
 
-.template-card:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.09);
-  border-color: #3b82f6 !important;
+@media (hover: hover) and (pointer: fine) {
+  .template-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.09);
+    border-color: var(--brand, #2F5BEA) !important;
+  }
 }
 
 .template-card.is-active-workspace {
@@ -480,7 +482,7 @@ function formatDate(timestamp) {
 }
 
 .template-thumb-wrapper {
-  background: radial-gradient(circle, #f8fafc 0%, #f1f5f9 100%);
+  background: var(--soft, #F4F6FA);
 }
 
 .template-hover-action {
@@ -495,8 +497,10 @@ function formatDate(timestamp) {
   transition: opacity 0.18s ease;
 }
 
-.template-card:hover .template-hover-action {
-  opacity: 1;
+@media (hover: hover) and (pointer: fine) {
+  .template-card:hover .template-hover-action {
+    opacity: 1;
+  }
 }
 
 @keyframes fadeIn {
@@ -512,6 +516,15 @@ function formatDate(timestamp) {
   to {
     opacity: 1;
     transform: scale(1);
+  }
+}
+
+/* People who turned on "Reduce motion" on their device: nothing slides, pops or shakes.
+   Colour changes and fades stay (design.md). In a scoped style, * only means this component's parts. */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition-property: opacity, color, background-color, border-color, box-shadow !important;
   }
 }
 </style>

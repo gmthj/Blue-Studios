@@ -145,7 +145,7 @@ describe('Component test: Share page, while the file is being made', () => {
     const page = mountPage()
     await flushPromises()
     expect(page.text()).toContain('Nothing to share yet')
-    await buttonNamed(page, '← Export').trigger('click')
+    await buttonNamed(page, 'Export').trigger('click') // the arrow is an icon now
     expect(mocks.goToStage).toHaveBeenCalledWith('export')
   })
 
@@ -197,7 +197,7 @@ describe('Component test: Share page, when it goes wrong', () => {
     expect(page.text()).toContain("That didn't work")
     expect(page.text()).toContain('Could not load a clip')
     expect(buttonNamed(page, 'Try again')).toBeDefined()
-    await buttonNamed(page, '← Export').trigger('click')
+    await buttonNamed(page, 'Export').trigger('click') // the arrow is an icon now
     expect(mocks.goToStage).toHaveBeenCalledWith('export')
   })
 

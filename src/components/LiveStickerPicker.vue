@@ -237,7 +237,7 @@ function addPlace(type) {
         {{ busy === 'search' ? 'Finding…' : 'Find' }}
       </button>
     </form>
-    <button type="button" class="btn btn-outline-primary btn-sm w-100 mt-2 lp-gps" :disabled="busy !== ''" @click="useMyLocation">
+    <button type="button" class="btn btn-outline-secondary btn-sm w-100 mt-2 lp-gps" :disabled="busy !== ''" @click="useMyLocation">
       <AppIcon name="globe" :size="14" />
       {{ busy === 'gps' ? 'Finding you…' : 'Use my location' }}
     </button>
@@ -342,7 +342,9 @@ function addPlace(type) {
   color: #B42318;
   background: #FEF3F2;
 }
-.lp-input { font-size: 16px; } /* 16px so iPhones do not zoom in */
+.lp-input { font-size: 0.9rem; }
+/* Phones: 16px so iPhones do not zoom in when the box is tapped */
+@media (max-width: 575.98px) { .lp-input { font-size: 16px; } }
 .lp-gps { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 
 /* While a text look's font loads, an empty space the size of the picture */

@@ -209,7 +209,7 @@ function onClearGuides() {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border: 1px solid #E2E8F0;
+  border: 1px solid var(--line, #E3E6EE);
   border-radius: 30px;
   box-shadow: 0 6px 20px rgba(15, 23, 42, 0.12), 0 1px 3px rgba(15, 23, 42, 0.05);
   display: flex;
@@ -234,14 +234,16 @@ function onClearGuides() {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #475569;
+  color: var(--muted, #6B7080);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
-.dock-tool-btn:hover:not(:disabled) {
-  background: #F1F5F9;
-  color: #0F172A;
+@media (hover: hover) and (pointer: fine) {
+  .dock-tool-btn:hover:not(:disabled) {
+    background: var(--soft, #F4F6FA);
+    color: var(--ink, #14172B);
+  }
 }
 
 .dock-tool-btn:active:not(:disabled) {
@@ -254,14 +256,14 @@ function onClearGuides() {
 }
 
 .dock-tool-btn.active {
-  background: #EFF6FF;
+  background: var(--brand-tint, #E8EEFF);
   color: #2F5BEA;
 }
 
 .dock-divider {
   width: 1px;
   height: 18px;
-  background: #E2E8F0;
+  background: var(--line, #E3E6EE);
   margin: 0 2px;
 }
 
@@ -277,17 +279,19 @@ function onClearGuides() {
   display: flex;
   align-items: center;
   gap: 5px;
-  color: #1E293B;
+  color: var(--ink, #14172B);
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
-.dock-zoom-btn:hover {
-  background: #F1F5F9;
+@media (hover: hover) and (pointer: fine) {
+  .dock-zoom-btn:hover {
+    background: var(--soft, #F4F6FA);
+  }
 }
 
 .dock-zoom-btn.active {
-  background: #EFF6FF;
+  background: var(--brand-tint, #E8EEFF);
   color: #2F5BEA;
 }
 
@@ -304,7 +308,7 @@ function onClearGuides() {
   bottom: calc(100% + 10px);
   right: 0;
   background: #FFFFFF;
-  border: 1px solid #E2E8F0;
+  border: 1px solid var(--line, #E3E6EE);
   border-radius: 14px;
   box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.18), 0 4px 6px -2px rgba(15, 23, 42, 0.05);
   padding: 6px;
@@ -326,7 +330,7 @@ function onClearGuides() {
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: #94A3B8;
+  color: var(--muted, #6B7080);
   padding: 6px 10px 4px 10px;
 }
 
@@ -344,19 +348,21 @@ function onClearGuides() {
   transition: all 0.12s ease;
 }
 
-.menu-item:hover {
-  background: #F8FAFC;
+@media (hover: hover) and (pointer: fine) {
+  .menu-item:hover {
+    background: var(--soft, #F4F6FA);
+  }
 }
 
 .menu-item.current {
-  background: #EFF6FF;
+  background: var(--brand-tint, #E8EEFF);
   color: #2F5BEA;
 }
 
 .item-name {
   font-size: 0.78rem;
   font-weight: 600;
-  color: #334155;
+  color: var(--ink, #14172B);
 }
 
 .menu-item.current .item-name {
@@ -367,23 +373,34 @@ function onClearGuides() {
 .item-shortcut {
   font-size: 0.68rem;
   font-weight: 600;
-  color: #94A3B8;
-  background: #F1F5F9;
+  color: var(--muted, #6B7080);
+  background: var(--soft, #F4F6FA);
   padding: 2px 5px;
   border-radius: 4px;
 }
 
 .menu-divider {
   height: 1px;
-  background: #F1F5F9;
+  background: var(--soft, #F4F6FA);
   margin: 4px 0;
 }
 
-.menu-item.text-danger:hover {
-  background: #FEF2F2;
+@media (hover: hover) and (pointer: fine) {
+  .menu-item.text-danger:hover {
+    background: #FDE4E5;
+  }
 }
 
 .menu-item.text-danger .item-name {
-  color: #DC2626;
+  color: #CE3A3F;
+}
+
+/* People who turned on "Reduce motion" on their device: nothing slides, pops or shakes.
+   Colour changes and fades stay (design.md). In a scoped style, * only means this component's parts. */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition-property: opacity, color, background-color, border-color, box-shadow !important;
+  }
 }
 </style>

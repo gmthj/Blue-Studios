@@ -12,6 +12,7 @@ import { CLIP_SECONDS, MAX_EDIT_SECONDS, resolveTimeline, editedVideoList, newEd
 import StageBar from '../components/StageBar.vue'
 import ClipThumb from '../components/ClipThumb.vue'
 import ClipSequencePlayer from '../components/ClipSequencePlayer.vue'
+import AppIcon from '../components/AppIcon.vue'
 import { askConfirm } from '../composables/useDialog.js'
 
 // The "Video" page (a child of RoomLayout.vue): edit the room's clips into videos for the strip.
@@ -225,7 +226,9 @@ const sessions = computed(() => {
 </script>
 
 <template>
-  <!-- The bar at the top with the 7 steps (this page is step 4, Video) -->
+  <!-- app-page: the shared Blue Studios look (colours, font, buttons) from pages.css, see design.md -->
+  <div class="app-page room-page">
+  <!-- The bar at the top with the 7 steps (this page is step 3, Video) -->
   <StageBar current="video" />
 
   <!-- Bootstrap grid: 2 columns from "lg" (992px) up, stacked on phones -->
@@ -233,31 +236,31 @@ const sessions = computed(() => {
     <!-- LEFT: preview and timeline -->
     <div class="col-12 col-lg-7 order-1">
       <div class="panel mb-3">
-        <h2 class="h5 fw-bold">Preview</h2>
+        <h2 class="section-title">Preview</h2>
         <!-- Plays the timeline's clips one after another -->
         <ClipSequencePlayer :entries="entries" />
       </div>
 
       <div class="panel">
-        <div class="d-flex justify-content-between align-items-baseline">
+        <div class="d-flex justify-content-between align-items-baseline gap-2 flex-wrap mb-2">
           <!-- Says which saved edit is open, or that this is a new one -->
-          <h2 class="h5 fw-bold">{{ editingEdit ? 'Changing ' + editingEdit.name : 'New edit' }}</h2>
+          <h2 class="section-title mb-0">{{ editingEdit ? 'Changing ' + editingEdit.name : 'New edit' }}</h2>
           <!-- toFixed(1): one decimal place, e.g. 7.5 -->
-          <span class="small" :class="overLimit ? 'text-danger fw-bold' : 'text-muted'">{{ entries.length }} clip(s) · {{ totalSeconds.toFixed(1) }} / {{ MAX_EDIT_SECONDS }}s</span>
+          <span class="length tabular" :class="{ over: overLimit }">{{ entries.length }} clip(s) · {{ totalSeconds.toFixed(1) }} / {{ MAX_EDIT_SECONDS }}s</span>
         </div>
         <!-- The length meter: the bar fills up to the limit, and turns red if the edit is over it -->
-        <div class="progress mb-1" style="height: 8px">
+        <div class="progress mb-2" role="progressbar" aria-label="Length of the edit" :aria-valuenow="Math.round(totalSeconds)" aria-valuemin="0" :aria-valuemax="MAX_EDIT_SECONDS">
           <div class="progress-bar" :class="{ 'bg-danger': overLimit }" :style="{ width: Math.min(100, (totalSeconds / MAX_EDIT_SECONDS) * 100) + '%' }"></div>
         </div>
-        <p class="small text-muted mb-2">
+        <p class="hint">
           An edited video can be up to {{ MAX_EDIT_SECONDS }} seconds. A strip with video is exported as a {{ MAX_EDIT_SECONDS }} second video, and shorter videos repeat.
         </p>
-        <p v-if="limitMessage" class="small text-danger mb-2">{{ limitMessage }}</p>
-        <p v-if="overLimit" class="small text-danger mb-2">
+        <p v-if="limitMessage" class="hint text-danger" role="alert">{{ limitMessage }}</p>
+        <p v-if="overLimit" class="hint text-danger" role="alert">
           This edit is over {{ MAX_EDIT_SECONDS }} seconds (someone added a clip at the same time). Remove or trim a clip to save it.
         </p>
-        <!-- Only shown while the timeline is empty -->
-        <p v-if="entries.length === 0" class="small text-muted mb-0">
+        <!-- Only shown while the timeline is empty: a dashed box that invites the first clip -->
+        <p v-if="entries.length === 0" class="empty-timeline">
           Press Add on a clip (or Add session) to put it here. The clips play one after another, in this order.
         </p>
 
@@ -265,19 +268,25 @@ const sessions = computed(() => {
         <ol class="list-unstyled mb-0">
           <li v-for="(entry, index) in entries" :key="entry.clip.id" class="timeline-row">
             <div class="d-flex align-items-center gap-2">
-              <span class="badge text-bg-primary">{{ index + 1 }}</span>
+              <span class="badge text-bg-primary tabular">{{ index + 1 }}</span>
               <!-- Who recorded it, which shot, and how long it is after trimming -->
-              <span class="small flex-grow-1 text-truncate">{{ entry.clip.name }} · Shot {{ entry.clip.shotNumber }} · {{ (entry.end - entry.start).toFixed(1) }}s</span>
-              <!-- ↑ is disabled for the first clip and ↓ for the last (nowhere to move) -->
-              <button class="icon-btn" :disabled="index === 0" title="Move earlier" @click="moveClip(index, -1)">↑</button>
-              <button class="icon-btn" :disabled="index === entries.length - 1" title="Move later" @click="moveClip(index, 1)">↓</button>
-              <button class="icon-btn" title="Take off the timeline" @click="removeClip(index)">✕</button>
+              <span class="small flex-grow-1 text-truncate">{{ entry.clip.name }} · Shot {{ entry.clip.shotNumber }} · <span class="tabular">{{ (entry.end - entry.start).toFixed(1) }}s</span></span>
+              <!-- Up is disabled for the first clip and down for the last (nowhere to move) -->
+              <button type="button" class="icon-btn" :disabled="index === 0" title="Move earlier" aria-label="Move earlier" @click="moveClip(index, -1)">
+                <AppIcon name="chevron-up" :size="16" />
+              </button>
+              <button type="button" class="icon-btn" :disabled="index === entries.length - 1" title="Move later" aria-label="Move later" @click="moveClip(index, 1)">
+                <AppIcon name="chevron-down" :size="16" />
+              </button>
+              <button type="button" class="icon-btn" title="Take off the timeline" aria-label="Take off the timeline" @click="removeClip(index)">
+                <AppIcon name="close" :size="16" />
+              </button>
             </div>
             <!-- Trim: saved on @change (when the slider is let go), so Firestore is not written on every pixel -->
-            <label class="form-label small d-flex justify-content-between mb-0">Start <span>{{ entry.start.toFixed(1) }}s</span></label>
+            <label class="form-label small d-flex justify-content-between mb-0">Start <span class="tabular">{{ entry.start.toFixed(1) }}s</span></label>
             <input type="range" class="form-range" min="0" :max="CLIP_SECONDS" step="0.1" :value="entry.start"
                    @change="trim(index, 'start', $event)" />
-            <label class="form-label small d-flex justify-content-between mb-0">End <span>{{ entry.end.toFixed(1) }}s</span></label>
+            <label class="form-label small d-flex justify-content-between mb-0">End <span class="tabular">{{ entry.end.toFixed(1) }}s</span></label>
             <input type="range" class="form-range" min="0" :max="CLIP_SECONDS" step="0.1" :value="entry.end"
                    @change="trim(index, 'end', $event)" />
           </li>
@@ -285,12 +294,14 @@ const sessions = computed(() => {
 
         <!-- Save: a new edit goes to the gallery (the timeline is emptied for the next one). Cancel only when changing a saved edit. -->
         <div class="d-flex gap-2 mt-3">
-          <button class="btn btn-success flex-fill" :disabled="entries.length === 0 || overLimit" @click="saveEdit">
+          <button type="button" class="btn btn-primary flex-fill" :disabled="entries.length === 0 || overLimit" @click="saveEdit">
             {{ editingEdit ? 'Save changes' : 'Save to gallery' }}
           </button>
-          <button v-if="editingEdit" class="btn btn-outline-secondary" @click="cancelEdit">Cancel</button>
+          <button v-if="editingEdit" type="button" class="btn btn-outline-secondary" @click="cancelEdit">Cancel</button>
         </div>
-        <p v-if="message" class="small text-success mt-2 mb-0">{{ message }}</p>
+        <p v-if="message" class="saved-message" role="status">
+          <AppIcon name="check" :size="14" :stroke-width="3" /> {{ message }}
+        </p>
       </div>
     </div>
 
@@ -298,91 +309,192 @@ const sessions = computed(() => {
     <div class="col-12 col-lg-5 order-2">
       <!-- Only shown once there is a saved edit -->
       <div v-if="editedList.length > 0" class="panel mb-3">
-        <h2 class="h5 fw-bold">Saved edits</h2>
+        <h2 class="section-title">Saved edits <span class="section-count">{{ editedList.length }}</span></h2>
         <ul class="list-unstyled mb-0">
           <li v-for="edit in editedList" :key="edit.id" class="saved-row" :class="{ open: editingEdit && editingEdit.id === edit.id }">
-            <span class="badge edited-badge">✂ {{ edit.name }}</span>
-            <span class="small text-muted flex-grow-1">{{ edit.entries.length }} clip(s) · {{ edit.seconds.toFixed(1) }}s</span>
-            <button class="btn btn-outline-primary btn-sm py-0" @click="openEdit(edit)">Edit</button>
-            <button class="btn btn-outline-danger btn-sm py-0" @click="deleteEdit(edit)">Delete</button>
+            <span class="badge edited-badge"><AppIcon name="scissors" :size="11" /> {{ edit.name }}</span>
+            <span class="small text-muted flex-grow-1 tabular">{{ edit.entries.length }} clip(s) · {{ edit.seconds.toFixed(1) }}s</span>
+            <button type="button" class="btn btn-outline-secondary btn-sm" @click="openEdit(edit)">Edit</button>
+            <button type="button" class="btn btn-outline-danger btn-sm" @click="deleteEdit(edit)">Delete</button>
           </li>
         </ul>
       </div>
 
       <div class="panel">
-        <h2 class="h5 fw-bold">Room clips</h2>
-        <p v-if="clips.length === 0" class="small text-muted">No clips yet. Go back to the camera and record some in Video mode.</p>
+        <h2 class="section-title">Room clips <span v-if="clips.length" class="section-count">{{ clips.length }}</span></h2>
+        <p v-if="clips.length === 0" class="hint">No clips yet. Go back to the camera and record some in Video mode.</p>
         <!-- One box per session, with all its clips (3 per row, col-4) -->
         <section v-for="session in sessions" :key="session.shotNumber" class="mb-3">
-          <div class="d-flex justify-content-between align-items-center mb-1">
-            <h3 class="h6 mb-0">Session {{ session.shotNumber }}</h3>
+          <div class="d-flex justify-content-between align-items-center">
+            <h3 class="group-label">Session {{ session.shotNumber }}</h3>
             <!-- Puts all of this session's clips on the timeline, in the order they were recorded -->
-            <button class="btn btn-outline-primary btn-sm py-0" :disabled="!canAddClip" :title="canAddClip ? '' : 'No room left: ' + MAX_EDIT_SECONDS + ' second limit'" @click="addSession(session)">Add session</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm add-btn" :disabled="!canAddClip" :title="canAddClip ? '' : 'No room left: ' + MAX_EDIT_SECONDS + ' second limit'" @click="addSession(session)">
+              <AppIcon name="plus" :size="14" /> Add session
+            </button>
           </div>
           <div class="row g-2">
             <div v-for="clip in session.clips" :key="clip.id" class="col-4">
               <ClipThumb :clip="clip" />
-              <p class="small text-muted text-truncate mb-1">{{ clip.name }}</p>
+              <p class="clip-name text-truncate">{{ clip.name }}</p>
               <!-- A clip can be on the timeline once: "On timeline" if it is, otherwise the Add button -->
               <span v-if="onTimeline.has(clip.id)" class="badge text-bg-light">On timeline</span>
-              <button v-else class="btn btn-outline-primary btn-sm py-0" :disabled="!canAddClip" :title="canAddClip ? '' : 'No room left: ' + MAX_EDIT_SECONDS + ' second limit'" @click="addClip(clip)">Add</button>
+              <button v-else type="button" class="btn btn-outline-secondary btn-sm add-btn" :disabled="!canAddClip" :title="canAddClip ? '' : 'No room left: ' + MAX_EDIT_SECONDS + ' second limit'" @click="addClip(clip)">
+                <AppIcon name="plus" :size="14" /> Add
+              </button>
             </div>
           </div>
         </section>
 
         <!-- Back to the Pick page. The saved edits are there, to drag into a slot like a photo. -->
-        <button class="btn btn-primary w-100" @click="goToStage('pick')">Done: back to Pick &rarr;</button>
+        <button type="button" class="btn btn-primary w-100 step-link justify-content-center" @click="goToStage('pick')">
+          Done: back to Pick <AppIcon name="arrow-right" :size="16" />
+        </button>
       </div>
     </div>
+  </div>
   </div>
 </template>
 
 <style scoped>
-/* A white rounded card, the same look as the Pick and Decorate pages */
-.panel {
-  background: #fff;
-  border-radius: 14px;
-  padding: 16px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+/* Styles follow design.md: the colours are the app-page variables (--brand, --ink, --muted, --line, --soft),
+   the cards (.panel) and labels (.group-label) come from pages.css, hover only with a mouse,
+   and movement is switched off for people who ask for reduced motion (at the bottom). */
+.room-page {
+  padding-bottom: 24px;
 }
 
-/* One clip on the timeline: a light grey box */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.hint {
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+/* "3 clip(s) · 7.5 / 15s" next to the title, red when the edit is too long */
+.length {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.length.over {
+  color: var(--danger);
+}
+
+/* While the timeline is empty: a dashed box that invites the first clip */
+.empty-timeline {
+  margin: 8px 0 0;
+  padding: 16px;
+  border: 1.5px dashed var(--line);
+  border-radius: 12px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-align: center;
+  text-wrap: pretty;
+}
+
+/* One clip on the timeline: a soft grey box */
 .timeline-row {
-  background: #F4F5F9;
+  background: var(--soft);
   border-radius: 10px;
   padding: 8px 10px;
   margin-top: 8px;
 }
 
-/* One saved edit: its name (purple, like on the Pick page), its length, and the Edit / Delete buttons */
+/* "Saved as Edit 2!" under the Save button (the green from the status colours in design.md) */
+.saved-message {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #15803D;
+}
+
+/* One saved edit: its name (a dark tag, like the edited videos on the Pick page), its length, and Edit / Delete */
 .saved-row {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 6px 8px;
-  border-radius: 8px;
+  border-radius: 10px;
 }
 
 /* The saved edit that is open in the timeline */
 .saved-row.open {
-  background: #EFEBFF;
+  background: var(--brand-tint);
 }
 
 .edited-badge {
-  background: #7B61FF;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--ink, #14172B);
   color: #fff;
 }
 
-/* The small ↑ ↓ ✕ buttons: no border or background, just the symbol */
+/* The small up / down / remove buttons on a timeline row: just the icon, 32px so they are easy to tap */
 .icon-btn {
-  border: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
   background: none;
-  padding: 0 4px;
-  color: #6B7080;
+  color: var(--muted);
+  transition: background-color 150ms ease, color 150ms ease, transform 160ms var(--ease-out);
 }
 
-/* Greyed out when disabled (e.g. ↑ on the first clip) */
+.icon-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.icon-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* Greyed out when disabled (e.g. up on the first clip) */
 .icon-btn:disabled {
   opacity: 0.3;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .icon-btn:not(:disabled):hover {
+    color: var(--ink);
+    background: #ffffff;
+  }
+}
+
+/* "Add" and "Add session": the plus icon next to the word */
+.add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.clip-name {
+  margin: 4px 0;
+  font-size: 0.8rem;
+  color: var(--muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .icon-btn {
+    transition: none;
+  }
+
+  .icon-btn:active:not(:disabled) {
+    transform: none;
+  }
 }
 </style>

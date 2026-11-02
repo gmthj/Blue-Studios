@@ -63,6 +63,11 @@ async function logOutAndGoHome() {
 
       <!-- Hidden inside a room: logging out there would change your user id and drop you from the room -->
       <div v-if="!inRoom" class="nav-links">
+        <!-- Back to the home page, where you type a 4-digit code or create a new room -->
+        <router-link to="/" class="nav-link-btn" title="Photobooth: create or join a room">
+          <AppIcon name="camera" :size="18" />
+          <span class="link-text">Photobooth</span>
+        </router-link>
         <router-link to="/marketplace" class="nav-link-btn" title="Marketplace">
           <AppIcon name="shop" :size="18" />
           <span class="link-text">Marketplace</span>
@@ -238,7 +243,7 @@ async function logOutAndGoHome() {
 }
 
 .nav-admin {
-  color: #B45309;
+  color: #A15C07;
 }
 
 .nav-signup {
@@ -274,7 +279,7 @@ async function logOutAndGoHome() {
 @media (hover: hover) and (pointer: fine) {
   .nav-link-btn:hover {
     color: var(--ink);
-    background: #F2F4F8;
+    background: var(--soft, #F4F6FA);
   }
 
   .nav-link-btn.router-link-active:hover {
@@ -328,7 +333,7 @@ async function logOutAndGoHome() {
 
 @media (hover: hover) and (pointer: fine) {
   .account:hover {
-    background: #F2F4F8;
+    background: var(--soft, #F4F6FA);
   }
 }
 

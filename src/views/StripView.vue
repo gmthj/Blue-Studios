@@ -521,7 +521,7 @@ watch(
       <div class="panel">
         <div class="d-flex justify-content-between align-items-center mb-1">
           <h2 class="section-title mb-0">Gallery</h2>
-          <button class="btn btn-link btn-sm p-0 back-link" @click="goToStage('shoot')">&larr; Camera</button>
+          <button type="button" class="btn btn-link btn-sm p-0 back-link step-link" @click="goToStage('shoot')"><AppIcon name="arrow-left" :size="14" /> Camera</button>
         </div>
         <p class="hint">Drag a photo or video into a frame. On a phone: tap it, then a frame (or the frame first).</p>
 
@@ -537,9 +537,9 @@ watch(
           <button type="button" class="btn btn-outline-secondary btn-sm" @click="goToStage('shoot')">Go to the camera</button>
         </div>
 
-        <!-- The videos made on the Video page, to drag into a slot like a photo. Each one is purple. -->
+        <!-- The videos made on the Video page, to drag into a slot like a photo. Each one has a dark tag with scissors. -->
         <section v-if="editedList.length > 0" class="mb-3">
-          <h3 class="group-label"><span class="badge edited-badge">✂ Edited videos</span></h3>
+          <h3 class="group-label"><span class="badge edited-badge"><AppIcon name="scissors" :size="11" /> Edited videos</span></h3>
           <div class="row g-2 session-box edited-box">
             <div v-for="edit in editedList" :key="edit.id" class="col-6">
               <div
@@ -551,7 +551,7 @@ watch(
                 @click="selectPhoto(edit.id)"
               >
                 <EditedVideoThumb :edited="edit" />
-                <span class="name-tag edited-tag">✂ {{ edit.name }}</span>
+                <span class="name-tag edited-tag"><AppIcon name="scissors" :size="10" /> {{ edit.name }}</span>
                 <span v-if="isUsed(edit.id)" class="used-tick used-left">✓</span>
               </div>
               <!-- How long it is, and a shortcut to change it on the Video page -->
@@ -1107,19 +1107,22 @@ watch(
   cursor: grab;
 }
 
-/* The edited video is purple, so it is easy to tell from a normal photo or clip */
+/* The edited video has a dark ink tag and line (not blue, which means "chosen"), so it is easy to tell from a normal photo or clip */
 .edited-badge,
 .edited-tag {
-  background: #7B61FF;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--ink, #14172B);
   color: #fff;
 }
 
 .edited-box {
-  border-color: #7B61FF;
+  border-color: var(--ink, #14172B);
 }
 
 .thumb.edited {
-  border-color: #7B61FF;
+  border-color: var(--ink, #14172B);
 }
 
 .used-left {

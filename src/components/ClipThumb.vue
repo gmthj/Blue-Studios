@@ -122,4 +122,13 @@ video.mirrored {
   right: 4px;
   top: 4px;
 }
+
+/* People who turned on "Reduce motion" on their device: nothing slides, pops or shakes.
+   Colour changes and fades stay (design.md). In a scoped style, * only means this component's parts. */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition-property: opacity, color, background-color, border-color, box-shadow !important;
+  }
+}
 </style>

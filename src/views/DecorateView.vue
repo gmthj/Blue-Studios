@@ -826,7 +826,7 @@ async function saveToStudio() {
         <section class="tray" :class="{ open: trayOpen }" aria-label="Sticker tray">
           <div class="tray-head">
             <h2 class="section-title mb-0">Sticker tray</h2>
-            <button type="button" class="tray-close" aria-label="Close the sticker tray" @click="trayOpen = false">✕</button>
+            <button type="button" class="tray-close" aria-label="Close the sticker tray" @click="trayOpen = false"><AppIcon name="close" :size="16" /></button>
           </div>
 
           <!-- Tabs: Default, Live, Mine -->
@@ -1033,8 +1033,8 @@ async function saveToStudio() {
                When it is on main and 'music' is added to STAGE_PATHS in RoomLayout.vue, remove "disabled". -->
           <button class="btn btn-primary w-100 mb-2" @click="goToStage('music')">Mix soundtrack</button>
           <div class="d-flex gap-2">
-            <button class="btn btn-outline-secondary btn-sm flex-fill" @click="goToStage('pick')">&larr; Pick</button>
-            <button class="btn btn-outline-secondary btn-sm flex-fill" @click="goToStage('export')">Export &rarr;</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm flex-fill step-link justify-content-center" @click="goToStage('pick')"><AppIcon name="arrow-left" :size="14" /> Pick</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm flex-fill step-link justify-content-center" @click="goToStage('export')">Export <AppIcon name="arrow-right" :size="14" /></button>
           </div>
           <button v-if="isAccount" class="btn btn-outline-secondary btn-sm w-100 mt-2" :disabled="saving || hasVideoSlot" @click="saveToStudio">
             {{ saving ? 'Saving...' : 'Save to My Studio' }}
@@ -1124,7 +1124,7 @@ async function saveToStudio() {
   object-fit: cover;
   border-radius: 10px;
   border: 3px solid transparent;
-  background: #F2C94C; /* shown when no photo is selected yet */
+  background: var(--soft, #F4F6FA); /* shown when no photo is selected yet */
 }
 
 .filter-btn.active img,

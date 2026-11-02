@@ -9,6 +9,7 @@ import { getPeaks, makeWaveform } from '../waveform.js'
 import DeckCard from '../components/DeckCard.vue'
 import WaveformBars from '../components/WaveformBars.vue'
 import StageBar from '../components/StageBar.vue'
+import AppIcon from '../components/AppIcon.vue'
 import { renderMix } from '../mixRender.js'
 import { ref as storageRef, uploadBytes } from 'firebase/storage'
 import { storage } from '../firebase.js'
@@ -350,9 +351,9 @@ const mixBars = computed(function () {
     const a = (peaksA[i] || 0) * (volumeA.value / 100) * (1 - soundCrossfade.value)
     const b = (peaksB[i] || 0) * (volumeB.value / 100) * soundCrossfade.value
 
-    let color = '#7c3aed'   // purple = Deck B is louder
+    let color = '#14172B'   // ink = Deck B is louder (design.md --ink)
     if (a >= b) {
-      color = '#14a39a'     // teal = Deck A is louder
+      color = '#2F5BEA'     // blue = Deck A is louder (design.md --brand)
     }
     result.push({ height: a + b, color: color })
   }
@@ -589,13 +590,13 @@ onMounted(loadTracks)
   <div class="app-page music-page">
     <StageBar current="music" />
     <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
-      <h2 class="h4 mb-0">{{ djMode ? 'DJ booth' : 'Music mixer' }}</h2>
+      <h2 class="section-title mb-0">{{ djMode ? 'DJ booth' : 'Music mixer' }}</h2>
       <div class="d-flex gap-2">
         <!-- Simple mode / DJ booth: shared, so the whole room switches together -->
         <button class="btn btn-outline-secondary btn-sm" @click="toggleDjMode">
           {{ djMode ? 'Simple mode' : 'DJ booth' }}
         </button>
-        <button class="btn btn-outline-secondary btn-sm" @click="goToStage('decorate')">&larr; Decorate</button>
+        <button type="button" class="btn btn-outline-secondary btn-sm step-link" @click="goToStage('decorate')"><AppIcon name="arrow-left" :size="14" /> Decorate</button>
       </div>
     </div>
     <p class="small text-muted mb-3">
@@ -612,7 +613,7 @@ onMounted(loadTracks)
           <DeckCard
             label="Deck A"
             :simple="!djMode"
-            color="#14a39a"
+            color="#2F5BEA"
             :track="trackA"
             :speed="speedA"
             :volume="volumeA"
@@ -634,7 +635,7 @@ onMounted(loadTracks)
         <div v-if="djMode" class="col-12 col-md-2 mixer-col">
           <div class="card h-100">
             <div class="card-body d-flex flex-column justify-content-end text-center">
-              <h2 class="h6">Mixer</h2>
+              <h2 class="section-title">Mixer</h2>
               <p class="mixer-label text-muted mt-auto mb-1">CROSSFADER</p>
               <input
                 :value="crossfade"
@@ -658,7 +659,7 @@ onMounted(loadTracks)
         <div v-if="djMode" class="col-12 col-md-5 deck-col">
           <DeckCard
             label="Deck B"
-            color="#7c3aed"
+            color="#14172B"
             :track="trackB"
             :speed="speedB"
             :volume="volumeB"
@@ -680,7 +681,7 @@ onMounted(loadTracks)
         <div class="col-12">
           <div class="card">
             <div class="card-body">
-              <h2 class="h5 mb-0">Your mix</h2>
+              <h2 class="section-title mb-0">Your mix</h2>
               <p class="small text-muted">{{ MAX_EDIT_SECONDS }} s · the same length as your video</p>
               <WaveformBars :bars="mixBars" class="mb-3" />
               <!-- Shows up after Preview has made the mix. After that it updates by itself when the mix changes. -->
@@ -704,12 +705,12 @@ onMounted(loadTracks)
                 </button>
                 <!-- Always clickable, so people can export without music too -->
                 <button
-                  class="btn"
+                  class="btn step-link"
                   :class="saved ? 'btn-primary' : 'btn-outline-secondary'"
                   :disabled="saving || rendering"
                   @click="goToStage('export')"
                 >
-                  Export video &rarr;
+                  Export video <AppIcon name="arrow-right" :size="16" />
                 </button>
               </div>
             </div>
@@ -722,7 +723,7 @@ onMounted(loadTracks)
     <div class="col-12 col-lg-3 order-first order-lg-0">
       <div class="card h-100">
         <div class="card-body">
-          <h2 class="h5">Browse Jamendo</h2>
+          <h2 class="section-title">Browse Jamendo</h2>
           <!-- @change runs loadTracks every time a new genre is picked -->
           <select v-model="genre" class="form-select mb-3" @change="loadTracks">
             <option value="chillout">Chill</option>
@@ -763,7 +764,7 @@ onMounted(loadTracks)
             </div>
             <!-- Clicking A or B loads this song into that deck, for everyone in the room -->
             <!-- Simple mode: one "Use" button. DJ booth: choose Deck A or Deck B -->
-            <button v-if="!djMode" class="btn btn-sm btn-deck-a flex-shrink-0" @click="pickTrack('A', track)">Use</button>
+            <button v-if="!djMode" type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0" @click="pickTrack('A', track)">Use</button>
             <template v-else>
               <button class="btn btn-sm btn-deck-a flex-shrink-0" @click="pickTrack('A', track)">A</button>
               <button class="btn btn-sm btn-deck-b flex-shrink-0" @click="pickTrack('B', track)">B</button>
@@ -778,10 +779,31 @@ onMounted(loadTracks)
 
 <style scoped>
 /* Deck colours from the Figma */
-.text-deck-a { color: #0D7C75; }   
-.text-deck-b { color: #7c3aed; }
-.btn-deck-a { background: #0D7C75; color: white; }
-.btn-deck-b { background: #7c3aed; color: white; }
+/* Deck A is the brand blue and deck B is ink (design.md palette), so the two are easy to tell apart */
+.text-deck-a { color: var(--brand); }   
+.text-deck-b { color: var(--ink); }
+.btn-deck-a {
+  --bs-btn-color: #fff;
+  --bs-btn-bg: var(--brand);
+  --bs-btn-border-color: var(--brand);
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: var(--brand-dark);
+  --bs-btn-hover-border-color: var(--brand-dark);
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: var(--brand-dark);
+  --bs-btn-active-border-color: var(--brand-dark);
+}
+.btn-deck-b {
+  --bs-btn-color: #fff;
+  --bs-btn-bg: var(--ink);
+  --bs-btn-border-color: var(--ink);
+  --bs-btn-hover-color: #fff;
+  --bs-btn-hover-bg: #0E1020;
+  --bs-btn-hover-border-color: #0E1020;
+  --bs-btn-active-color: #fff;
+  --bs-btn-active-bg: #0E1020;
+  --bs-btn-active-border-color: #0E1020;
+}
 
 .track-icon {
   width: 36px;
@@ -804,9 +826,11 @@ onMounted(loadTracks)
   transition: background-color 150ms ease, transform 160ms var(--ease-out);
 }
 
-.track:hover {
-  background-color: var(--soft);
-  transform: translateY(-1px);
+@media (hover: hover) and (pointer: fine) {
+  .track:hover {
+    background-color: var(--soft);
+    transform: translateY(-1px);
+  }
 }
 
 /* Not in syllabus: Vue's <Transition> adds these classes while the DJ booth columns appear (enter) or disappear (leave) */

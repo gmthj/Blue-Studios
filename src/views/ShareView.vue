@@ -15,6 +15,7 @@ import { saveStripFile } from '../studio.js'
 import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
 import SharedStrip from '../components/SharedStrip.vue'
+import AppIcon from '../components/AppIcon.vue'
 
 // The "Share" page (a child of RoomLayout.vue): the strip is made as a file (PNG, GIF or MP4), uploaded, and given a
 // link and a QR code. Everyone in the room is here together, but only ONE device makes the file:
@@ -215,27 +216,33 @@ async function saveToStudio() {
 </script>
 
 <template>
+  <!-- app-page: the shared Blue Studios look (colours, font, buttons) from pages.css, see design.md -->
+  <div class="app-page room-page">
   <StageBar current="share" />
 
   <!-- Finished: the strip, the QR code, the link, and Download -->
   <div v-if="share">
-    <h1 class="h3 fw-bold text-center mb-3">{{ share.title }}</h1>
+    <h1 class="page-title text-center mb-3">{{ share.title }}</h1>
     <SharedStrip :share="share">
       <!-- Accounts can keep it in My Studio. Guests would lose it, so they are asked to log in. -->
-      <button v-if="isAccount" class="btn btn-outline-primary w-100 mt-2" :disabled="saving" @click="saveToStudio">
+      <button v-if="isAccount" type="button" class="btn btn-outline-secondary w-100 mt-2" :disabled="saving" @click="saveToStudio">
         {{ saving ? 'Saving...' : 'Save to My Studio' }}
       </button>
-      <button v-else class="btn btn-outline-primary w-100 mt-2" @click="goToLogin">Log in to save it to My Studio</button>
-      <p v-if="saveMessage" class="small mt-2 mb-0">{{ saveMessage }}</p>
+      <button v-else type="button" class="btn btn-outline-secondary w-100 mt-2" @click="goToLogin">Log in to save it to My Studio</button>
+      <p v-if="saveMessage" class="hint mt-2 mb-0" role="status">{{ saveMessage }}</p>
     </SharedStrip>
-    <p class="mt-3"><button class="btn btn-outline-secondary btn-sm" @click="goToStage('export')">&larr; Export</button></p>
+    <p class="mt-3">
+      <button type="button" class="btn btn-outline-secondary btn-sm step-link" @click="goToStage('export')">
+        <AppIcon name="arrow-left" :size="14" /> Export
+      </button>
+    </p>
   </div>
 
   <!-- Still being made, or something went wrong -->
   <div v-else class="row g-3">
     <div class="col-12 col-lg-4">
       <div class="panel">
-        <h2 class="h5 fw-bold">Your strip</h2>
+        <h2 class="section-title">Your strip</h2>
         <PhotoStrip
           mode="view"
           :layout="layout"
@@ -253,35 +260,74 @@ async function saveToStudio() {
     <div class="col-12 col-lg-8">
       <div class="panel">
         <template v-if="job && job.status === 'failed'">
-          <h2 class="h5 fw-bold">That didn't work</h2>
-          <p class="small text-danger">{{ job.error }}</p>
-          <button class="btn btn-primary me-2" @click="tryAgain">Try again</button>
-          <button class="btn btn-outline-secondary" @click="goToStage('export')">&larr; Export</button>
+          <h2 class="section-title">That didn't work</h2>
+          <p class="error-box" role="alert">{{ job.error }}</p>
+          <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-primary" @click="tryAgain">Try again</button>
+            <button type="button" class="btn btn-outline-secondary step-link" @click="goToStage('export')">
+              <AppIcon name="arrow-left" :size="16" /> Export
+            </button>
+          </div>
         </template>
         <template v-else-if="!job">
-          <h2 class="h5 fw-bold">Nothing to share yet</h2>
-          <p class="small text-muted">Choose a format and press "Share and download" on the Export page.</p>
-          <button class="btn btn-outline-secondary" @click="goToStage('export')">&larr; Export</button>
+          <h2 class="section-title">Nothing to share yet</h2>
+          <p class="hint">Choose a format and press "Share and download" on the Export page.</p>
+          <button type="button" class="btn btn-outline-secondary step-link" @click="goToStage('export')">
+            <AppIcon name="arrow-left" :size="16" /> Export
+          </button>
         </template>
         <template v-else>
           <!-- The same words on every device: which device is making the file is whichever took the job first, so it is not said -->
-          <h2 class="h5 fw-bold">Making your {{ job.format.toUpperCase() }}</h2>
-          <p class="small mb-1"><span class="spinner-border spinner-border-sm me-2"></span>{{ shownLabel || 'Starting...' }}</p>
-          <div class="progress" style="height: 8px">
+          <h2 class="section-title">Making your {{ job.format.toUpperCase() }}</h2>
+          <p class="making" role="status">
+            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>{{ shownLabel || 'Starting...' }}
+          </p>
+          <div class="progress" role="progressbar" aria-label="Making the file" :aria-valuenow="Math.round(shownProgress * 100)" aria-valuemin="0" aria-valuemax="100">
             <div class="progress-bar" :style="{ width: Math.round(shownProgress * 100) + '%' }"></div>
           </div>
-          <p class="small text-muted mt-3 mb-0">Keep this page open until it is done. It appears here for everyone in the room.</p>
+          <p class="hint mt-3 mb-0">Keep this page open until it is done. It appears here for everyone in the room.</p>
         </template>
       </div>
     </div>
   </div>
+  </div>
 </template>
 
 <style scoped>
-.panel {
-  background: #fff;
-  border-radius: 14px;
-  padding: 16px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+/* Styles follow design.md: the colours are the app-page variables, the cards (.panel) come from pages.css */
+.room-page {
+  padding-bottom: 24px;
+}
+
+.hint {
+  margin: 0 0 12px;
+  font-size: 0.85rem;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+/* The error colours from design.md */
+.error-box {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  color: #B42318;
+  background: #FEF3F2;
+  text-wrap: pretty;
+}
+
+/* "Drawing the photos..." with the spinner next to it */
+.making {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.making .spinner-border {
+  color: var(--brand);
 }
 </style>

@@ -80,10 +80,12 @@ function dismiss(group) {
 <template>
   <div class="row g-2 mb-3">
     <div class="col-12 col-md-auto">
-      <div class="btn-group btn-group-sm" role="group" aria-label="Report status">
+      <div class="chip-row" role="group" aria-label="Report status">
         <button
           v-for="s in STATUSES" :key="s.id"
-          class="btn" :class="status === s.id ? 'btn-primary' : 'btn-outline-primary'"
+          type="button"
+          class="chip chip-sm" :class="{ active: status === s.id }"
+          :aria-pressed="status === s.id"
           @click="status = s.id"
         >{{ s.label }}</button>
       </div>

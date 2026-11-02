@@ -1,4 +1,5 @@
 <script setup>
+import AppIcon from '../AppIcon.vue'
 import { useFrameEditorContext } from "../../composables/useFrameEditor.js"
 
 
@@ -96,7 +97,7 @@ const {
             </div>
             <button
               type="button"
-              class="btn btn-sm btn-light border-0 rounded-circle d-flex align-items-center justify-content-center p-1 text-secondary"
+              class="btn btn-sm btn-outline-secondary border-0 d-flex align-items-center justify-content-center p-1 text-muted"
               style="width: 28px; height: 28px;"
               aria-label="Close Properties Sheet"
               @click="isMobileEditSheetOpen = false"
@@ -587,7 +588,7 @@ const {
               </button>
               <button
                 class="btn btn-sm flex-grow-1 d-flex align-items-center justify-content-center gap-1"
-                :class="activeSelectedElement.isLocked ? 'btn-warning text-dark' : 'btn-outline-secondary'"
+                :class="activeSelectedElement.isLocked ? 'btn-primary' : 'btn-outline-secondary'"
                 @click="toggleLock(activeSelectedElement.id)"
               >
                 <span>{{ activeSelectedElement.isLocked ? 'Unlock' : 'Lock' }}</span>
@@ -627,13 +628,13 @@ const {
             </p>
             <div class="d-flex flex-column gap-2">
               <button
-                class="btn btn-sm btn-primary rounded-pill fw-semibold"
+                class="btn btn-sm btn-primary"
                 @click="addTextElement({ text: 'Heading', fontSize: 32, fontWeight: 'bold' })"
               >
                 + Add Heading
               </button>
               <button
-                class="btn btn-sm btn-outline-secondary rounded-pill"
+                class="btn btn-sm btn-outline-secondary"
                 @click="addTextElement({ text: 'Your text here', fontSize: 18 })"
               >
                 + Add Body Text
@@ -701,9 +702,10 @@ const {
                 <button
                   v-for="size in [14, 18, 24, 32, 48]"
                   :key="size"
-                  class="btn btn-sm py-0 px-2 rounded-pill"
-                  :class="activeTextElement.fontSize === size ? 'btn-primary' : 'btn-light border'"
-                  style="font-size: 0.72rem;"
+                  type="button"
+                  class="chip chip-sm"
+                  :class="{ active: activeTextElement.fontSize === size }"
+                  :aria-pressed="activeTextElement.fontSize === size"
                   @click="activeTextElement.fontSize = size; debounceTextHistory()"
                 >
                   {{ size }}
@@ -943,7 +945,7 @@ const {
               </button>
               <button
                 class="btn btn-sm flex-grow-1"
-                :class="activeTextElement.isLocked ? 'btn-warning text-dark' : 'btn-outline-secondary'"
+                :class="activeTextElement.isLocked ? 'btn-primary' : 'btn-outline-secondary'"
                 @click="toggleLock(activeTextElement.id)"
               >
                 {{ activeTextElement.isLocked ? 'Unlock' : 'Lock' }}
@@ -1069,7 +1071,7 @@ const {
                   style="font-size: 0.72rem;"
                   @click="removeGradientStop()"
                 >
-                  ✕ Remove 3rd Stop
+                  <AppIcon name="close" :size="12" /> Remove 3rd stop
                 </button>
               </div>
 
@@ -1535,7 +1537,7 @@ const {
               <button class="btn btn-sm btn-outline-secondary flex-grow-1" @click="duplicateSelectedElements">Duplicate</button>
               <button
                 class="btn btn-sm flex-grow-1"
-                :class="activeSelectedElement.isLocked ? 'btn-warning text-dark' : 'btn-outline-secondary'"
+                :class="activeSelectedElement.isLocked ? 'btn-primary' : 'btn-outline-secondary'"
                 @click="toggleLock(activeSelectedElement.id)"
               >
                 {{ activeSelectedElement.isLocked ? 'Unlock' : 'Lock' }}
@@ -1582,7 +1584,7 @@ const {
               </div>
               <button
                 class="btn btn-sm p-1"
-                :class="activeSelectedElement.isLocked ? 'btn-warning text-dark' : 'btn-outline-secondary'"
+                :class="activeSelectedElement.isLocked ? 'btn-primary' : 'btn-outline-secondary'"
                 :title="activeSelectedElement.isLocked ? 'Unlock layer' : 'Lock layer'"
                 @click="toggleLock(activeSelectedElement.id)"
               >
@@ -1642,7 +1644,7 @@ const {
                 </button>
                 <button
                   class="btn"
-                  :class="activeSelectedElement.isLocked ? 'btn-warning text-dark' : 'btn-outline-secondary'"
+                  :class="activeSelectedElement.isLocked ? 'btn-primary' : 'btn-outline-secondary'"
                   @click="toggleLock(activeSelectedElement.id)"
                 >
                   {{ activeSelectedElement.isLocked ? 'Locked' : 'Unlocked' }}

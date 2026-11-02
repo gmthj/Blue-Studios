@@ -294,7 +294,7 @@ function formatDate(time) {
                         <label class="form-check-label small" :for="'vis-' + template.id">Show in the marketplace</label>
                       </div>
                       <div class="item-actions">
-                        <router-link :to="templateRoomLink(template.id)" class="btn btn-sm btn-link px-0 fw-semibold">Use</router-link>
+                        <router-link :to="templateRoomLink(template.id)" class="btn btn-sm btn-link px-0">Use</router-link>
                         <button class="btn btn-sm btn-link px-0" @click="editingId = template.id">Edit</button>
                         <router-link :to="'/frame-editor?template=' + template.id" class="btn btn-sm btn-link px-0">Open in editor</router-link>
                         <router-link v-if="isListed(template)" :to="itemLink(route, 'templates', template.id)" class="btn btn-sm btn-link px-0">View</router-link>
@@ -320,14 +320,16 @@ function formatDate(time) {
           No stickers yet. Make one in the sticker maker.
         </div>
         <!-- Filter row: All / Mine (anything in one of my folders) / one button per folder -->
-        <div v-if="stickers.length > 0" class="d-flex flex-wrap gap-2 mb-3">
-          <button class="btn btn-sm rounded-pill" :class="folderFilter === 'all' ? 'btn-primary' : 'btn-outline-primary'" @click="folderFilter = 'all'">All</button>
-          <button class="btn btn-sm rounded-pill" :class="folderFilter === 'mine' ? 'btn-primary' : 'btn-outline-primary'" @click="folderFilter = 'mine'">My Privates</button>
+        <div v-if="stickers.length > 0" class="chip-row mb-3" role="group" aria-label="Folder">
+          <button type="button" class="chip" :class="{ active: folderFilter === 'all' }" :aria-pressed="folderFilter === 'all'" @click="folderFilter = 'all'">All</button>
+          <button type="button" class="chip" :class="{ active: folderFilter === 'mine' }" :aria-pressed="folderFilter === 'mine'" @click="folderFilter = 'mine'">My Privates</button>
           <button
             v-for="f in folders"
             :key="f.id"
-            class="btn btn-sm rounded-pill"
-            :class="folderFilter === f.id ? 'btn-primary' : 'btn-outline-primary'"
+            type="button"
+            class="chip"
+            :class="{ active: folderFilter === f.id }"
+            :aria-pressed="folderFilter === f.id"
             @click="folderFilter = f.id"
           >{{ f.name }}</button>
         </div>
@@ -396,7 +398,7 @@ function formatDate(time) {
               No longer available: the maker made it private or removed it.
             </div>
             <div class="d-flex justify-content-center gap-3">
-              <router-link v-if="savedItem.item && savedItem.type === 'templates'" :to="templateRoomLink(savedItem.id)" class="btn btn-sm btn-link px-0 fw-semibold">Use</router-link>
+              <router-link v-if="savedItem.item && savedItem.type === 'templates'" :to="templateRoomLink(savedItem.id)" class="btn btn-sm btn-link px-0">Use</router-link>
               <button class="btn btn-sm btn-link text-danger px-0" :disabled="busyId === savedItem.id" @click="unsave(savedItem)">Remove</button>
             </div>
           </div>
@@ -472,8 +474,10 @@ a.strip-preview {
   text-decoration: none;
 }
 
-.strip-title-link:hover {
-  text-decoration: underline;
+@media (hover: hover) and (pointer: fine) {
+  .strip-title-link:hover {
+    text-decoration: underline;
+  }
 }
 
 .template-preview {

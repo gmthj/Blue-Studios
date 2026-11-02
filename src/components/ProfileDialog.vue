@@ -245,9 +245,11 @@ async function save() {
   background: transparent;
 }
 
-.close-btn:hover {
-  color: var(--ink);
-  background: var(--soft);
+@media (hover: hover) and (pointer: fine) {
+  .close-btn:hover {
+    color: var(--ink);
+    background: var(--soft);
+  }
 }
 
 /* The big picture on the left, the buttons on the right */

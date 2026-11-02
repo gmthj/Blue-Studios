@@ -530,7 +530,7 @@ function onStripClick(event) {
       </template>
 
 
-      <span v-if="mode === 'pick' && editedIn(index)" class="media-badge edited">✂ {{ editedIn(index).name }}</span>
+      <span v-if="mode === 'pick' && editedIn(index)" class="media-badge edited"><AppIcon name="scissors" :size="10" /> {{ editedIn(index).name }}</span>
       <span v-else-if="mode === 'pick' && clipIn(index)" class="media-badge"><AppIcon name="play-fill" :size="8" /> video</span>
     </div>
 
@@ -701,7 +701,7 @@ function onStripClick(event) {
 }
 
 .slot.flash-empty .slot-empty {
-  color: #C9353A;
+  color: #CE3A3F;
 }
 
 @keyframes slot-shake {
@@ -775,7 +775,7 @@ function onStripClick(event) {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  background: #1A1A2E;
+  background: #161A2E;
   color: #fff;
   font-size: 0.6rem;
   font-weight: 600;
@@ -785,7 +785,7 @@ function onStripClick(event) {
 }
 
 .media-badge.edited {
-  background: #7B61FF; /* the same purple as the edited video in the gallery */
+  background: var(--ink, #14172B); /* dark ink, the same as the edited videos in the gallery */
 }
 
 /* The round × on a filled slot's top-right corner (Pick page). Its centre sits a little inside the corner,
@@ -813,8 +813,10 @@ function onStripClick(event) {
   transition: background-color 150ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-.slot-remove:hover {
-  background: #E5484D;
+@media (hover: hover) and (pointer: fine) {
+  .slot-remove:hover {
+    background: #E5484D;
+  }
 }
 
 .slot-remove:active {
@@ -840,7 +842,7 @@ function onStripClick(event) {
 .align-guide {
   position: absolute;
   z-index: 9999;
-  background: #F04438;
+  background: var(--danger, #E5484D);
   pointer-events: none;
 }
 
@@ -883,7 +885,7 @@ function onStripClick(event) {
 
 .sticker-box {
   position: absolute;
-  border: 2px solid #7C4DFF;
+  border: 2px solid var(--brand, #2F5BEA);
   border-radius: 2px;
 }
 
@@ -891,7 +893,7 @@ function onStripClick(event) {
 .handle {
   position: absolute;
   background: #fff;
-  border: 1.5px solid #9AA0B4;
+  border: 1.5px solid var(--muted, #6B7080);
   box-shadow: 0 1px 3px rgba(20, 23, 43, 0.2);
   pointer-events: auto;
   touch-action: none; /* a finger drags the handle instead of scrolling the page */
@@ -942,7 +944,7 @@ function onStripClick(event) {
   margin-left: -13px;
   border-radius: 50%;
   background: #fff;
-  border: 1.5px solid #9AA0B4;
+  border: 1.5px solid var(--muted, #6B7080);
   box-shadow: 0 1px 4px rgba(20, 23, 43, 0.25);
   color: #14172B;
   font-size: 0.95rem;
@@ -964,7 +966,7 @@ function onStripClick(event) {
   position: absolute;
   left: 50%;
   bottom: -60px;
-  background: #7C4DFF;
+  background: var(--brand, #2F5BEA);
   color: #fff;
   font-size: 0.65rem;
   font-weight: 700;
@@ -997,15 +999,17 @@ function onStripClick(event) {
   pointer-events: auto;
 }
 
-.sticker-delete:hover {
-  background: #C9353A;
+@media (hover: hover) and (pointer: fine) {
+  .sticker-delete:hover {
+    background: #CE3A3F;
+  }
 }
 
 .moved-by {
   position: absolute;
   left: -2px;
   top: -26px;
-  background: #F2711C;
+  background: var(--ink, #14172B);
   color: #fff;
   font-size: 0.65rem;
   padding: 1px 8px;
@@ -1021,5 +1025,14 @@ function onStripClick(event) {
   font-weight: 600;
   font-size: 0.85rem;
   margin: 0;
+}
+
+/* People who turned on "Reduce motion" on their device: nothing slides, pops or shakes.
+   Colour changes and fades stay (design.md). In a scoped style, * only means this component's parts. */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition-property: opacity, color, background-color, border-color, box-shadow !important;
+  }
 }
 </style>

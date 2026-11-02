@@ -105,7 +105,7 @@ async function goToStrip() {
   padding: 0 7px;
   border-radius: 999px;
   color: var(--muted, #6B7080);
-  background: #F1F3F8;
+  background: var(--soft, #F4F6FA);
   font-size: 0.72rem;
   font-weight: 700;
   line-height: 18px;
@@ -153,7 +153,7 @@ async function goToStrip() {
 .shot-photos .clip {
   height: 56px;
   border-radius: 8px;
-  background: #F1F3F8;
+  background: var(--soft, #F4F6FA);
   transition: opacity 300ms ease, transform 300ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 

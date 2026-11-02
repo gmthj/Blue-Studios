@@ -1,4 +1,5 @@
 <script setup>
+import AppIcon from './AppIcon.vue'
 import { ref, onMounted, watch, onBeforeUnmount } from 'vue'
 
 const props = defineProps({
@@ -305,11 +306,13 @@ onBeforeUnmount(() => {
         <span class="guide-coord">{{ g.type === 'horizontal' ? `Y: ${g.pos}px` : `X: ${g.pos}px` }}</span>
         <button
           class="guide-delete-btn"
-          title="Remove Guide"
+          type="button"
+          title="Remove guide"
+          aria-label="Remove guide"
           @click.stop="$emit('removeGuide', g.id)"
           @mousedown.stop
         >
-          ✕
+          <AppIcon name="close" :size="12" />
         </button>
       </div>
     </div>
@@ -347,9 +350,9 @@ onBeforeUnmount(() => {
   left: 0;
   width: 24px;
   height: 24px;
-  background: #F1F5F9;
-  border-right: 1px solid #CBD5E1;
-  border-bottom: 1px solid #CBD5E1;
+  background: var(--soft, #F4F6FA);
+  border-right: 1px solid var(--line, #E3E6EE);
+  border-bottom: 1px solid var(--line, #E3E6EE);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -360,14 +363,16 @@ onBeforeUnmount(() => {
   transition: background 0.15s ease;
 }
 
-.ruler-corner-box:hover {
-  background: #E2E8F0;
+@media (hover: hover) and (pointer: fine) {
+  .ruler-corner-box:hover {
+    background: var(--line, #E3E6EE);
+  }
 }
 
 .corner-unit {
   font-size: 8.5px;
   font-weight: 700;
-  color: #64748B;
+  color: var(--muted, #6B7080);
   letter-spacing: -0.02em;
 }
 
@@ -495,7 +500,18 @@ onBeforeUnmount(() => {
   transition: opacity 0.15s ease;
 }
 
-.guide-delete-btn:hover {
-  opacity: 1;
+@media (hover: hover) and (pointer: fine) {
+  .guide-delete-btn:hover {
+    opacity: 1;
+  }
+}
+
+/* People who turned on "Reduce motion" on their device: nothing slides, pops or shakes.
+   Colour changes and fades stay (design.md). In a scoped style, * only means this component's parts. */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition-property: opacity, color, background-color, border-color, box-shadow !important;
+  }
 }
 </style>

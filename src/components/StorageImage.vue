@@ -67,6 +67,6 @@ watch(() => [props.path, props.src], load, { immediate: true })
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f1f3f5;
+  background: var(--soft, #F4F6FA);
 }
 </style>

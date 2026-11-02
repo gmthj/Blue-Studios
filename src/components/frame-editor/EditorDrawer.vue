@@ -153,7 +153,7 @@ watch(activeTextElement, (newEl) => {
             <button
               v-if="activeTool === 'background'"
               type="button"
-              class="btn btn-sm btn-light text-muted p-1 rounded d-flex align-items-center justify-content-center"
+              class="btn btn-sm btn-outline-secondary border-0 text-muted p-1 d-flex align-items-center justify-content-center"
               style="width: 30px; height: 30px;"
               title="Reset background to clean white"
               @click="resetFrameBackground"
@@ -165,7 +165,7 @@ watch(activeTextElement, (newEl) => {
             </button>
 
             <!-- Collapse Drawer Button -->
-            <button class="btn btn-sm btn-light text-muted p-1 rounded d-flex align-items-center justify-content-center" style="width: 30px; height: 30px;" title="Collapse drawer" @click="closeDrawer">
+            <button class="btn btn-sm btn-outline-secondary border-0 text-muted p-1 d-flex align-items-center justify-content-center" style="width: 30px; height: 30px;" title="Collapse drawer" @click="closeDrawer">
               <!-- Desktop: Chevron pointing left (collapses leftwards into rail) -->
               <svg class="d-none d-lg-block" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="15 18 9 12 15 6" />
@@ -530,7 +530,7 @@ watch(activeTextElement, (newEl) => {
             </div>
             <h6 class="fw-bold text-dark mb-1">No elements found</h6>
             <p class="small text-muted mb-3">No graphics match "{{ elementSearchQuery }}".</p>
-            <button class="btn btn-sm btn-primary rounded-pill px-3" @click="elementSearchQuery = ''; selectedElementTag = 'All'">Clear Search & Filters</button>
+            <button class="btn btn-sm btn-primary px-3" @click="elementSearchQuery = ''; selectedElementTag = 'All'">Clear Search & Filters</button>
           </div>
 
           <!-- Filtered Elements Categories -->
@@ -544,7 +544,7 @@ watch(activeTextElement, (newEl) => {
                 <button
                   v-for="item in cat.items"
                   :key="item.name"
-                  class="btn btn-sm btn-light border p-1 d-flex align-items-center justify-content-center rounded-3 element-item-hover"
+                  class="btn btn-sm btn-outline-secondary p-1 d-flex align-items-center justify-content-center element-item-hover"
                   style="height: 52px;"
                   :title="item.name + (item.isSvg ? ' (Dynamic Recolorable)' : '')"
                   @click="addElement(item)"
@@ -705,7 +705,7 @@ watch(activeTextElement, (newEl) => {
             <button
               v-for="preset in textPresets"
               :key="preset.label"
-              class="btn btn-outline-light border text-dark text-start p-3 rounded-3 d-flex flex-column gap-1 w-100"
+              class="btn btn-outline-secondary text-start p-3 d-flex flex-column gap-1 w-100"
               @click="addTextElement(preset)"
             >
               <span class="small text-secondary fw-semibold">{{ preset.label }}</span>
@@ -963,7 +963,7 @@ watch(activeTextElement, (newEl) => {
                 <button
                   v-for="tex in bgTextures"
                   :key="tex.id"
-                  class="btn btn-outline-light border text-dark text-start p-2 rounded-3 d-flex align-items-center gap-2 w-100"
+                  class="btn btn-outline-secondary text-start p-2 d-flex align-items-center gap-2 w-100"
                   :class="{ 'border-primary bg-primary bg-opacity-10': frameBg.texture === tex.id }"
                   @click="setFrameTexture(tex.id)"
                 >
@@ -1011,7 +1011,7 @@ watch(activeTextElement, (newEl) => {
                 <button
                   v-for="pat in bgPatterns"
                   :key="pat.id"
-                  class="btn btn-outline-light border text-dark text-start p-2 rounded-3 d-flex align-items-center gap-2 w-100"
+                  class="btn btn-outline-secondary text-start p-2 d-flex align-items-center gap-2 w-100"
                   :class="{ 'border-primary bg-primary bg-opacity-10': frameBg.texture === pat.id }"
                   @click="setFrameTexture(pat.id)"
                 >
@@ -1096,7 +1096,7 @@ watch(activeTextElement, (newEl) => {
                 <!-- Up / Down Reorder buttons -->
                 <div class="btn-group-vertical btn-group-sm" @click.stop>
                   <button
-                    class="btn btn-sm btn-light border p-0 px-1"
+                    class="btn btn-sm btn-outline-secondary p-0 px-1"
                     style="font-size: 8px; line-height: 1;"
                     title="Bring Forward"
                     :disabled="revIndex === 0"
@@ -1105,7 +1105,7 @@ watch(activeTextElement, (newEl) => {
                     ▲
                   </button>
                   <button
-                    class="btn btn-sm btn-light border p-0 px-1"
+                    class="btn btn-sm btn-outline-secondary p-0 px-1"
                     style="font-size: 8px; line-height: 1;"
                     title="Send Backward"
                     :disabled="revIndex === reversedElements.length - 1"
@@ -1148,7 +1148,7 @@ watch(activeTextElement, (newEl) => {
                 <!-- Visibility Toggle -->
                 <button
                   class="btn btn-sm p-1 rounded-circle"
-                  :class="el.isHidden ? 'btn-primary' : 'btn-light border text-muted'"
+                  :class="el.isHidden ? 'btn-primary' : 'btn-outline-secondary text-muted'"
                   :title="el.isHidden ? 'Show element' : 'Hide element'"
                   @click="toggleHide(el.id)"
                 >
@@ -1165,7 +1165,7 @@ watch(activeTextElement, (newEl) => {
                 <!-- Lock Toggle -->
                 <button
                   class="btn btn-sm p-1 rounded-circle"
-                  :class="el.isLocked ? 'btn-primary' : 'btn-light border text-muted'"
+                  :class="el.isLocked ? 'btn-primary' : 'btn-outline-secondary text-muted'"
                   :title="el.isLocked ? 'Unlock element' : 'Lock element'"
                   @click="toggleLock(el.id)"
                 >
@@ -1181,7 +1181,7 @@ watch(activeTextElement, (newEl) => {
 
                 <!-- Delete button -->
                 <button
-                  class="btn btn-sm btn-light border text-danger p-1 rounded-circle"
+                  class="btn btn-sm btn-outline-danger p-1"
                   title="Delete layer"
                   @click="removeElementById(el.id)"
                 >

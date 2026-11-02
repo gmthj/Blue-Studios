@@ -243,7 +243,7 @@ function formatDate(time) {
             <button
               v-if="isAccount && !isMine"
               class="btn d-inline-flex align-items-center justify-content-center gap-2"
-              :class="saved || item.type === 'templates' ? 'btn-outline-primary' : 'btn-primary'"
+              :class="saved || item.type === 'templates' ? 'btn-outline-secondary' : 'btn-primary'"
               :disabled="saving"
               @click="toggleSave"
             >
@@ -256,7 +256,7 @@ function formatDate(time) {
               v-else-if="!isAccount"
               :to="loginLink"
               class="btn d-inline-flex align-items-center justify-content-center gap-2"
-              :class="item.type === 'templates' ? 'btn-outline-primary' : 'btn-primary'"
+              :class="item.type === 'templates' ? 'btn-outline-secondary' : 'btn-primary'"
             >
               <AppIcon name="bookmark" :size="16" /> Log in to save
             </router-link>
@@ -280,7 +280,7 @@ function formatDate(time) {
             </button>
 
             <form v-else class="card card-body report-form" @submit.prevent="sendReport">
-              <h3 class="h6 fw-bold">Report to a moderator</h3>
+              <h3 class="section-title">Report to a moderator</h3>
               <div class="mb-2">
                 <label class="form-label small" for="report-reason">What's wrong?</label>
                 <select id="report-reason" v-model="reportReason" class="form-select form-select-sm">
@@ -358,9 +358,11 @@ function formatDate(time) {
   background: rgba(255, 255, 255, 0.9);
 }
 
-.close-btn:hover {
-  color: var(--ink);
-  background: var(--soft);
+@media (hover: hover) and (pointer: fine) {
+  .close-btn:hover {
+    color: var(--ink);
+    background: var(--soft);
+  }
 }
 
 .close-btn:focus-visible {
