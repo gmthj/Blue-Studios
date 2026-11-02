@@ -57,6 +57,20 @@ const maxStart = computed(function () {
   return Math.max(0, Math.floor(props.track.duration - MAX_EDIT_SECONDS))
 })
 
+// The invisible slider sits on the waveform, only where the MIDDLE of the 15 s can go,
+// so the coloured part stays centred under your finger while you drag.
+// 8px = the waveform's padding on each side (WaveformBars.vue).
+const pickerStyle = computed(function () {
+  if (!props.track) return {}
+  const duration = props.track.duration
+  const halfPart = MAX_EDIT_SECONDS / 2 / duration   // half the 15 s, as a fraction of the song
+  const range = maxStart.value / duration            // how far the start can move, as a fraction
+  return {
+    left: 'calc(8px + (100% - 16px) * ' + halfPart + ')',
+    width: 'calc((100% - 16px) * ' + range + ')',
+  }
+})
+
 // 65 → "1:05"
 function formatTime(seconds) {
   const mins = Math.floor(seconds / 60)
@@ -111,25 +125,28 @@ const bars = computed(function () {
         </div>
       </div>
 
-      <WaveformBars :bars="bars" class="mb-3" />
-
-      <!-- Which 15 s of the song to use: it loops while you listen and goes into the video -->
+      <!-- Which 15 s of the song to use: drag the coloured part of the waveform.
+           It loops while you listen and goes into the video. -->
       <div class="d-flex justify-content-between small">
-        <label :for="'start-' + label.slice(-1)">Start at</label>
+        <label :for="'start-' + label.slice(-1)">Drag to choose the part</label>
         <span class="time">{{ formatTime(start) }} – {{ formatTime(start + MAX_EDIT_SECONDS) }}</span>
       </div>
-      <input
-        :id="'start-' + label.slice(-1)"
-        :value="start"
-        type="range"
-        class="form-range"
-        min="0"
-        :max="maxStart"
-        step="1"
-        :disabled="!track"
-        @input="onStartInput"
-        @change="onStartChange"
-      />
+      <div class="wave-picker mb-3">
+        <WaveformBars :bars="bars" />
+        <input
+          :id="'start-' + label.slice(-1)"
+          :value="start"
+          type="range"
+          class="wave-input"
+          :style="pickerStyle"
+          min="0"
+          :max="maxStart"
+          step="1"
+          :disabled="!track"
+          @input="onStartInput"
+          @change="onStartChange"
+        />
+      </div>
 
       <!-- Speed is a DJ booth control: hidden in simple mode (<template> groups without adding a box) -->
       <template v-if="!simple">
@@ -227,6 +244,38 @@ const bars = computed(function () {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* The slider is laid over the waveform (position: absolute inside a position: relative box)
+   and made invisible (opacity 0): you drag the bars, but it's still a real slider,
+   so the arrow keys and screen readers still work */
+.wave-picker {
+  position: relative;
+}
+
+/* .wave-picker in front: beats the team's slider style in pages.css, which makes every slider 6px high */
+.wave-picker .wave-input {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  margin: 0;
+  opacity: 0;
+  cursor: grab;
+}
+
+.wave-input:active {
+  cursor: grabbing;
+}
+
+.wave-input:disabled {
+  cursor: default;
+}
+
+/* The slider is invisible, so show a ring around the waveform when it's chosen with the keyboard */
+.wave-picker:focus-within {
+  outline: 2px solid #0d6efd;
+  outline-offset: 2px;
+  border-radius: 0.375rem;
 }
 
 /* Numbers that change while dragging: every digit the same width, so the text does not wiggle */
