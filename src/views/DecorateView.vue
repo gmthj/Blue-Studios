@@ -138,9 +138,6 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', updateTrayScroll)
 })
 watch(isAccount, refreshMyStickers) // logged in or out: load again
-watch([trayTab, defaultSections, mineOpen], () => {
-  nextTick(updateTrayScroll)
-}, { deep: true })
 
 // The Default tab in the Sticker Maker's sections, and the Mine tab's two lists
 const defaultSections = computed(() => DEFAULT_SECTIONS
@@ -160,6 +157,10 @@ const mineGroups = computed(() => [
     empty: 'GIFs you make in the Sticker Maker or save from the marketplace show up here.',
   },
 ])
+
+watch([trayTab, defaultSections, mineOpen], () => {
+  nextTick(updateTrayScroll)
+}, { deep: true })
 
 // The width where the page's columns stack and the tray becomes a sheet (Bootstrap "lg")
 function isPhone() {
