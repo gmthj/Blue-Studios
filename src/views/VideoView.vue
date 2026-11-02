@@ -24,7 +24,7 @@ import { askConfirm } from '../composables/useDialog.js'
 // The clips play one after another (hard cuts). Each timeline item is { clipId, start, end } in seconds.
 
 // room: the room document (live). clips: every clip recorded in the room (live). roomRef(): the room's Firestore reference.
-const { room, clips, roomRef } = useRoom()
+const { room, clips, roomRef, goToStage } = useRoom() // goToStage: the whole room moves, and Decorate onwards needs every frame filled
 
 const message = ref('')    // a short message under the Save button, e.g. "Saved as Edit 2"
 
@@ -222,10 +222,6 @@ const sessions = computed(() => {
   return groups.sort((a, b) => a.shotNumber - b.shotNumber)
 })
 
-// Everyone moves to another page together (RoomLayout.vue follows the room's "stage")
-async function goToStage(stage) {
-  await updateDoc(roomRef(), { stage: stage })
-}
 </script>
 
 <template>

@@ -2,6 +2,9 @@ import { ref, computed } from 'vue'
 import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, onSnapshot, query, orderBy } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { isActive, HEARTBEAT_MS } from '../room.js'
+import { roomLayout, emptySlotIndexes, emptySlotsMessage } from '../stripData.js'
+import { resolveEditedVideos } from '../clips.js'
+import { showNotice } from './useDialog.js'
 
 // SHARED room state for every page inside a room (camera page, strip page, future pages).
 //
@@ -65,14 +68,57 @@ const furthestIndex = computed(() => {
   return Math.max(stageIndex(room.value.furthestStage), stageIndex(room.value.stage))
 })
 
+// ---------- EVERY FRAME MUST BE FILLED ----------
+// Decorate and every stage after it need a photo or video in every slot of the strip.
+// This is checked here, in goToStage, so it holds for every way of moving on: Pick's Next / Export,
+// the stage bar, and the back / forward buttons on the later pages.
+// RoomLayout.vue also sends the room back to Pick if it is ever on a later stage with an empty slot.
+export function needsFullStrip(stageId) {
+  return stageIndex(stageId) >= stageIndex('decorate')
+}
+
+// The slots of the strip that are still empty, as indexes (0 = the first slot)
+const emptyStripSlots = computed(() => {
+  if (!room.value) return []
+  const slots = room.value.stripSlots || {}
+  const photoIds = new Set(photos.value.map((photo) => photo.id))
+  const clipIds = new Set(clips.value.map((clip) => clip.id))
+  const edited = resolveEditedVideos(room.value.editedVideos, clips.value)
+  // a slot is filled by a photo, a clip, or an edited video (that still has clips)
+  return emptySlotIndexes(roomLayout(room.value).slots.length, (i) => {
+    const id = slots[i]
+    return !!(id && (photoIds.has(id) || clipIds.has(id) || (edited[id] && edited[id].entries.length > 0)))
+  })
+})
+
+// true once the photos and clips have arrived from Firestore (before that, every slot looks empty)
+const mediaLoaded = ref(false)
+let photosLoaded = false
+let clipsLoaded = false
+
+// Can the room move to this stage? Says which frames are empty if not.
+async function checkFullStrip(stageId) {
+  if (!needsFullStrip(stageId) || emptyStripSlots.value.length === 0) return true
+  await showNotice({
+    title: 'Fill every frame to continue',
+    message: emptySlotsMessage(emptyStripSlots.value) + ' Go to Pick and drag a photo or video into each frame before moving on.',
+    confirmLabel: 'OK',
+    icon: 'layout',
+  })
+  return false
+}
+
 // Move everyone to another stage (RoomLayout.vue follows room.stage, on every device)
 // extraFields: other room fields to save in the same write, e.g. goToStage('share', { exportJob: { ... } })
+// Returns false (and moves no one) if the stage needs every frame filled and one is still empty.
 async function goToStage(stageId, extraFields = {}) {
+  if (!(await checkFullStrip(stageId))) return false
   const changes = { ...extraFields, stage: stageId }
   if (stageIndex(stageId) > furthestIndex.value) {
     changes.furthestStage = stageId
   }
   await updateDoc(roomRef(), changes)
+  return true
 }
 
 // The room moved further than ever before (by anyone, from any page): remember it.
@@ -99,6 +145,9 @@ async function enterRoom(roomCode, uid, name, deviceType) {
   members.value = []
   photos.value = []
   clips.value = []
+  mediaLoaded.value = false
+  photosLoaded = false
+  clipsLoaded = false
 
   // Save (or update) my member document. Keep my original joinedAt if I was already in the room.
   const existing = await getDoc(memberRef)
@@ -134,6 +183,8 @@ async function enterRoom(roomCode, uid, name, deviceType) {
       list.push({ id: photoDoc.id, ...photoDoc.data() })
     })
     photos.value = list
+    photosLoaded = true
+    mediaLoaded.value = photosLoaded && clipsLoaded
   })
 
   // Listen to the video clips, the same way
@@ -144,6 +195,8 @@ async function enterRoom(roomCode, uid, name, deviceType) {
       list.push({ id: clipDoc.id, ...clipDoc.data() })
     })
     clips.value = list
+    clipsLoaded = true
+    mediaLoaded.value = photosLoaded && clipsLoaded
   })
 
   // Heartbeat: every 15 seconds, tell the others I am still here
@@ -177,5 +230,5 @@ async function exitRoom(removeMember) {
 }
 
 export function useRoom() {
-  return { code, room, activeMembers, photos, clips, roomRef, enterRoom, exitRoom, furthestIndex, goToStage, saveProgress }
+  return { code, room, activeMembers, photos, clips, roomRef, enterRoom, exitRoom, furthestIndex, goToStage, saveProgress, emptyStripSlots, mediaLoaded }
 }

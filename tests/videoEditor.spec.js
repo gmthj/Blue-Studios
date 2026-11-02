@@ -19,7 +19,9 @@ vi.mock('../src/composables/useRoom.js', async (importOriginal) => {
   const { ref } = await import('vue')
   const room = ref({})
   const clips = ref([])
-  return { ...(await importOriginal()), useRoom: () => ({ room, clips, roomRef: () => 'room-ref' }) }
+  // goToStage: like the real one, it saves the room's new stage (going back to Pick needs no full strip)
+  const goToStage = async (stage) => { const { updateDoc } = await import('firebase/firestore'); await updateDoc('room-ref', { stage: stage }) }
+  return { ...(await importOriginal()), useRoom: () => ({ room, clips, roomRef: () => 'room-ref', goToStage }) }
 })
 vi.mock('firebase/firestore', async (importOriginal) => ({
   ...(await importOriginal()),

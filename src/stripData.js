@@ -222,3 +222,20 @@ export function emptySlotsMessage(indexes) {
   if (names.length === 1) return 'Frame ' + names[0] + ' is still empty.'
   return 'Frames ' + names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] + ' are still empty.'
 }
+
+// ---------- WHICH CUT A FRAME IS ("4-cut", "3-cut", "2x2") ----------
+// Worked out from where the frame's slots are: slots that start at about the same height are one row,
+// slots that start at about the same left are one column.
+//   one column of 4 slots -> '4-cut'     a 2 x 2 grid -> '2x2'     anything uneven -> '5-cut' (just the count)
+// slots: [{ x, y, w, h }] in % of the strip (or the slot count, when the positions are not known yet)
+export function cutLabel(slots) {
+  if (typeof slots === 'number') return slots > 0 ? slots + '-cut' : ''
+  if (!Array.isArray(slots) || slots.length === 0) return ''
+  const near = (a, b) => Math.abs(a - b) < 3 // within 3% counts as the same row / column
+  const groups = (values) => values.reduce((found, v) => (found.some((f) => near(f, v)) ? found : found.concat(v)), [])
+  const rows = groups(slots.map((s) => Number(s.y) || 0)).length
+  const cols = groups(slots.map((s) => Number(s.x) || 0)).length
+  if (cols === 1 || rows === 1) return slots.length + '-cut'           // one straight line of photos
+  if (rows * cols === slots.length) return cols + 'x' + rows             // a full grid, e.g. 2x2
+  return slots.length + '-cut'
+}

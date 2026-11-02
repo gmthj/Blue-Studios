@@ -1,7 +1,7 @@
 <script setup>
 import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { doc, getDoc } from 'firebase/firestore'
+import { doc, getDoc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { getGuestName, getDeviceType } from '../guest.js'
 import { getUid } from '../composables/useAuth.js'
@@ -10,7 +10,7 @@ import { getItem } from '../marketplace.js'
 import { templateFrameFields } from '../studio.js'
 import { saveFields } from '../stripData.js'
 import { showNotice } from '../composables/useDialog.js'
-import { useRoom, ROOM_STAGES } from '../composables/useRoom.js'
+import { useRoom, ROOM_STAGES, needsFullStrip } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
 import { useFullscreen } from '../composables/useFullscreen.js'
 import { playSound } from '../sounds.js'
@@ -36,7 +36,7 @@ const startTemplateId = typeof route.query.template === 'string' ? route.query.t
 // 'loading' | 'ready' | 'notFound' | 'full' | 'closed'
 const status = ref('loading')
 
-const { room, roomRef, activeMembers, enterRoom, exitRoom, saveProgress } = useRoom()
+const { room, roomRef, activeMembers, enterRoom, exitRoom, saveProgress, emptyStripSlots, mediaLoaded } = useRoom()
 const { startCall, endCall } = useVideoCall()
 const { exitFullscreen } = useFullscreen()
 
@@ -142,6 +142,24 @@ function followStage() {
 // Check again whenever the room document changes, or the URL changes
 watch(room, followStage)
 watch(() => route.path, followStage)
+
+// ---------- EVERY FRAME MUST BE FILLED ----------
+// goToStage (useRoom.js) never moves the room to Decorate or later with an empty slot.
+// This is the safety net for anything that slips past it (e.g. a photo in the strip is deleted,
+// or the room was already there before this rule): the whole room goes back to Pick to fill it.
+// Only once the photos and clips have loaded, otherwise every slot looks empty for a moment.
+watch(
+  () => [status.value, mediaLoaded.value, room.value && room.value.stage, emptyStripSlots.value.length],
+  async () => {
+    if (status.value !== 'ready' || !mediaLoaded.value || !room.value || room.value.closed) return
+    if (!needsFullStrip(room.value.stage) || emptyStripSlots.value.length === 0) return
+    try {
+      await updateDoc(roomRef(), { stage: 'pick' }) // every device may write this at once, which is fine
+    } catch (error) {
+      console.error(error)
+    }
+  }
+)
 
 // ---------- SOUNDS (sounds.js) ----------
 // A rising chime when the whole room moves on to a later step, a falling one when it goes back

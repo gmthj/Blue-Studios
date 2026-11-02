@@ -529,12 +529,6 @@ function onStripClick(event) {
         <span class="crop-hint" :class="{ show: showHint(index) }">✥ Hold &amp; drag to reposition</span>
       </template>
 
-      <button
-        v-if="mode === 'pick' && (photoIn(index) || editedIn(index) || clipIn(index))"
-        class="btn btn-sm btn-light remove-btn"
-        title="Remove photo"
-        @click.stop="emit('clear-slot', index)"
-      >&times;</button>
 
       <span v-if="mode === 'pick' && editedIn(index)" class="media-badge edited">✂ {{ editedIn(index).name }}</span>
       <span v-else-if="mode === 'pick' && clipIn(index)" class="media-badge"><AppIcon name="play-fill" :size="8" /> video</span>
@@ -575,6 +569,24 @@ function onStripClick(event) {
 
   <!-- The selected sticker's box with handles (Decorate page) -->
   <div ref="handlesLayer" class="handles-layer" :class="{ templated: !!frameStyle.thumbnailUrl }">
+    <!-- Pick page: a round × on the top-right corner of each filled slot, to take the photo / video out.
+         It sits in this layer (over the strip, not inside the slot), so a rounded or circle slot cannot
+         cut it off: it is always fully shown, half outside the slot's corner. -->
+    <template v-if="mode === 'pick'">
+      <button
+        v-for="(slot, index) in layout.slots"
+        v-show="photoIn(index) || editedIn(index) || clipIn(index)"
+        :key="'remove-' + index"
+        type="button"
+        class="slot-remove"
+        :style="{ left: (slot.x + slot.w) + '%', top: slot.y + '%' }"
+        :title="'Take it out of frame ' + (index + 1)"
+        :aria-label="'Remove from frame ' + (index + 1)"
+        :data-test="'remove-slot-' + index"
+        @pointerdown.stop
+        @click.stop="emit('clear-slot', index)"
+      >&times;</button>
+    </template>
     <div v-if="boxSticker" class="sticker-box" :style="boxStyle(boxSticker)">
       <!-- Corners and sides: resize (the sticker keeps its shape) -->
       <span
@@ -776,12 +788,42 @@ function onStripClick(event) {
   background: #7B61FF; /* the same purple as the edited video in the gallery */
 }
 
-.remove-btn {
+/* The round × on a filled slot's top-right corner (Pick page). Its centre sits a little inside the corner,
+   so it reads as belonging to that slot, but most of it is outside, so no slot shape can hide it. */
+.slot-remove {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  transform: translate(-65%, -35%);
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: #14172B;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
   line-height: 1;
-  padding: 0 6px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(20, 23, 43, 0.3);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background-color 150ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.slot-remove:hover {
+  background: #E5484D;
+}
+
+.slot-remove:active {
+  transform: translate(-65%, -35%) scale(0.92);
+}
+
+.slot-remove:focus-visible {
+  outline: 2px solid #2F5BEA;
+  outline-offset: 2px;
 }
 
 .sticker {

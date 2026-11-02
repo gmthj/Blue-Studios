@@ -4,9 +4,9 @@ import { playSound } from '../sounds.js'
 import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import { useAuth } from '../composables/useAuth.js'
-import { LAYOUTS, FRAME_STYLES, saveFields, saveField, cropOf, MAX_ZOOM, emptySlotIndexes, emptySlotsMessage } from '../stripData.js'
-import { listMyItems, getFileUrl, templateFrameFields } from '../studio.js'
-import { getItem, listMySaved } from '../marketplace.js'
+import { LAYOUTS, FRAME_STYLES, saveFields, saveField, cropOf, MAX_ZOOM, emptySlotIndexes, emptySlotsMessage, cutLabel } from '../stripData.js'
+import { listMyItems, getFileUrl, templateFrameFields, loadTemplateProject } from '../studio.js'
+import { getItem, listMySaved, searchPublicItems } from '../marketplace.js'
 import { loadSavedFramesFromDB } from '../utils/savedFrameEngine.js'
 import { resolveEditedVideos, editedVideoList } from '../clips.js'
 import EditedVideoThumb from '../components/EditedVideoThumb.vue'
@@ -14,6 +14,8 @@ import ClipThumb from '../components/ClipThumb.vue'
 import StageBar from '../components/StageBar.vue'
 import { askConfirm, showNotice } from '../composables/useDialog.js'
 import PhotoStrip from '../components/PhotoStrip.vue'
+import FrameTile from '../components/FrameTile.vue'
+import AppIcon from '../components/AppIcon.vue'
 
 // The "Pick" page (a child of RoomLayout.vue): choose a frame and drag photos into it.
 //   Left:   gallery, photos grouped by session (shot)
@@ -21,10 +23,11 @@ import PhotoStrip from '../components/PhotoStrip.vue'
 //   Right:  saved frames (Default / Mine / Saved from the marketplace, Cut layouts), Skip video, Next
 // Everything is saved in the room document, so everyone in the room sees the same strip.
 
-const { room, photos, clips, roomRef } = useRoom()
+const { room, photos, clips, roomRef, goToStage } = useRoom() // goToStage: the whole room moves, and Decorate onwards needs every frame filled
 const { isAccount } = useAuth()
 
 const selectedPhotoId = ref(null) // phones: the photo tapped (each person has their own)
+const targetSlot = ref(null)      // phones: the slot tapped first, waiting for a photo / video to be tapped
 const cropSlot = ref(null)        // the slot being repositioned (moved / zoomed), or null
 const draftZoom = ref(null)       // the zoom slider's value while it is being dragged (only on this screen), or null
 // const showCall = ref(true)        // the video call can be hidden so it does not cover the strip
@@ -70,6 +73,75 @@ const myStyles = FRAME_STYLES.filter((s) => s.group === 'mine')
 
 onMounted(loadTemplates)
 watch(isAccount, loadTemplates)
+
+// ---------- DEFAULT FRAMES: the ones the "Blue Studios" account published ----------
+// The team publishes its ready-made frames from one account called Blue Studios (in the marketplace,
+// public). Those are the Default frames everyone sees, guests too. If none can be loaded (offline, or
+// none published yet), the built-in colour frames below are shown instead.
+// The account name is matched loosely ("Blue Studio", "blue studios", "BlueStudios" all count).
+const studioFrames = ref([])
+const loadingStudioFrames = ref(true)
+const DEFAULT_VISIBLE = 8           // 2 rows of 4, before "Show all"
+const showAllDefault = ref(false)
+
+function isStudioAccount(ownerName) {
+  return /^blue\s*studios?$/i.test(String(ownerName || '').trim())
+}
+
+async function loadStudioFrames() {
+  loadingStudioFrames.value = true
+  try {
+    // Search the public templates for the account's name, then keep only the ones it actually made
+    const found = await searchPublicItems({ type: 'templates', text: 'blue studio' })
+    const theirs = found.filter((item) => isStudioAccount(item.ownerName))
+    studioFrames.value = await Promise.all(theirs.map(templateSwatch))
+  } catch (err) {
+    console.warn('Could not load the Blue Studios frames:', err)
+    studioFrames.value = []
+  } finally {
+    loadingStudioFrames.value = false
+  }
+}
+onMounted(loadStudioFrames)
+
+// ---------- THE CUT UNDER EACH FRAME ----------
+// "4-cut", "3-cut", "2x2"... A frame saved on this device has its slots already. A frame in the cloud only
+// says how many slots it has, so its project file is read once to see how they are arranged.
+const cuts = ref({})         // frame id -> '4-cut'
+const cutLoading = new Set() // frames whose project file is being read
+
+function cutOf(tpl) {
+  return cuts.value[tpl.id] || cutLabel(tpl.slotCount || 0)
+}
+
+async function workOutCut(tpl) {
+  if (!tpl || cuts.value[tpl.id] || cutLoading.has(tpl.id)) return
+  const known = tpl.projectData && (tpl.projectData.slots || tpl.projectData.slotRects)
+  if (known) {
+    cuts.value = { ...cuts.value, [tpl.id]: cutLabel(known) }
+    return
+  }
+  if (!tpl.dataPath) return
+  cutLoading.add(tpl.id)
+  try {
+    const project = await loadTemplateProject(tpl)
+    const slots = project && (project.slots || project.slotRects)
+    if (slots) cuts.value = { ...cuts.value, [tpl.id]: cutLabel(slots) }
+  } catch {
+    // keep the slot count ("4-cut") if the file cannot be read
+  } finally {
+    cutLoading.delete(tpl.id)
+  }
+}
+
+// The default frames shown now: the first 8, or all of them after "Show all"
+const shownStudioFrames = computed(() =>
+  showAllDefault.value ? studioFrames.value : studioFrames.value.slice(0, DEFAULT_VISIBLE))
+
+// Saved from the marketplace: the first 8 too, then "Show all"
+const showAllSaved = ref(false)
+const shownSavedFrames = computed(() =>
+  showAllSaved.value ? savedTemplates.value : savedTemplates.value.slice(0, DEFAULT_VISIBLE))
 
 // The template the room was made with ("Use template" in the marketplace or My Studio, see RoomLayout.vue).
 // Listed first under "Mine", even if it isn't mine or saved, so the room can go back to it.
@@ -276,6 +348,7 @@ async function placePhoto(index, photoId) {
     }
   }
   selectedPhotoId.value = null
+  targetSlot.value = null
   cropSlot.value = index // show the reposition bar for what was just placed
   playSound('pop')
   await updateDoc(roomRef(), changes)
@@ -288,21 +361,37 @@ async function clearSlot(index) {
   changes['stripEdits.' + index] = null
   changes['stripCrops.' + index] = null
   if (cropSlot.value === index) cropSlot.value = null
+  if (targetSlot.value === index) targetSlot.value = null
   playSound('remove')
   await updateDoc(roomRef(), changes)
 }
 
 // Phones do not support drag and drop: tap a photo, then tap a slot
+// Tapping works in either order (phones have no drag and drop):
+//   tap a photo / video, then tap a slot  -> it goes in that slot
+//   tap a slot, then tap a photo / video  -> it goes in that slot too
 function selectPhoto(photoId) {
+  if (targetSlot.value !== null) {
+    placePhoto(targetSlot.value, photoId) // a slot was tapped first
+    return
+  }
   selectedPhotoId.value = selectedPhotoId.value === photoId ? null : photoId // tap again to unselect
 }
 
 function onSlotClick(index) {
   if (selectedPhotoId.value) {
-    placePhoto(index, selectedPhotoId.value)
-  } else if (slotHasMedia(index)) {
-    cropSlot.value = cropSlot.value === index ? null : index // tap a photo or video on the strip to reposition it (tap again to close)
+    placePhoto(index, selectedPhotoId.value) // a photo was tapped first
+    return
   }
+  if (targetSlot.value === index) {
+    targetSlot.value = null // the same slot again: cancel
+    cropSlot.value = null
+    return
+  }
+  // Remember this slot for the next photo / video tapped. A filled slot also opens the reposition bar,
+  // and the next photo tapped replaces what is in it.
+  targetSlot.value = index
+  cropSlot.value = slotHasMedia(index) ? index : null
 }
 
 // ---------- REPOSITIONING A PHOTO OR VIDEO IN ITS SLOT ("crop") ----------
@@ -379,21 +468,6 @@ function resetCrop() {
 
 // ---------- FRAMES ----------
 
-// A different cut has different slots, so the slots are emptied (ask first if photos would be lost)
-async function chooseLayout(id) {
-  if (id === layout.value.id) return
-  if (filledCount.value > 0) {
-    const sure = await askConfirm({
-      title: 'Change the cut?',
-      message: 'This clears the photos on the strip for everyone.',
-      confirmLabel: 'Change cut',
-      danger: true,
-      icon: 'layout',
-    })
-    if (!sure) return
-  }
-  await saveFields(roomRef(), { stripLayoutId: id, stripCustomTemplate: null, stripSlots: {}, stripEdits: {}, stripCrops: {} })
-}
 
 // A style only changes the colours and slot shape, so the photos stay
 async function chooseStyle(id) {
@@ -427,13 +501,17 @@ async function editSaved(edit) {
   await updateDoc(roomRef(), { videoTimeline: edit.timeline, videoEditing: edit.id, stage: 'video' })
 }
 
-// Everyone moves to another page together (RoomLayout.vue follows the room's "stage")
-async function goToStage(stage) {
-  await updateDoc(roomRef(), { stage: stage })
-}
+// Work out the cut of every frame that is on screen (and of new ones as they load)
+watch(
+  () => [...shownStudioFrames.value, ...mineTemplates.value, ...shownSavedFrames.value],
+  (frames) => frames.forEach(workOutCut),
+  { immediate: true }
+)
 </script>
 
 <template>
+  <!-- app-page: the shared Blue Studios look (colours, font, buttons) from pages.css, see design.md -->
+  <div class="app-page room-page">
   <StageBar current="pick" />
 
   <!-- 3 columns from Bootstrap "lg" (992px) up. On phones: strip first, then gallery, then frames -->
@@ -442,16 +520,26 @@ async function goToStage(stage) {
     <div class="col-12 col-md-6 col-lg-3 order-2 order-lg-1">
       <div class="panel">
         <div class="d-flex justify-content-between align-items-center mb-1">
-          <h2 class="h5 fw-bold mb-0">Gallery</h2>
-          <button class="btn btn-link btn-sm p-0" @click="goToStage('shoot')">&larr; Camera</button>
+          <h2 class="section-title mb-0">Gallery</h2>
+          <button class="btn btn-link btn-sm p-0 back-link" @click="goToStage('shoot')">&larr; Camera</button>
         </div>
-        <p class="small text-muted mb-2">Drag a photo or video into a slot. On a phone: tap it, then tap a slot.</p>
+        <p class="hint">Drag a photo or video into a frame. On a phone: tap it, then a frame (or the frame first).</p>
 
-        <p v-if="sessions.length === 0" class="small text-muted">No photos or videos yet.</p>
+        <!-- A slot was tapped first: say what to do next, with a way to cancel -->
+        <div v-if="targetSlot !== null" class="target-hint mb-2" role="status">
+          <span>Frame {{ targetSlot + 1 }} picked. Now tap a photo or video for it.</span>
+          <button type="button" class="target-cancel" aria-label="Cancel" title="Cancel" @click="targetSlot = null; cropSlot = null"><AppIcon name="close" :size="14" /></button>
+        </div>
+
+        <div v-if="sessions.length === 0" class="empty-state">
+          <div class="empty-icon"><AppIcon name="camera" :size="22" /></div>
+          <p class="mb-2">No photos or videos yet.</p>
+          <button type="button" class="btn btn-outline-secondary btn-sm" @click="goToStage('shoot')">Go to the camera</button>
+        </div>
 
         <!-- The videos made on the Video page, to drag into a slot like a photo. Each one is purple. -->
         <section v-if="editedList.length > 0" class="mb-3">
-          <h3 class="h6 mb-2"><span class="badge edited-badge">✂ Edited videos</span></h3>
+          <h3 class="group-label"><span class="badge edited-badge">✂ Edited videos</span></h3>
           <div class="row g-2 session-box edited-box">
             <div v-for="edit in editedList" :key="edit.id" class="col-6">
               <div
@@ -478,7 +566,7 @@ async function goToStage(stage) {
         <!-- Scrolls up and down through the sessions; 2 per row in each session (col-6), like the gallery on the camera page -->
         <div class="gallery-scroll">
           <section v-for="session in sessions" :key="session.shotNumber" class="mb-3">
-            <h3 class="h6 mb-2">Session {{ session.shotNumber }}</h3>
+            <h3 class="group-label">Session {{ session.shotNumber }}</h3>
             <div class="row g-2 session-box">
               <div v-for="photo in session.photos" :key="photo.id" class="col-6">
                 <div class="thumb" :class="{ selected: photo.id === selectedPhotoId }">
@@ -530,7 +618,7 @@ async function goToStage(stage) {
           :edits="room.stripEdits || {}"
           :crops="shownCrops"
           :stickers="room.stripStickers || []"
-          :selected-slot="cropSlot"
+          :selected-slot="targetSlot !== null ? targetSlot : cropSlot"
           :flash-empty="flashEmpty"
           @drop-photo="placePhoto"
           @slot-click="onSlotClick"
@@ -541,7 +629,7 @@ async function goToStage(stage) {
         <!-- The reposition bar: shown after something is dropped in a slot, or a filled slot is tapped -->
         <div v-if="cropSlot !== null && slotHasMedia(cropSlot)" class="reposition-bar mt-3" role="group" :aria-label="'Reposition ' + cropLabel">
           <div class="d-flex align-items-center gap-2 mb-2">
-            <span class="reposition-icon" aria-hidden="true">✥</span>
+            <span class="reposition-icon" aria-hidden="true"><AppIcon name="image" :size="18" /></span>
             <div class="flex-grow-1 lh-sm">
               <div class="fw-semibold small">Reposition {{ cropLabel }}</div>
               <div class="reposition-tip">Drag inside the frame to move · {{ usesTouch ? 'pinch' : 'scroll' }} to zoom</div>
@@ -550,7 +638,7 @@ async function goToStage(stage) {
 
           <!-- Zoom: − / slider / + . Zooming in gives the picture room to move. -->
           <div class="d-flex align-items-center gap-2">
-            <button class="zoom-btn" :disabled="shownZoom <= 1" aria-label="Zoom out" @click="stepZoom(-0.25)">−</button>
+            <button class="zoom-btn" :disabled="shownZoom <= 1" aria-label="Zoom out" title="Zoom out" @click="stepZoom(-0.25)">−</button>
             <input
               type="range"
               class="form-range flex-grow-1"
@@ -562,12 +650,13 @@ async function goToStage(stage) {
               @input="previewZoom"
               @change="commitZoom"
             />
-            <button class="zoom-btn" :disabled="shownZoom >= MAX_ZOOM" aria-label="Zoom in" @click="stepZoom(0.25)">+</button>
-            <span class="zoom-value">{{ shownZoom.toFixed(1) }}×</span>
+            <button class="zoom-btn" :disabled="shownZoom >= MAX_ZOOM" aria-label="Zoom in" title="Zoom in" @click="stepZoom(0.25)">+</button>
+            <span class="zoom-value tabular">{{ shownZoom.toFixed(1) }}×</span>
           </div>
 
           <div class="d-flex gap-2 mt-2">
-            <button class="btn btn-light btn-sm flex-fill" @click="resetCrop">Reset</button>
+            <button class="btn btn-outline-secondary btn-sm flex-fill" @click="resetCrop">Reset</button>
+            <button class="btn btn-outline-danger btn-sm flex-fill" data-test="remove-from-bar" @click="clearSlot(cropSlot)">Remove</button>
             <button class="btn btn-primary btn-sm flex-fill" @click="cropSlot = null">Done</button>
           </div>
         </div>
@@ -577,139 +666,116 @@ async function goToStage(stage) {
     <!-- RIGHT: saved frames -->
     <div class="col-12 col-md-6 col-lg-3 order-3">
       <div class="panel d-flex flex-column">
-        <h2 class="h5 fw-bold">Saved frames</h2>
+        <h2 class="section-title">Saved frames</h2>
 
-        <h3 class="h6 mt-2">Default</h3>
-        <div class="d-flex flex-wrap gap-2">
+        <!-- DEFAULT: the frames published by the Blue Studios account (first 8, then "Show all") -->
+        <h3 class="group-label">Default <span v-if="studioFrames.length" class="section-count">{{ studioFrames.length }}</span></h3>
+        <div v-if="loadingStudioFrames" class="frame-grid" role="status" aria-label="Loading frames">
+          <span v-for="n in 4" :key="n" class="skeleton frame-skeleton"></span>
+        </div>
+        <template v-else-if="studioFrames.length">
+          <div class="frame-grid" :class="{ expanded: showAllDefault }">
+            <FrameTile
+              v-for="tpl in shownStudioFrames"
+              :key="tpl.id"
+              :frame="tpl"
+              :cut="cutOf(tpl)"
+              :active="tpl.id === frameStyle.id"
+              @choose="chooseCustomTemplate(tpl)"
+            />
+          </div>
           <button
-            v-for="s in defaultStyles"
-            :key="s.id"
-            class="swatch"
-            :class="[s.shape, { active: s.id === frameStyle.id }]"
-            :style="{ background: s.background, borderColor: s.id === frameStyle.id ? '#2F5BEA' : s.border }"
-            :title="s.caption"
-            @click="chooseStyle(s.id)"
-          ></button>
+            v-if="studioFrames.length > DEFAULT_VISIBLE"
+            type="button"
+            class="btn btn-link show-all-btn"
+            :aria-expanded="showAllDefault"
+            data-test="default-show-all"
+            @click="showAllDefault = !showAllDefault"
+          >
+            {{ showAllDefault ? 'Show less' : 'Show all ' + studioFrames.length }}
+            <AppIcon :name="showAllDefault ? 'chevron-up' : 'chevron-down'" :size="14" />
+          </button>
+        </template>
+        <!-- No Blue Studios frames could be loaded: the built-in colour frames -->
+        <div v-else class="frame-grid">
+          <FrameTile
+            v-for="st in defaultStyles"
+            :key="st.id"
+            :frame="{ ...st, name: st.caption }"
+            :cut="cutLabel(layout.slots)"
+            :active="st.id === frameStyle.id"
+            @choose="chooseStyle(st.id)"
+          />
         </div>
 
-        <h3 class="h6 mt-3 d-flex justify-content-between align-items-center">
-          <span>Mine</span>
-          <!-- View all: only when there are more than 8 (the 2 rows of 4 that fit). It opens the full list. -->
+        <!-- MINE: frames this account made. More than 8: 2 rows that scroll sideways, until View all -->
+        <h3 class="group-label d-flex justify-content-between align-items-center">
+          <span>Mine <span v-if="mineTemplates.length" class="section-count">{{ mineTemplates.length }}</span></span>
           <button
             v-if="mineTemplates.length > MINE_VISIBLE"
             type="button"
-            class="view-all-btn"
+            class="btn btn-link show-all-btn mt-0"
             :aria-expanded="showAllMine"
             @click="showAllMine = !showAllMine"
-          >{{ showAllMine ? 'Show less' : 'View all \u2192' }}</button>
+          >{{ showAllMine ? 'Show less' : 'View all' }}</button>
         </h3>
-        <!-- 8 or fewer: wrap as before. More than 8: 2 rows that scroll sideways (scroll bar at the bottom),
-             with the next column peeking in at the right, until View all opens the full list. -->
         <div
-          class="d-flex flex-wrap gap-2 align-items-center"
-          :class="{ 'mine-scroll': mineTemplates.length > MINE_VISIBLE && !showAllMine }"
+          v-if="mineTemplates.length"
+          class="frame-grid"
+          :class="{ 'mine-scroll': mineTemplates.length > MINE_VISIBLE && !showAllMine, expanded: showAllMine }"
         >
-          <div
+          <FrameTile
             v-for="tpl in mineTemplates"
             :key="tpl.id"
-            class="position-relative"
-          >
-            <button
-              class="swatch"
-              :class="[tpl.shape || 'square', { active: tpl.id === frameStyle.id, 'picture-swatch': !!tpl.thumbnailUrl }]"
-              :style="{
-                background: tpl.thumbnailUrl ? `url(${tpl.thumbnailUrl}) center/contain no-repeat` : (tpl.background || '#FFE8A3'),
-                borderColor: tpl.id === frameStyle.id ? '#2F5BEA' : (tpl.border || '#E0A100')
-              }"
-              :title="tpl.name"
-              @click="chooseCustomTemplate(tpl)"
-            ></button>
-          </div>
-
-          <!-- Fallback if no custom templates loaded -->
-          <button
-            v-if="mineTemplates.length === 0"
-            v-for="s in myStyles"
-            :key="s.id"
-            class="swatch"
-            :class="[s.shape, { active: s.id === frameStyle.id }]"
-            :style="{ background: s.background, borderColor: s.id === frameStyle.id ? '#2F5BEA' : s.border }"
-            @click="chooseStyle(s.id)"
-          ></button>
-
-          <!-- Add new template button linking to Frame Editor -->
-          <router-link
-            to="/frame-editor"
-            class="swatch add-swatch text-decoration-none d-flex align-items-center justify-content-center"
-            title="Design a new frame in Frame Editor"
-          >+</router-link>
+            :frame="tpl"
+            :cut="cutOf(tpl)"
+            :active="tpl.id === frameStyle.id"
+            @choose="chooseCustomTemplate(tpl)"
+          />
         </div>
+        <p v-else-if="!isAccount" class="group-empty">Log in to use the frames you made.</p>
+        <p v-else-if="loadingTemplates" class="group-empty" role="status">Loading your frames…</p>
+        <p v-else class="group-empty">No frames yet. Frames you make in the Frame Editor show up here.</p>
 
-        <!-- Templates saved from the marketplace (in My Studio) -->
+        <!-- SAVED: templates saved from the marketplace (in My Studio) -->
         <template v-if="savedTemplates.length">
-          <h3 class="h6 mt-3">Saved</h3>
-          <div class="d-flex flex-wrap gap-2 align-items-center">
-            <button
-              v-for="tpl in savedTemplates"
+          <h3 class="group-label">Saved <span class="section-count">{{ savedTemplates.length }}</span></h3>
+          <div class="frame-grid" :class="{ expanded: showAllSaved }">
+            <FrameTile
+              v-for="tpl in shownSavedFrames"
               :key="tpl.id"
-              class="swatch"
-              :class="[tpl.shape, { active: tpl.id === frameStyle.id, 'picture-swatch': !!tpl.thumbnailUrl }]"
-              :style="{
-                background: tpl.thumbnailUrl ? `url(${tpl.thumbnailUrl}) center/contain no-repeat` : tpl.background,
-                borderColor: tpl.id === frameStyle.id ? '#2F5BEA' : tpl.border
-              }"
-              :title="tpl.name"
-              @click="chooseCustomTemplate(tpl)"
-            ></button>
+              :frame="{ ...tpl, saved: true }"
+              :cut="cutOf(tpl)"
+              :active="tpl.id === frameStyle.id"
+              @choose="chooseCustomTemplate(tpl)"
+            />
           </div>
+          <button
+            v-if="savedTemplates.length > DEFAULT_VISIBLE"
+            type="button"
+            class="btn btn-link show-all-btn"
+            :aria-expanded="showAllSaved"
+            @click="showAllSaved = !showAllSaved"
+          >
+            {{ showAllSaved ? 'Show less' : 'Show all ' + savedTemplates.length }}
+            <AppIcon :name="showAllSaved ? 'chevron-up' : 'chevron-down'" :size="14" />
+          </button>
         </template>
 
-        <!-- The template in use -->
-        <div v-if="room.stripCustomTemplate" class="alert alert-light border p-2 mt-2 mb-0 d-flex align-items-center justify-content-between">
-          <div class="d-flex align-items-center gap-2 overflow-hidden">
-            <img
-              v-if="room.stripCustomTemplate.thumbnailUrl"
-              :src="room.stripCustomTemplate.thumbnailUrl"
-              class="rounded border flex-shrink-0"
-              style="width: 24px; height: 32px; object-fit: cover;"
-            />
-            <div class="text-truncate" style="max-width: 130px;">
-              <div class="small fw-semibold text-truncate">{{ room.stripCustomTemplate.name }}</div>
-              <div class="text-muted" style="font-size: 0.7rem;">Active Template</div>
-            </div>
+        <!-- The frame in use -->
+        <div v-if="room.stripCustomTemplate" class="active-frame">
+          <img v-if="room.stripCustomTemplate.thumbnailUrl" :src="room.stripCustomTemplate.thumbnailUrl" alt="" class="active-frame-thumb" />
+          <div class="overflow-hidden">
+            <div class="active-frame-name text-truncate">{{ room.stripCustomTemplate.name }}</div>
+            <div class="active-frame-label">Frame in use · {{ cutLabel(layout.slots) }}</div>
           </div>
-          <router-link
-            :to="'/frame-editor?template=' + room.stripCustomTemplate.id"
-            class="btn btn-sm btn-outline-primary py-0 px-2 text-decoration-none flex-shrink-0"
-            title="Re-edit this template in Frame Editor (retains full workspace)"
-          >
-            ✏️ Re-edit
-          </router-link>
         </div>
 
-        <!-- The cut is only for the default designs: a template already has its own slots -->
-        <template v-if="!room.stripCustomTemplate">
-          <h3 class="h6 mt-3">Cut</h3>
-          <div class="d-flex flex-column gap-2 cut-list">
-            <button
-              v-for="l in LAYOUTS"
-              :key="l.id"
-              class="cut-item text-start"
-              :class="{ active: l.id === layout.id }"
-              @click="chooseLayout(l.id)"
-            >
-              <span class="d-block fw-semibold">{{ l.name }}</span>
-              <span class="small text-muted">{{ l.slots.length }} slots</span>
-              <span v-if="l.id === layout.id" class="check">✓</span>
-            </button>
-          </div>
-        </template>
-
-        <p class="small text-muted mt-3 mb-2">
-          {{ filledCount }} of {{ layout.slots.length }} slots filled · Slots: photo or clip
+        <p class="slot-count">
+          <span class="tabular">{{ filledCount }} of {{ layout.slots.length }}</span> frames filled · a photo or video in each
         </p>
 
-        <button class="btn btn-outline-primary w-100 mb-2" data-test="pick-export" @click="tryLeavePick('export')">
+        <button class="btn btn-outline-secondary w-100 mb-2" data-test="pick-export" @click="tryLeavePick('export')">
           Export
         </button>
 
@@ -724,62 +790,272 @@ async function goToStage(stage) {
       </div>
     </div>
   </div>
+  </div>
 </template>
 
 <style scoped>
+/* Styles follow design.md: the colours are the app-page variables (--brand, --ink, --muted, --line, --soft),
+   corners 10px (buttons, tiles) / 16px (cards), soft low shadows, hover only with a mouse,
+   and every movement switched off for people who ask for reduced motion (at the bottom). */
 
-/* The reposition bar under the strip: a white card like the other panels, in the brand blue.
-   position: sticky + bottom keeps it on screen at the bottom of the window while the strip is in view,
-   so on a long strip (or a phone) the zoom slider can be used without scrolling down to it. */
+/* ---------- Page and panels ---------- */
+.room-page {
+  padding-bottom: 24px;
+}
+
+/* A card: white, 16px corners, a thin line and the soft card shadow */
+.panel {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 20px;
+  height: 100%;
+  box-shadow: 0 1px 2px rgba(20, 23, 43, 0.04);
+}
+
+/* The middle: the strip on a soft grey well, always the same size whatever frame is chosen
+   (the strip is never taller than --stage-h, see PhotoStrip.vue) */
+.canvas-area {
+  --stage-h: min(72vh, 680px);
+  background: var(--soft);
+  min-height: calc(var(--stage-h) + 40px); /* + the panel's padding */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.section-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  text-wrap: balance;
+}
+
+/* Small uppercase labels for the parts of a panel (Default, Mine, Saved, Session 1) */
+.group-label {
+  margin: 16px 0 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.group-label:first-of-type {
+  margin-top: 4px;
+}
+
+/* The count next to a title, e.g. "Mine 3" */
+.section-count {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--brand-tint);
+  color: var(--brand);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+  vertical-align: 1px;
+}
+
+.hint,
+.group-empty {
+  margin: 0 0 12px;
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+.group-empty {
+  margin-bottom: 4px;
+}
+
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.back-link {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+/* ---------- Frames ---------- */
+/* 4 per row; each tile is a FrameTile card (picture + cut label, bigger preview on hover).
+   The cards keep one size (72px wide at most) and the space left over goes between them. */
+.frame-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 72px));
+  justify-content: space-between;
+  gap: 10px 8px;
+  padding: 3px; /* room for the chosen frame's blue ring */
+}
+
+/* "Show all": every frame, scrolling inside the panel if there are a lot */
+.frame-grid.expanded {
+  max-height: 380px;
+  overflow-y: auto;
+}
+
+/* More than 8 under Mine: 2 rows that run sideways, the next column peeking in at the right edge */
+.frame-grid.mine-scroll {
+  grid-template-columns: none;
+  grid-template-rows: repeat(2, auto);
+  grid-auto-flow: column;
+  grid-auto-columns: min(72px, calc((100% - 3 * 8px) / 4.4));
+  justify-content: start;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-bottom: 10px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.frame-grid.mine-scroll::-webkit-scrollbar {
+  height: 6px;
+}
+
+.frame-grid.mine-scroll::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 999px;
+}
+
+/* Grey placeholders while the default frames load, the size of a card */
+.frame-skeleton {
+  display: block;
+  width: 100%;
+  max-width: 72px;
+  aspect-ratio: 3 / 4.6;
+  border-radius: 10px;
+}
+
+.show-all-btn {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 2px 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+/* The frame in use, under the lists */
+.active-frame {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+  padding: 8px 10px;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.active-frame-thumb {
+  width: 24px;
+  height: 32px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.active-frame-name {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.active-frame-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+/* "2 of 4 frames filled" above the buttons */
+.slot-count {
+  margin: 16px 0 10px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+/* ---------- "Frame 2 picked. Now tap a photo or video for it." ---------- */
+.target-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px 10px;
+  background: var(--brand-tint);
+  color: var(--brand);
+  border-radius: 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.target-cancel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+}
+
+/* ---------- The reposition bar (under the strip) ---------- */
+/* A floating card: sticks to the bottom of the screen while the strip is in view */
 .reposition-bar {
   position: sticky;
   bottom: 12px;
   z-index: 30;
   width: 100%;
-  max-width: 300px;
+  max-width: 320px;
   margin: 0 auto;
   background: #fff;
-  border: 1px solid #E3E6EE;
-  border-radius: 14px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
   padding: 12px 14px;
-  box-shadow: 0 4px 14px rgba(20, 23, 43, 0.08);
+  box-shadow: 0 1px 2px rgba(20, 23, 43, 0.04), 0 12px 32px rgba(20, 23, 43, 0.06);
 }
 
+/* Icon tile: brand tint background, brand icon */
 .reposition-icon {
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
   border-radius: 10px;
-  background: #E8EEFF;
-  color: #2F5BEA;
+  background: var(--brand-tint);
+  color: var(--brand);
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1rem;
   flex-shrink: 0;
 }
 
 .reposition-tip {
-  font-size: 0.7rem;
-  color: #6B7080;
+  font-size: 0.72rem;
+  color: var(--muted);
 }
 
-/* Round − and + buttons */
+/* Round − and + buttons (32px tap targets) */
 .zoom-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 1px solid #E3E6EE;
-  background: #F4F6FA;
-  color: #14172B;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
   font-weight: 700;
   line-height: 1;
-  flex-shrink: 0;
+  transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, transform 160ms var(--ease-out);
 }
 
-.zoom-btn:hover:not(:disabled) {
-  background: #E8EEFF;
-  color: #2F5BEA;
-  border-color: #2F5BEA;
+.zoom-btn:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 .zoom-btn:disabled {
@@ -787,42 +1063,14 @@ async function goToStage(stage) {
 }
 
 .zoom-value {
-  min-width: 34px;
+  min-width: 36px;
   text-align: right;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: #2F5BEA;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--brand);
 }
 
-/* The slider's thumb and filled part in the brand blue */
-.reposition-bar .form-range::-webkit-slider-thumb {
-  background: #2F5BEA;
-}
-
-.reposition-bar .form-range::-moz-range-thumb {
-  background: #2F5BEA;
-}
-
-.panel {
-  background: #fff;
-  border-radius: 14px;
-  padding: 16px;
-  height: 100%;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
-}
-
-.canvas-area {
-  /* The same space for every frame: the strip is never taller than --stage-h (see PhotoStrip.vue),
-     and the area is always at least that tall, so it does not grow or shrink when a different frame is chosen */
-  --stage-h: min(72vh, 680px);
-  background: #EEF0F6;
-  min-height: calc(var(--stage-h) + 32px); /* + the panel's padding */
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-}
-
-/* Gallery */
+/* ---------- Gallery ---------- */
 .gallery-scroll {
   max-height: 70vh; /* a fixed height, so the sessions scroll inside the card */
   overflow-y: auto;
@@ -831,7 +1079,7 @@ async function goToStage(stage) {
 }
 
 .session-box {
-  border: 1px solid #E3E6EE;
+  border: 1px solid var(--line);
   border-radius: 10px;
   padding: 6px;
   margin: 0;
@@ -842,15 +1090,20 @@ async function goToStage(stage) {
   border-radius: 10px;
   overflow: hidden;
   border: 3px solid transparent;
+  transition: border-color 150ms ease, transform 160ms var(--ease-out);
+}
+
+.thumb:active {
+  transform: scale(0.97);
 }
 
 .thumb.selected {
-  border-color: #2F5BEA;
+  border-color: var(--brand);
 }
 
 .video-thumb {
   aspect-ratio: 4 / 3; /* the same shape as a photo (and as the gallery on the camera page) */
-  background: #000;
+  background: #0E1020; /* dark surfaces in a room are navy, not black */
   cursor: grab;
 }
 
@@ -875,7 +1128,7 @@ async function goToStage(stage) {
 }
 
 .thumb.edited.selected {
-  border-color: #2F5BEA;
+  border-color: var(--brand);
 }
 
 /* An unedited clip is exactly the size of a photo: the full width of its column, in the same 4:3 shape.
@@ -917,6 +1170,7 @@ async function goToStage(stage) {
   left: 4px;
   bottom: 4px;
   background: #fff;
+  color: var(--ink);
   border-radius: 999px;
   font-size: 0.6rem;
   padding: 0 6px;
@@ -930,7 +1184,7 @@ async function goToStage(stage) {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #2F5BEA;
+  background: var(--brand);
   color: #fff;
   font-size: 0.65rem;
   display: flex;
@@ -938,120 +1192,29 @@ async function goToStage(stage) {
   justify-content: center;
 }
 
-/* Saved frames */
-.swatch {
-  width: 48px;
-  height: 48px;
-  border: 2px solid;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+/* Keyboard focus is always visible */
+.target-cancel:focus-visible,
+.zoom-btn:focus-visible,
+.show-all-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
-.swatch.circle {
-  border-radius: 50%;
-}
+/* Hover colours only with a real mouse (otherwise phones keep them stuck after a tap) */
+@media (hover: hover) and (pointer: fine) {
+  .zoom-btn:hover:not(:disabled) {
+    background: var(--brand-tint);
+    color: var(--brand);
+    border-color: var(--brand);
+  }
 
-.swatch.active {
-  border-width: 3px;
-  box-shadow: 0 0 0 2px #E8EEFF;
-}
+  .target-cancel:hover {
+    background: rgba(47, 91, 234, 0.12);
+  }
 
-/* A saved template shown as its own picture: the picture already has its rounded border, so the swatch adds
-   no border or corner of its own. The chosen one is marked with a blue ring around it instead. */
-.swatch.picture-swatch {
-  border: none;
-  border-radius: 0;
-  background-color: transparent;
-}
-
-.swatch.picture-swatch.active {
-  box-shadow: none;
-  outline: 2px solid #2F5BEA;
-  outline-offset: 3px;
-  border-radius: 6px;
-}
-
-
-/* "View all" next to the Mine title */
-.view-all-btn {
-  border: none;
-  background: none;
-  padding: 0;
-  font-size: 0.75rem;
-  color: #6B7080;
-}
-
-.view-all-btn:hover {
-  color: #2F5BEA;
-}
-
-/* More than 8 frames under Mine: 2 rows of the same 48px swatches, running sideways.
-   The box is a bit wider than 4 columns, so the 5th column peeks in at the right edge. */
-.mine-scroll {
-  display: grid !important;
-  grid-template-rows: repeat(2, 48px);
-  grid-auto-flow: column;
-  grid-auto-columns: 48px;
-  max-width: calc(4 * 48px + 4 * 8px + 22px);
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  padding: 3px 3px 10px; /* room for the blue outline, and the scroll bar under the frames */
-  scrollbar-width: thin;
-  scrollbar-color: #B8C6F5 transparent;
-}
-
-.mine-scroll::-webkit-scrollbar {
-  height: 6px;
-}
-
-.mine-scroll::-webkit-scrollbar-track {
-  background: #F1F2F6;
-  border-radius: 999px;
-}
-
-.mine-scroll::-webkit-scrollbar-thumb {
-  background: #B8C6F5;
-  border-radius: 999px;
-}
-
-.mine-scroll::-webkit-scrollbar-thumb:hover {
-  background: #2F5BEA;
-}
-
-.cut-list {
-  max-height: 220px;
-  overflow-y: auto;
-}
-
-.cut-item {
-  position: relative;
-  background: #fff;
-  border: 1px solid #E3E6EE;
-  border-radius: 10px;
-  padding: 8px 12px;
-}
-
-.cut-item.active {
-  border-color: #2F5BEA;
-  background: #F2F5FF;
-}
-
-.check {
-  position: absolute;
-  right: 10px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: #2F5BEA;
-  color: #fff;
-  font-size: 0.7rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  .show-all-btn:hover {
+    text-decoration: underline;
+  }
 }
 
 /* ---------- Smaller screens ---------- */
@@ -1059,8 +1222,6 @@ async function goToStage(stage) {
 @media (max-width: 991.98px) {
   .canvas-area {
     --stage-h: min(62vh, 560px); /* a bit shorter, so the panels below are not far away */
-    padding-top: 20px;
-    padding-bottom: 20px;
   }
 
   .gallery-scroll {
@@ -1068,11 +1229,23 @@ async function goToStage(stage) {
   }
 }
 
-/* Phones: a little less padding so the content gets the room */
+/* Phones: cards keep 16px of space inside, and the buttons are full width */
 @media (max-width: 575.98px) {
   .panel {
-    padding: 12px;
-    border-radius: 12px;
+    padding: 16px;
+  }
+}
+
+/* Reduced motion: no movement (colour fades stay) */
+@media (prefers-reduced-motion: reduce) {
+  .thumb,
+  .zoom-btn {
+    transition: border-color 150ms ease, background-color 150ms ease;
+  }
+
+  .thumb:active,
+  .zoom-btn:active:not(:disabled) {
+    transform: none;
   }
 }
 </style>
