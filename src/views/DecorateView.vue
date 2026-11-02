@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import { getGuestName } from '../guest.js'
@@ -114,14 +114,33 @@ function onTabVisible() {
   if (document.visibilityState === 'visible') refreshMyStickers()
 }
 
+const trayBodyEl = ref(null)
+const trayScrolledDown = ref(false)
+const trayCanScrollDown = ref(true)
+
+function updateTrayScroll() {
+  const el = trayBodyEl.value
+  if (!el) return
+  trayScrolledDown.value = el.scrollTop > 4
+  trayCanScrollDown.value = el.scrollTop + el.clientHeight < el.scrollHeight - 6
+}
+
 onMounted(async () => {
   loadArtFonts() // the Text tab's fonts (the same 29 as the Sticker Maker)
   refreshMyStickers()
   document.addEventListener('visibilitychange', onTabVisible)
+  window.addEventListener('resize', updateTrayScroll)
   defaultStickers.value = await loadDefaultStickers()
+  nextTick(updateTrayScroll)
 })
-onBeforeUnmount(() => document.removeEventListener('visibilitychange', onTabVisible))
+onBeforeUnmount(() => {
+  document.removeEventListener('visibilitychange', onTabVisible)
+  window.removeEventListener('resize', updateTrayScroll)
+})
 watch(isAccount, refreshMyStickers) // logged in or out: load again
+watch([trayTab, defaultSections, mineOpen], () => {
+  nextTick(updateTrayScroll)
+}, { deep: true })
 
 // The Default tab in the Sticker Maker's sections, and the Mine tab's two lists
 const defaultSections = computed(() => DEFAULT_SECTIONS
@@ -707,130 +726,140 @@ async function saveToStudio() {
             </button>
           </div>
 
-          <div class="tray-body" role="tabpanel">
-            <p v-if="trayError" class="small text-danger mb-2" role="alert">{{ trayError }}</p>
+          <div class="tray-scroll-wrap">
+            <div
+              ref="trayBodyEl"
+              class="tray-body"
+              role="tabpanel"
+              @scroll.passive="updateTrayScroll"
+            >
+              <p v-if="trayError" class="small text-danger mb-2" role="alert">{{ trayError }}</p>
 
-            <!-- DEFAULT: the Sticker Maker's stickers, shapes, washi tape and emoji.
-                 Click or tap to add to the middle of the strip; on a laptop you can also drag one onto a spot. -->
-            <template v-if="trayTab === 'default'">
-              <p v-if="defaultSections.length === 0" class="small text-muted mb-2">Loading stickers…</p>
-              <div v-for="section in defaultSections" :key="section.id" class="tray-section">
-                <p class="tray-label">{{ section.title }}</p>
-                <div class="tray-grid" :class="{ wide: section.id === 'tapes' }">
-                  <button
-                    v-for="s in section.stickers"
-                    :key="s.id"
-                    type="button"
-                    class="tray-item"
-                    :title="'Add ' + s.name"
-                    :aria-label="'Add ' + s.name"
-                    draggable="true"
-                    @dragstart="onTrayDragStart($event, s)"
-                    @click="pickTraySticker(s)"
-                  >
-                    <img :src="s.src" alt="" draggable="false" />
-                  </button>
+              <!-- DEFAULT: the Sticker Maker's stickers, shapes, washi tape and emoji.
+                   Click or tap to add to the middle of the strip; on a laptop you can also drag one onto a spot. -->
+              <template v-if="trayTab === 'default'">
+                <p v-if="defaultSections.length === 0" class="small text-muted mb-2">Loading stickers…</p>
+                <div v-for="section in defaultSections" :key="section.id" class="tray-section">
+                  <p class="tray-label">{{ section.title }}</p>
+                  <div class="tray-grid" :class="{ wide: section.id === 'tapes' }">
+                    <button
+                      v-for="s in section.stickers"
+                      :key="s.id"
+                      type="button"
+                      class="tray-item"
+                      :title="'Add ' + s.name"
+                      :aria-label="'Add ' + s.name"
+                      draggable="true"
+                      @dragstart="onTrayDragStart($event, s)"
+                      @click="pickTraySticker(s)"
+                    >
+                      <img :src="s.src" alt="" draggable="false" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            </template>
-
-            <!-- TEXT: type, style, add. With a text sticker selected, the style buttons change it. -->
-            <template v-else-if="trayTab === 'text'">
-              <template v-if="!selectedTextSticker">
-                <textarea
-                  v-model="textDraft.words"
-                  class="form-control text-words"
-                  rows="2"
-                  maxlength="120"
-                  placeholder="Type something"
-                  aria-label="Words for the text sticker"
-                  :style="draftStyle"
-                ></textarea>
-                <button type="button" class="btn btn-primary btn-sm w-100 mt-2" @click="addTextSticker">Add to strip</button>
               </template>
-              <p v-else class="small text-muted mb-2">Double-tap the text on the strip to change its words.</p>
 
-              <!-- Bold, italic and colour -->
-              <div class="text-row">
-                <button type="button" class="text-toggle" :class="{ active: textStyle.bold }" :aria-pressed="textStyle.bold" aria-label="Bold" title="Bold" @click="setTextStyle({ bold: !textStyle.bold })"><b>B</b></button>
-                <button type="button" class="text-toggle" :class="{ active: textStyle.italic }" :aria-pressed="textStyle.italic" aria-label="Italic" title="Italic" @click="setTextStyle({ italic: !textStyle.italic })"><i>I</i></button>
-                <span class="text-row-line" aria-hidden="true"></span>
-                <div class="text-colors">
-                  <button
-                    v-for="color in TEXT_COLORS"
-                    :key="color"
-                    type="button"
-                    class="text-swatch"
-                    :class="{ active: textStyle.color === color }"
-                    :style="{ background: color }"
-                    :aria-label="'Colour ' + color"
-                    :aria-pressed="textStyle.color === color"
-                    @click="setTextStyle({ color })"
-                  ></button>
-                  <label class="text-swatch text-swatch-any" title="Any colour">
-                    <input type="color" :value="textStyle.color" aria-label="Any colour" @change="setTextStyle({ color: $event.target.value })" />
-                  </label>
+              <!-- TEXT: type, style, add. With a text sticker selected, the style buttons change it. -->
+              <template v-else-if="trayTab === 'text'">
+                <template v-if="!selectedTextSticker">
+                  <textarea
+                    v-model="textDraft.words"
+                    class="form-control text-words"
+                    rows="2"
+                    maxlength="120"
+                    placeholder="Type something"
+                    aria-label="Words for the text sticker"
+                    :style="draftStyle"
+                  ></textarea>
+                  <button type="button" class="btn btn-primary btn-sm w-100 mt-2" @click="addTextSticker">Add to strip</button>
+                </template>
+                <p v-else class="small text-muted mb-2">Double-tap the text on the strip to change its words.</p>
+
+                <!-- Bold, italic and colour -->
+                <div class="text-row">
+                  <button type="button" class="text-toggle" :class="{ active: textStyle.bold }" :aria-pressed="textStyle.bold" aria-label="Bold" title="Bold" @click="setTextStyle({ bold: !textStyle.bold })"><b>B</b></button>
+                  <button type="button" class="text-toggle" :class="{ active: textStyle.italic }" :aria-pressed="textStyle.italic" aria-label="Italic" title="Italic" @click="setTextStyle({ italic: !textStyle.italic })"><i>I</i></button>
+                  <span class="text-row-line" aria-hidden="true"></span>
+                  <div class="text-colors">
+                    <button
+                      v-for="color in TEXT_COLORS"
+                      :key="color"
+                      type="button"
+                      class="text-swatch"
+                      :class="{ active: textStyle.color === color }"
+                      :style="{ background: color }"
+                      :aria-label="'Colour ' + color"
+                      :aria-pressed="textStyle.color === color"
+                      @click="setTextStyle({ color })"
+                    ></button>
+                    <label class="text-swatch text-swatch-any" title="Any colour">
+                      <input type="color" :value="textStyle.color" aria-label="Any colour" @change="setTextStyle({ color: $event.target.value })" />
+                    </label>
+                  </div>
                 </div>
-              </div>
 
-              <!-- Fonts: each name in its own face -->
-              <div v-for="group in FONT_GROUPS_READY" :key="group.group" class="tray-section">
-                <p class="tray-label">{{ group.group }}</p>
-                <div class="text-fonts">
-                  <button
-                    v-for="font in group.fonts"
-                    :key="font.name"
-                    type="button"
-                    class="text-font"
-                    :class="{ active: textStyle.font === font.name }"
-                    :aria-pressed="textStyle.font === font.name"
-                    :style="{ fontFamily: font.stack }"
-                    @click="setTextStyle({ font: font.name })"
-                  >{{ font.name }}</button>
+                <!-- Fonts: each name in its own face -->
+                <div v-for="group in FONT_GROUPS_READY" :key="group.group" class="tray-section">
+                  <p class="tray-label">{{ group.group }}</p>
+                  <div class="text-fonts">
+                    <button
+                      v-for="font in group.fonts"
+                      :key="font.name"
+                      type="button"
+                      class="text-font"
+                      :class="{ active: textStyle.font === font.name }"
+                      :aria-pressed="textStyle.font === font.name"
+                      :style="{ fontFamily: font.stack }"
+                      @click="setTextStyle({ font: font.name })"
+                    >{{ font.name }}</button>
+                  </div>
                 </div>
-              </div>
-            </template>
+              </template>
 
-            <!-- LIVE: time, date, weather and location -->
-            <LiveStickerPicker v-else-if="trayTab === 'live'" @add="addLiveSticker" />
+              <!-- LIVE: time, date, weather and location -->
+              <LiveStickerPicker v-else-if="trayTab === 'live'" @add="addLiveSticker" />
 
-            <!-- MINE: my stickers, then my GIFs, each folds away -->
-            <template v-else>
-              <p v-if="!isAccount" class="small text-muted mb-2">Log in to use the stickers you made or saved.</p>
-              <p v-else-if="loadingMine && myStickers.length === 0" class="small text-muted mb-2">Loading your stickers…</p>
+              <!-- MINE: my stickers, then my GIFs, each folds away -->
               <template v-else>
-                <div v-for="group in mineGroups" :key="group.id" class="tray-section">
-                  <button
-                    type="button"
-                    class="tray-fold"
-                    :aria-expanded="mineOpen[group.id]"
-                    @click="mineOpen[group.id] = !mineOpen[group.id]"
-                  >
-                    <span>{{ group.title }} <span class="tray-fold-count">{{ group.list.length }}</span></span>
-                    <AppIcon name="chevron" :size="16" class="tray-chevron" :class="{ up: mineOpen[group.id] }" />
-                  </button>
-                  <template v-if="mineOpen[group.id]">
-                    <p v-if="group.list.length === 0" class="small text-muted mb-2">{{ group.empty }}</p>
-                    <div v-else class="tray-grid">
-                      <button
-                        v-for="s in group.list"
-                        :key="s.id"
-                        type="button"
-                        class="tray-item"
-                        :title="s.saved ? s.name + ' (saved from the marketplace)' : 'Add ' + s.name"
-                        :aria-label="'Add ' + s.name"
-                        draggable="true"
-                        @dragstart="onTrayDragStart($event, s)"
-                        @click="pickTraySticker(s)"
-                      >
-                        <img :src="s.src" alt="" draggable="false" />
-                        <span v-if="s.saved" class="saved-tag" aria-hidden="true">★</span>
-                      </button>
-                    </div>
-                  </template>
-                </div>
+                <p v-if="!isAccount" class="small text-muted mb-2">Log in to use the stickers you made or saved.</p>
+                <p v-else-if="loadingMine && myStickers.length === 0" class="small text-muted mb-2">Loading your stickers…</p>
+                <template v-else>
+                  <div v-for="group in mineGroups" :key="group.id" class="tray-section">
+                    <button
+                      type="button"
+                      class="tray-fold"
+                      :aria-expanded="mineOpen[group.id]"
+                      @click="mineOpen[group.id] = !mineOpen[group.id]"
+                    >
+                      <span>{{ group.title }} <span class="tray-fold-count">{{ group.list.length }}</span></span>
+                      <AppIcon name="chevron" :size="16" class="tray-chevron" :class="{ up: mineOpen[group.id] }" />
+                    </button>
+                    <template v-if="mineOpen[group.id]">
+                      <p v-if="group.list.length === 0" class="small text-muted mb-2">{{ group.empty }}</p>
+                      <div v-else class="tray-grid">
+                        <button
+                          v-for="s in group.list"
+                          :key="s.id"
+                          type="button"
+                          class="tray-item"
+                          :title="s.saved ? s.name + ' (saved from the marketplace)' : 'Add ' + s.name"
+                          :aria-label="'Add ' + s.name"
+                          draggable="true"
+                          @dragstart="onTrayDragStart($event, s)"
+                          @click="pickTraySticker(s)"
+                        >
+                          <img :src="s.src" alt="" draggable="false" />
+                          <span v-if="s.saved" class="saved-tag" aria-hidden="true">★</span>
+                        </button>
+                      </div>
+                    </template>
+                  </div>
+                </template>
               </template>
-            </template>
+            </div>
+            <!-- Scroll affordance shadows -->
+            <div class="tray-scroll-hint top" :class="{ visible: trayScrolledDown }" aria-hidden="true"></div>
+            <div class="tray-scroll-hint bottom" :class="{ visible: trayCanScrollDown }" aria-hidden="true"></div>
           </div>
         </section>
 
@@ -842,41 +871,43 @@ async function saveToStudio() {
 
         <!-- Layers: front at the top. Drag a row by its grip to move a sticker in front of or behind
              others. Photos and frame are always behind the stickers, so they stay at the bottom. -->
-        <h2 class="h5 fw-bold">Layers</h2>
-        <ul ref="layerListEl" class="list-unstyled layers mb-3">
-          <li
-            v-for="s in layersFrontToBack"
-            :key="s.id"
-            :data-layer-id="s.id"
-            class="layer"
-            :class="{ active: s.id === selectedStickerId, dragging: s.id === draggingLayerId }"
-            @click="selectedStickerId = s.id"
-          >
-            <span
-              class="layer-grip"
-              title="Drag to move this sticker in front of or behind others"
-              aria-label="Drag to reorder"
-              @pointerdown="startLayerDrag($event, s)"
-              @click.stop
+        <section class="layers-section" aria-label="Layers">
+          <h2 class="h5 fw-bold mb-2">Layers</h2>
+          <ul ref="layerListEl" class="list-unstyled layers mb-3">
+            <li
+              v-for="s in layersFrontToBack"
+              :key="s.id"
+              :data-layer-id="s.id"
+              class="layer"
+              :class="{ active: s.id === selectedStickerId, dragging: s.id === draggingLayerId }"
+              @click="selectedStickerId = s.id"
             >
-              <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M4 8h16 M4 16h16" /></svg>
-            </span>
-            <img :src="s.src" alt="" class="layer-thumb" />
-            <span class="flex-grow-1 small text-truncate">Sticker · {{ s.by || 'someone' }}</span>
-            <button
-              class="icon-btn"
-              :class="{ hidden: !s.visible }"
-              :title="s.visible ? 'Hide this sticker' : 'Show this sticker'"
-              :aria-label="s.visible ? 'Hide this sticker' : 'Show this sticker'"
-              :aria-pressed="!s.visible"
-              @click.stop="updateSticker(s.id, { visible: !s.visible })"
-            >
-              <AppIcon :name="s.visible ? 'eye' : 'eye-off'" :size="16" />
-            </button>
-          </li>
-          <li class="layer muted"><span class="small">Photos ({{ photoCount }})</span></li>
-          <li class="layer muted"><span class="small">Frame · {{ layout.name }}</span></li>
-        </ul>
+              <span
+                class="layer-grip"
+                title="Drag to move this sticker in front of or behind others"
+                aria-label="Drag to reorder"
+                @pointerdown="startLayerDrag($event, s)"
+                @click.stop
+              >
+                <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path d="M4 8h16 M4 16h16" /></svg>
+              </span>
+              <img :src="s.src" alt="" class="layer-thumb" />
+              <span class="flex-grow-1 small text-truncate">Sticker · {{ s.by || 'someone' }}</span>
+              <button
+                class="icon-btn"
+                :class="{ hidden: !s.visible }"
+                :title="s.visible ? 'Hide this sticker' : 'Show this sticker'"
+                :aria-label="s.visible ? 'Hide this sticker' : 'Show this sticker'"
+                :aria-pressed="!s.visible"
+                @click.stop="updateSticker(s.id, { visible: !s.visible })"
+              >
+                <AppIcon :name="s.visible ? 'eye' : 'eye-off'" :size="16" />
+              </button>
+            </li>
+            <li class="layer muted"><span class="small">Photos ({{ photoCount }})</span></li>
+            <li class="layer muted"><span class="small">Frame · {{ layout.name }}</span></li>
+          </ul>
+        </section>
 
         <div class="mt-auto">
           <!-- PLACEHOLDER (Shannon): the Music Mixer is at /room/:code/music on the music-mixer branch.
@@ -965,12 +996,61 @@ async function saveToStudio() {
 }
 
 /* The tray's content scrolls inside the panel, so Layers and the buttons stay close */
+.tray-scroll-wrap {
+  position: relative;
+  min-height: 0;
+}
+
 .tray-body {
   max-height: 360px;
   overflow-y: auto;
-  margin-bottom: 16px;
+  margin-bottom: 0;
+  padding-bottom: 12px;
   padding-right: 2px;
   scrollbar-width: thin;
+}
+
+/* Subtle scroll hints at the edges of the sticker tray */
+.tray-scroll-hint {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 180ms ease;
+  z-index: 2;
+}
+
+.tray-scroll-hint.top {
+  top: 0;
+  height: 20px;
+  background: linear-gradient(to bottom, rgba(20, 23, 43, 0.08) 0%, rgba(20, 23, 43, 0) 100%);
+}
+
+.tray-scroll-hint.bottom {
+  bottom: 0;
+  height: 32px;
+  background: linear-gradient(to top, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0) 100%);
+}
+
+.tray-scroll-hint.visible {
+  opacity: 1;
+}
+
+@supports (container-type: scroll-state) {
+  .tray-scroll-wrap {
+    container-type: scroll-state;
+  }
+  @container scroll-state(scrollable: top) {
+    .tray-scroll-hint.top {
+      opacity: 1;
+    }
+  }
+  @container scroll-state(scrollable: bottom) {
+    .tray-scroll-hint.bottom {
+      opacity: 1;
+    }
+  }
 }
 
 .tray-section + .tray-section {
@@ -1252,6 +1332,16 @@ async function saveToStudio() {
 
 
 /* Layers */
+.layers-section {
+  position: relative;
+  z-index: 4;
+  background: #fff;
+  margin: 0 -16px;
+  padding: 14px 16px 0;
+  border-top: 1px solid rgba(20, 23, 43, 0.08);
+  box-shadow: 0 -10px 24px -4px rgba(20, 23, 43, 0.12), 0 -2px 6px -1px rgba(20, 23, 43, 0.05);
+}
+
 .layers {
   max-height: 240px;
   overflow-y: auto;
@@ -1399,6 +1489,14 @@ async function saveToStudio() {
 
   .tray-grid.wide {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .layers-section {
+    margin: 0;
+    padding: 0;
+    border-top: none;
+    box-shadow: none;
+    background: transparent;
   }
 
   /* A round button at the bottom right that opens the tray, always in reach of a thumb */
