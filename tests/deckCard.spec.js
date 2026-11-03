@@ -68,9 +68,21 @@ describe('Component test: DeckCard', () => {
 
   it('Test8: moving the volume slider sends the new volume as a number', async () => {
     const deck = makeDeck({ track: song, simple: true })
-    const sliders = deck.findAll('input[type="range"]') // simple mode: Start at, Volume
+    const sliders = deck.findAll('input[type="range"]') // simple mode: the waveform picker, Volume
     await sliders[1].setValue(50)
     expect(deck.emitted('change-volume')[0]).toEqual([50])
+  })
+
+  it('Test9: dragging the waveform sends the new start as a number', async () => {
+    const deck = makeDeck({ track: song, start: 0 })
+    const picker = deck.find('.wave-input') // the invisible slider laid over the waveform
+    await picker.setValue(30)
+    expect(deck.emitted('change-start')[0]).toEqual([30])
+  })
+
+  it('Test10: with no song, the waveform cannot be dragged', () => {
+    const deck = makeDeck({})
+    expect(deck.find('.wave-input').attributes('disabled')).toBeDefined()
   })
 })
 
