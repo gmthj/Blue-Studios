@@ -161,3 +161,9 @@ skills-lock.json
 pnpm-lock.yaml
 .pnpm-store/
 
+
+# Playwright (e2e test results and reports)
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
