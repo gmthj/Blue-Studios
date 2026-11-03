@@ -1,7 +1,7 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { playSound } from '../sounds.js'
-import QRCode from 'qrcode'
+import { qrWithLogo } from '../utils/qrWithLogo.js'
 import { shareLink } from '../shares.js'
 import AppIcon from './AppIcon.vue'
 
@@ -22,7 +22,7 @@ watch(
   () => props.share.id,
   async (id) => {
     link.value = shareLink(id)
-    qr.value = await QRCode.toDataURL(link.value, { width: 360, margin: 1, color: { dark: '#1a1a2e', light: '#ffffff' } })
+    qr.value = await qrWithLogo(link.value, 360)
   },
   { immediate: true }
 )

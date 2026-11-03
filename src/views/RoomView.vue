@@ -20,6 +20,7 @@ import StageBar from '../components/StageBar.vue'
 import AppIcon from '../components/AppIcon.vue'
 import { showNotice } from '../composables/useDialog.js'
 import { playSound } from '../sounds.js'
+import { qrWithLogo } from '../utils/qrWithLogo.js'
 
 // The camera page (a child of RoomLayout.vue, which has already joined the room and the call)
 // Photo mode: everyone's camera takes a photo when the countdown ends.
@@ -149,10 +150,11 @@ const captureMode = computed(() => room.value.captureMode || 'photo')
 // True while this device is busy taking the shot (the countdown, recording, or uploading the clip)
 const capturing = computed(() => countdown.value > 0 || recording.value || savingClip.value)
 
-// Join card: the website address without "https://", the join link, and its QR code (goqr.me API)
+// Join card: the website address without "https://", the join link, and its QR code (with the logo in the middle)
 const siteAddress = window.location.host
 const joinLink = window.location.origin + '/?code=' + code.value
-const qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(joinLink)
+const qrCodeUrl = ref('')
+qrWithLogo(joinLink, 360).then((url) => (qrCodeUrl.value = url))
 
 // When anyone presses the shutter, shotNumber goes up, so every device starts its own 3-2-1 now
 watch(
