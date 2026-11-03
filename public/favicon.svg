@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Blue Studios favicon: the same tilted photostrip as the splash screen in index.html -->
+  <g transform="rotate(6 16 16)">
+    <rect x="8" y="1.5" width="16" height="29" rx="2.5" fill="#FBF6EC" stroke="#2F5BEA" stroke-width="2.5" />
+    <rect x="11" y="4.5" width="10" height="6.5" rx="1" fill="#2F5BEA" />
+    <rect x="11" y="12.75" width="10" height="6.5" rx="1" fill="#2F5BEA" />
+    <rect x="11" y="21" width="10" height="6.5" rx="1" fill="#2F5BEA" />
+  </g>
+</svg>
