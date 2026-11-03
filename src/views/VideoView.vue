@@ -25,7 +25,7 @@ import { askConfirm } from '../composables/useDialog.js'
 // The clips play one after another (hard cuts). Each timeline item is { clipId, start, end } in seconds.
 
 // room: the room document (live). clips: every clip recorded in the room (live). roomRef(): the room's Firestore reference.
-const { room, clips, roomRef, goToStage } = useRoom() // goToStage: the whole room moves, and Decorate onwards needs every frame filled
+const { room, clips, roomRef } = useRoom()
 
 const message = ref('')    // a short message under the Save button, e.g. "Saved as Edit 2"
 
@@ -261,7 +261,7 @@ const sessions = computed(() => {
         </p>
         <!-- Only shown while the timeline is empty: a dashed box that invites the first clip -->
         <p v-if="entries.length === 0" class="empty-timeline">
-          Press Add on a clip (or Add session) to put it here. The clips play one after another, in this order.
+          Press Add on a clip (or Add shot) to put it here. The clips play one after another, in this order.
         </p>
 
         <!-- One row per clip on the timeline (v-for repeats the row for each entry) -->
@@ -326,10 +326,10 @@ const sessions = computed(() => {
         <!-- One box per session, with all its clips (3 per row, col-4) -->
         <section v-for="session in sessions" :key="session.shotNumber" class="mb-3">
           <div class="d-flex justify-content-between align-items-center">
-            <h3 class="group-label">Session {{ session.shotNumber }}</h3>
+            <h3 class="group-label">Shot {{ session.shotNumber }}</h3>
             <!-- Puts all of this session's clips on the timeline, in the order they were recorded -->
             <button type="button" class="btn btn-outline-secondary btn-sm add-btn" :disabled="!canAddClip" :title="canAddClip ? '' : 'No room left: ' + MAX_EDIT_SECONDS + ' second limit'" @click="addSession(session)">
-              <AppIcon name="plus" :size="14" /> Add session
+              <AppIcon name="plus" :size="14" /> Add shot
             </button>
           </div>
           <div class="row g-2">
@@ -345,10 +345,7 @@ const sessions = computed(() => {
           </div>
         </section>
 
-        <!-- Back to the Pick page. The saved edits are there, to drag into a slot like a photo. -->
-        <button type="button" class="btn btn-primary w-100 step-link justify-content-center" @click="goToStage('pick')">
-          Done: back to Pick <AppIcon name="arrow-right" :size="16" />
-        </button>
+        <!-- Back to the Pick page (Back in RoomStageNav.vue). The saved edits are there, to drag into a slot like a photo. -->
       </div>
     </div>
   </div>
@@ -475,7 +472,7 @@ const sessions = computed(() => {
   }
 }
 
-/* "Add" and "Add session": the plus icon next to the word */
+/* "Add" and "Add shot": the plus icon next to the word */
 .add-btn {
   display: inline-flex;
   align-items: center;

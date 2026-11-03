@@ -275,12 +275,6 @@ describe('Component test: Export page, Share and download', () => {
     expect(mocks.runTransaction).toHaveBeenCalledTimes(1)
     expect(mocks.txUpdate).not.toHaveBeenCalled()
   })
-
-  it('Test4: the back button moves the room back to the Music page', async () => {
-    const page = mountPage()
-    await page.findAll('button').find((b) => b.text().includes('Music')).trigger('click')
-    expect(mocks.goToStage).toHaveBeenCalledWith('music')
-  })
 })
 
 // ---------- integration test: the page + the export rules + the strip ----------

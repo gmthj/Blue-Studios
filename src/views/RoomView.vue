@@ -541,21 +541,21 @@ async function copyJoinLink() {
 
 <style scoped>
 /* ---------- PAGE HEIGHT ----------
-   The page is exactly one screen tall below the navbar (57px tall) and the 16px of space under it (pt-3 in App.vue) and the
+   The page is exactly one screen tall below the navbar (57px tall), the 16px of space under it (pt-3 in App.vue), the docked Back / Next bar (RoomStageNav.vue) and the
    page's bottom space (16px): the stage bar is in the navbar, so the room fills all of it
    (the Bootstrap columns use h-100). */
 .camera-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 57px - 16px - 16px);  /* for older browsers */
-  height: calc(100dvh - 57px - 16px - 16px); /* 100dvh = the visible screen height */
+  height: calc(100vh - 57px - 16px - 16px - var(--stage-nav-h, 56px));  /* for older browsers */
+  height: calc(100dvh - 57px - 16px - 16px - var(--stage-nav-h, 56px)); /* 100dvh = the visible screen height */
   padding-bottom: 0;
 }
 
 /* Fullscreen (button in the stage bar): no navbar, just 8px of space above the page (pt-2 in App.vue) */
 .camera-page.fullscreen {
-  height: calc(100vh - 8px - 16px);
-  height: calc(100dvh - 8px - 16px);
+  height: calc(100vh - 8px - 16px - var(--stage-nav-h, 56px));
+  height: calc(100dvh - 8px - 16px - var(--stage-nav-h, 56px));
 }
 
 .room-page {
@@ -591,7 +591,7 @@ async function copyJoinLink() {
   }
 
   .room-page {
-    height: calc(100dvh - 32px);
+    height: calc(100dvh - 32px - var(--stage-nav-h, 44px));
   }
 
   .side-col {

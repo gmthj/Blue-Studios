@@ -23,7 +23,7 @@ const props = defineProps({
 
 const router = useRouter()
 const uid = getUid()
-const { room, activeMembers, furthestIndex, goToStage, roomRef, exitRoom } = useRoom()
+const { room, activeMembers, visitedStageIds, goToStage, roomRef, exitRoom } = useRoom()
 const { fullscreen, toggleFullscreen } = useFullscreen()
 
 // Is the nav's slot there? (Teleport needs it; if not, the bar just shows in the page)
@@ -65,12 +65,14 @@ onBeforeUnmount(() => resizeWatcher && resizeWatcher.disconnect())
 const currentIndex = computed(() => ROOM_STAGES.findIndex((stage) => stage.id === props.current))
 watch(currentIndex, () => nextTick(showCurrentStep))
 
-// Steps already reached (before the current one, or after it if the room came back): shown with a tick
+// Steps the room has really been on (not just the ones before this one in the list: Quick export skips some):
+// shown blue with a tick
 function isDone(index) {
-  return index !== currentIndex.value && (index < currentIndex.value || index <= furthestIndex.value)
+  return index !== currentIndex.value && visitedStageIds.value.has(ROOM_STAGES[index].id)
 }
 
-// Can this step be clicked? Reached already, not the one we are on, and its page exists
+// Can this step be clicked? Only steps the room has been on (the ticked ones), and only if its page exists.
+// A skipped step stays a plain number: use the Back / Next bar at the bottom to go there.
 function canOpen(index) {
   return isDone(index) && ROOM_STAGES[index].hasPage
 }
@@ -151,10 +153,13 @@ async function closeRoom() {
           :title="'Take everyone to ' + stage.label"
           @click="openStep(stage)"
         >
-          <span class="step-dot"><AppIcon name="check" :size="12" :stroke-width="3" /></span>
+          <span class="step-dot">
+            <AppIcon v-if="isDone(index)" name="check" :size="12" :stroke-width="3" />
+            <template v-else>{{ index + 1 }}</template>
+          </span>
           <span class="step-label">{{ stage.label }}</span>
         </button>
-        <span v-else class="step-btn" :title="isDone(index) ? stage.label + ' (coming soon)' : undefined">
+        <span v-else class="step-btn">
           <span class="step-dot">
             <AppIcon v-if="isDone(index)" name="check" :size="12" :stroke-width="3" />
             <template v-else>{{ index + 1 }}</template>

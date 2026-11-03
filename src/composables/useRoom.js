@@ -1,5 +1,5 @@
 import { ref, computed } from 'vue'
-import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, onSnapshot, query, orderBy } from 'firebase/firestore'
+import { doc, getDoc, setDoc, updateDoc, deleteDoc, collection, onSnapshot, query, orderBy, arrayUnion } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { isActive, HEARTBEAT_MS } from '../room.js'
 import { roomLayout, emptySlotIndexes, emptySlotsMessage } from '../stripData.js'
@@ -45,7 +45,7 @@ function roomRef() {
 //             and the end of the page's URL (/room/4821/pick, see router.js)
 //   hasPage   false if that page is not in the app yet (the stage bar cannot open it)
 // room.furthestStage is the furthest stage the room has reached, so the stage bar knows which
-// steps people can jump back (and forward again) to. RoomLayout.vue keeps it up to date.
+// steps people can jump back (and forward again) to. room.visitedStages lists the steps it has really been on. RoomLayout.vue keeps it up to date.
 export const ROOM_STAGES = [
   { id: 'shoot', label: 'Shoot', hasPage: true },       // /room/4821/shoot    (RoomView)
   { id: 'pick', label: 'Pick', hasPage: true },         // /room/4821/pick     (StripView)
@@ -66,6 +66,15 @@ export function stageIndex(stageId) {
 const furthestIndex = computed(() => {
   if (!room.value) return 0
   return Math.max(stageIndex(room.value.furthestStage), stageIndex(room.value.stage))
+})
+
+// The steps the room has really been on (room.visitedStages), for the ticks in the stage bar. Skipping ahead
+// (Quick export) leaves the steps in between out. Rooms made before visitedStages existed count every step
+// up to the furthest one as visited.
+const visitedStageIds = computed(() => {
+  if (!room.value) return new Set()
+  if (Array.isArray(room.value.visitedStages)) return new Set([...room.value.visitedStages, room.value.stage])
+  return new Set(ROOM_STAGES.filter((stage, index) => index <= furthestIndex.value).map((stage) => stage.id))
 })
 
 // ---------- EVERY FRAME MUST BE FILLED ----------
@@ -96,12 +105,17 @@ const mediaLoaded = ref(false)
 let photosLoaded = false
 let clipsLoaded = false
 
-// Can the room move to this stage? Says which frames are empty if not.
+// Can the room move to this stage? Says which slots are empty if not.
+// Goes up by one every time a move is refused because a frame is empty, so the Pick page can make the
+// empty frames flash (StripView.vue watches it)
+const fullStripBlocked = ref(0)
+
 async function checkFullStrip(stageId) {
   if (!needsFullStrip(stageId) || emptyStripSlots.value.length === 0) return true
+  fullStripBlocked.value++
   await showNotice({
-    title: 'Fill every frame to continue',
-    message: emptySlotsMessage(emptyStripSlots.value) + ' Go to Pick and drag a photo or video into each frame before moving on.',
+    title: 'Fill every slot to continue',
+    message: emptySlotsMessage(emptyStripSlots.value) + ' Go to Pick and drag a photo or video into each slot before moving on.',
     confirmLabel: 'OK',
     icon: 'layout',
   })
@@ -121,17 +135,24 @@ async function goToStage(stageId, extraFields = {}) {
   return true
 }
 
-// The room moved further than ever before (by anyone, from any page): remember it.
-// Every device may write the same value at about the same time, which is fine.
+// The room moved to a stage: remember it (furthestStage, and visitedStages for the ticks in the stage bar).
+// Every device may write the same value at about the same time, which is fine (arrayUnion adds it only once).
 async function saveProgress() {
   if (!room.value) return
   const reached = room.value.stage
-  if (stageIndex(reached) > stageIndex(room.value.furthestStage)) {
-    try {
-      await updateDoc(roomRef(), { furthestStage: reached })
-    } catch (error) {
-      console.error(error)
-    }
+  const changes = {}
+  if (stageIndex(reached) > stageIndex(room.value.furthestStage)) changes.furthestStage = reached
+  if (!Array.isArray(room.value.visitedStages)) {
+    // A room made before visitedStages existed: start from the steps it counted as reached
+    changes.visitedStages = ROOM_STAGES.filter((stage, index) => index <= furthestIndex.value).map((stage) => stage.id)
+  } else if (!room.value.visitedStages.includes(reached)) {
+    changes.visitedStages = arrayUnion(reached)
+  }
+  if (Object.keys(changes).length === 0) return
+  try {
+    await updateDoc(roomRef(), changes)
+  } catch (error) {
+    console.error(error)
   }
 }
 
@@ -230,5 +251,5 @@ async function exitRoom(removeMember) {
 }
 
 export function useRoom() {
-  return { code, room, activeMembers, photos, clips, roomRef, enterRoom, exitRoom, furthestIndex, goToStage, saveProgress, emptyStripSlots, mediaLoaded }
+  return { code, room, activeMembers, photos, clips, roomRef, enterRoom, exitRoom, furthestIndex, visitedStageIds, goToStage, fullStripBlocked, saveProgress, emptyStripSlots, mediaLoaded }
 }

@@ -5,7 +5,7 @@ import ClipThumb from './ClipThumb.vue'
 import AppIcon from './AppIcon.vue'
 
 // The shared gallery on the camera page: every photo and video clip taken in the room, grouped by shot,
-// plus the "Make photostrip" button.
+// (the "Make photostrip" button is the Next button of RoomStageNav.vue).
 // Phones held upright: one sideways-scrolling row. Bigger screens: a column that scrolls up and down.
 
 defineProps({
@@ -13,7 +13,7 @@ defineProps({
   countdownRunning: { type: Boolean, default: false },
 })
 
-const { photos, clips, goToStage } = useRoom()
+const { photos, clips } = useRoom()
 
 // Group photos and clips by shot number, so everything taken in the same countdown appears together.
 // Result looks like: [ { shotNumber: 2, photos: [...], clips: [...] }, { shotNumber: 1, photos: [...], clips: [...] } ]
@@ -37,10 +37,6 @@ const shots = computed(() => {
   return groups.reverse() // newest shot first
 })
 
-// Everyone moves to the strip page together (RoomLayout.vue follows the room's "stage")
-async function goToStrip() {
-  await goToStage('pick')
-}
 </script>
 
 <template>
@@ -51,13 +47,6 @@ async function goToStrip() {
           Gallery
           <span v-if="photos.length + clips.length" class="gallery-count">{{ photos.length + clips.length }}</span>
         </h2>
-        <button
-          class="btn btn-primary btn-sm d-inline-flex align-items-center gap-1"
-          :disabled="(photos.length === 0 && clips.length === 0) || countdownRunning"
-          @click="goToStrip"
-        >
-          Make photostrip <AppIcon name="arrow-right" :size="14" />
-        </button>
       </div>
 
       <div v-if="shots.length === 0" class="gallery-empty">

@@ -9,7 +9,6 @@ import { getPeaks, makeWaveform } from '../waveform.js'
 import DeckCard from '../components/DeckCard.vue'
 import WaveformBars from '../components/WaveformBars.vue'
 import StageBar from '../components/StageBar.vue'
-import AppIcon from '../components/AppIcon.vue'
 import { renderMix } from '../mixRender.js'
 import { ref as storageRef, uploadBytes } from 'firebase/storage'
 import { storage } from '../firebase.js'
@@ -21,7 +20,7 @@ import { getUid } from '../composables/useAuth.js'  // the current person's id, 
 // RoomLayout already joined the room, so we just ask for the room code
 // goToStage moves the whole room to another page and updates how far the stage bar shows we've got
 // room: the live room document (it updates by itself when anyone changes it)
-const { code, room, roomRef, goToStage } = useRoom()
+const { code, room, roomRef } = useRoom()
 
 // ---------- Decks (what the page shows) ----------
 const trackA = ref(null)    // the song loaded in Deck A (null = empty)
@@ -596,7 +595,6 @@ onMounted(loadTracks)
         <button class="btn btn-outline-secondary btn-sm" @click="toggleDjMode">
           {{ djMode ? 'Simple mode' : 'DJ booth' }}
         </button>
-        <button type="button" class="btn btn-outline-secondary btn-sm step-link" @click="goToStage('decorate')"><AppIcon name="arrow-left" :size="14" /> Decorate</button>
       </div>
     </div>
     <p class="small text-muted mb-3">
@@ -703,15 +701,7 @@ onMounted(loadTracks)
                 >
                   {{ saving ? 'Saving...' : saved ? 'Saved ✓' : 'Use this mix' }}
                 </button>
-                <!-- Always clickable, so people can export without music too -->
-                <button
-                  class="btn step-link"
-                  :class="saved ? 'btn-primary' : 'btn-outline-secondary'"
-                  :disabled="saving || rendering"
-                  @click="goToStage('export')"
-                >
-                  Export video <AppIcon name="arrow-right" :size="16" />
-                </button>
+                <!-- Going on to Export (with or without music) is the Next button in RoomStageNav.vue -->
               </div>
             </div>
           </div>

@@ -213,14 +213,14 @@ export function emptySlotIndexes(slotCount, isFilled) {
 }
 
 // The message for the popup, counting frames from 1 the way people do:
-//   [1]       -> 'Frame 2 is still empty.'
-//   [1, 3]    -> 'Frames 2 and 4 are still empty.'
-//   [0, 1, 3] -> 'Frames 1, 2 and 4 are still empty.'
+//   [1]       -> 'Slot 2 is still empty.'
+//   [1, 3]    -> 'Slots 2 and 4 are still empty.'
+//   [0, 1, 3] -> 'Slots 1, 2 and 4 are still empty.'
 export function emptySlotsMessage(indexes) {
   const names = indexes.map((i) => String(i + 1))
   if (names.length === 0) return ''
-  if (names.length === 1) return 'Frame ' + names[0] + ' is still empty.'
-  return 'Frames ' + names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] + ' are still empty.'
+  if (names.length === 1) return 'Slot ' + names[0] + ' is still empty.'
+  return 'Slots ' + names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1] + ' are still empty.'
 }
 
 // ---------- WHICH CUT A FRAME IS ("4-cut", "3-cut", "2x2") ----------

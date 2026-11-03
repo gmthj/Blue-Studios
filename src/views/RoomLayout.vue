@@ -15,6 +15,7 @@ import { useVideoCall } from '../composables/useVideoCall.js'
 import { useFullscreen } from '../composables/useFullscreen.js'
 import { playSound } from '../sounds.js'
 import VideoCallCard from '../components/VideoCallCard.vue'
+import RoomStageNav from '../components/RoomStageNav.vue'
 import MessagePage from '../components/MessagePage.vue'
 
 // The parent page for everything inside a room (/room/:code/shoot, /room/:code/pick, /room/:code/video, /decorate, /music, /export).
@@ -229,7 +230,7 @@ watch(activeMembers, (members) => {
          appear = the first page after "Joining room..." drops in too (not in syllabus). -->
     <router-view v-slot="{ Component }">
       <Transition name="step" mode="out-in" appear :duration="{ enter: 450, leave: 100 }">
-        <div :key="route.path">
+        <div :key="route.path" class="room-stage-body">
           <component :is="Component" />
         </div>
       </Transition>
@@ -237,10 +238,20 @@ watch(activeMembers, (members) => {
 
     <!-- The video call window floats over every child page, so it is only here once -->
     <VideoCallCard />
+
+    <!-- Back / Next / skip buttons for every step, floating over the page (also only here once) -->
+    <RoomStageNav />
   </template>
 </template>
 
 <style scoped>
+/* Room at the bottom of every page as tall as the docked Back / Next bar (RoomStageNav.vue sets its height as
+   --stage-nav-h), so the bar never covers the end of the page. The camera page is exactly one screen tall:
+   RoomView.vue takes the same height off it. */
+.room-stage-body {
+  padding-bottom: var(--stage-nav-h, 56px);
+}
+
 /* Next step: the stage bar stays still (it lives in the top nav, see App.vue). The page itself (the div's
    direct children) fades out quickly; the new page appears (150ms), then gently drops down from above (450ms).
    :deep() = these elements are inside the step pages, not in this file (scoped styles need it to reach them).
