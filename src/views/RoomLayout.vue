@@ -241,35 +241,35 @@ watch(activeMembers, (members) => {
 </template>
 
 <style scoped>
-/* Next step: the stage bar stays still. Everything under it (.stage-bar ~ * = whatever comes after the bar)
-   fades out quickly; the new page appears (150ms), then gently drops down from above (450ms).
+/* Next step: the stage bar stays still (it lives in the top nav, see App.vue). The page itself (the div's
+   direct children) fades out quickly; the new page appears (150ms), then gently drops down from above (450ms).
    :deep() = these elements are inside the step pages, not in this file (scoped styles need it to reach them).
    cubic-bezier(0.23, 1, 0.32, 1) = the team's --ease-out (that variable is only set inside .app-page) */
-.step-enter-active :deep(.stage-bar ~ *) {
+.step-enter-active > :deep(*) {
   transition: opacity 150ms ease, transform 450ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
-.step-leave-active :deep(.stage-bar ~ *) {
+.step-leave-active > :deep(*) {
   transition: opacity 100ms ease;
 }
 
-.step-enter-from :deep(.stage-bar ~ *) {
+.step-enter-from > :deep(*) {
   opacity: 0;
   transform: translateY(-12px);
 }
 
-.step-leave-to :deep(.stage-bar ~ *) {
+.step-leave-to > :deep(*) {
   opacity: 0;
 }
 
 /* People who turned on "Reduce motion" on their device: the step changes without moving */
 @media (prefers-reduced-motion: reduce) {
-  .step-enter-active :deep(.stage-bar ~ *),
-  .step-leave-active :deep(.stage-bar ~ *) {
+  .step-enter-active > :deep(*),
+  .step-leave-active > :deep(*) {
     transition: none;
   }
 
-  .step-enter-from :deep(.stage-bar ~ *) {
+  .step-enter-from > :deep(*) {
     transform: none;
   }
 }

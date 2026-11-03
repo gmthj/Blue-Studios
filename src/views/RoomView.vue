@@ -541,14 +541,14 @@ async function copyJoinLink() {
 
 <style scoped>
 /* ---------- PAGE HEIGHT ----------
-   The page is exactly one screen tall below the navbar (57px tall + 24px space under it) and the
-   page's bottom space (16px): the stage bar takes what it needs and the room fills the rest
+   The page is exactly one screen tall below the navbar (57px tall) and the 16px of space under it (pt-3 in App.vue) and the
+   page's bottom space (16px): the stage bar is in the navbar, so the room fills all of it
    (the Bootstrap columns use h-100). */
 .camera-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 81px - 16px);  /* for older browsers */
-  height: calc(100dvh - 81px - 16px); /* 100dvh = the visible screen height */
+  height: calc(100vh - 57px - 16px - 16px);  /* for older browsers */
+  height: calc(100dvh - 57px - 16px - 16px); /* 100dvh = the visible screen height */
   padding-bottom: 0;
 }
 
@@ -1017,7 +1017,15 @@ async function copyJoinLink() {
     bottom: auto;
     left: auto;
     right: 86px;
-    transform: translateY(-50%);
+    /* The words turned a quarter turn the other way: the tops of the letters point left, and the switch
+       reads bottom to top, so Photo is below Video. (vertical-rl lays the words out top to bottom with
+       their tops pointing right; rotating 180deg then flips both the words and the order.) */
+    writing-mode: vertical-rl;
+    transform: translateY(-50%) rotate(180deg);
+  }
+
+  .mode-toggle button {
+    padding: 12px 5px;
   }
 }
 
