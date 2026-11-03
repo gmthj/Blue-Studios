@@ -1036,9 +1036,9 @@ async function saveToStudio() {
             <button type="button" class="btn btn-outline-secondary btn-sm flex-fill step-link justify-content-center" @click="goToStage('pick')"><AppIcon name="arrow-left" :size="14" /> Pick</button>
             <button type="button" class="btn btn-outline-secondary btn-sm flex-fill step-link justify-content-center" @click="goToStage('export')">Export <AppIcon name="arrow-right" :size="14" /></button>
           </div>
-          <button v-if="isAccount" class="btn btn-outline-secondary btn-sm w-100 mt-2" :disabled="saving || hasVideoSlot" @click="saveToStudio">
+          <!-- <button v-if="isAccount" class="btn btn-outline-primary btn-sm w-100 mt-2" :disabled="saving || hasVideoSlot" @click="saveToStudio">
             {{ saving ? 'Saving...' : 'Save to My Studio' }}
-          </button>
+          </button> -->
           <p v-if="saveMessage" class="small text-center mt-2 mb-0">{{ saveMessage }}</p>
         </div>
       </div>
