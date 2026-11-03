@@ -47,10 +47,11 @@ function toggle() {
   pointer-events: none;
 }
 
-/* The play button is in the top-right corner, away from the name tag in the bottom-left */
+/* The play button is in the middle of the tile (inset: 0 + margin: auto centres it without a transform,
+   which the button already uses for its press and hover effects) */
 .play-badge {
   position: absolute;
-  right: 4px;
-  top: 4px;
+  inset: 0;
+  margin: auto;
 }
 </style>

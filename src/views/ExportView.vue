@@ -19,7 +19,7 @@ import AppIcon from '../components/AppIcon.vue'
 //   room.exportName    the strip's name (shown on the Share page and in My Studio)
 // Which formats can be chosen is decided by exportRules.js (e.g. no PNG if the strip has a video).
 
-const { code, room, photos, clips, roomRef, goToStage } = useRoom()
+const { code, room, photos, clips, roomRef } = useRoom()
 // (the room's saved format and name are used by the Share page too, see ShareView.vue)
 
 // ---------- THE STRIP (read only here, made on the Pick and Decorate pages) ----------
@@ -244,11 +244,6 @@ async function shareAndDownload() {
           {{ sharing ? 'Opening...' : 'Share and download' }}
         </button>
         <p v-if="!chosenFormat && !checking" class="hint text-center mt-2 mb-0">Finish the strip first: every slot needs a photo or video.</p>
-
-        <hr class="divider" />
-        <button type="button" class="btn btn-outline-secondary btn-sm step-link" @click="goToStage('music')">
-          <AppIcon name="arrow-left" :size="14" /> Music
-        </button>
       </div>
     </div>
   </div>

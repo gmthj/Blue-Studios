@@ -585,7 +585,7 @@ function onStripClick(event) {
         :data-test="'remove-slot-' + index"
         @pointerdown.stop
         @click.stop="emit('clear-slot', index)"
-      >&times;</button>
+      ><AppIcon name="close" :size="12" :stroke-width="3" /></button>
     </template>
     <div v-if="boxSticker" class="sticker-box" :style="boxStyle(boxSticker)">
       <!-- Corners and sides: resize (the sticker keeps its shape) -->
@@ -624,7 +624,7 @@ function onStripClick(event) {
         title="Delete sticker"
         @pointerdown.stop
         @click.stop="emit('delete-sticker', boxSticker.id)"
-      >&times;</button>
+      ><AppIcon name="close" :size="10" :stroke-width="3" /></button>
     </div>
   </div>
   </div>

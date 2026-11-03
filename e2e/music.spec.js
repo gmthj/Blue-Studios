@@ -39,7 +39,7 @@ test('should make a photostrip, then load a song, preview the mix and update it 
       await expect(galleryCount).toHaveText(String(i), { timeout: 8000 })
     }).toPass({ timeout: 40000 })
   }
-  await page.getByRole('button', { name: 'Make photostrip' }).click()
+  await page.locator('[data-test="stage-next"]').click()
   await expect(page).toHaveURL(/\/pick$/)
 
   // Pick: tap a photo, then tap a frame, for every frame (the same as dragging, but easier to test)
@@ -47,10 +47,10 @@ test('should make a photostrip, then load a song, preview the mix and update it 
     await page.getByAltText('Photo by Playwright').nth(i).click()
     await page.locator('[data-test="slot-' + i + '"]').click()
   }
-  await page.locator('[data-test="pick-next"]').click()
+  await page.locator('[data-test="stage-next"]').click()
   await expect(page).toHaveURL(/\/decorate$/)
 
-  await page.getByRole('button', { name: 'Mix soundtrack' }).click()
+  await page.locator('[data-test="stage-next"]').click()
   await expect(page).toHaveURL(/\/music$/)
 
   // Music: upload our song, then use it (a new room starts in simple mode, so there's one deck and a "Use" button)

@@ -53,13 +53,16 @@ async function logOutAndGoHome() {
     White bar with the logo. Sticky: it stays at the top while the page scrolls (not in a room,
     where the camera needs all the height). On phones the links become icons, so everything fits on one line.
   -->
-  <nav v-if="!hideNav" class="app-nav" :class="{ sticky: !inRoom, 'mb-4': !inRoom && !isEditor }">
+  <nav v-if="!hideNav" class="app-nav" :class="{ sticky: !inRoom, 'in-room': inRoom, 'mb-4': !inRoom && !isEditor }">
     <div class="nav-inner" :class="containerClass">
       <router-link to="/" class="brand">
         <!-- The camera and film strip from the logo (public/images/bluestudios.jpeg), cut out with a see-through background -->
         <img src="/images/logo-mark.png" class="brand-mark" alt="" width="28" height="40" />
-        <span>Blue Studios</span>
+        <span class="brand-text">Blue Studios</span>
       </router-link>
+
+      <!-- Inside a room, the stage bar (StageBar.vue) is teleported here, so the room uses the nav's space -->
+      <div v-if="inRoom" id="room-nav-slot" class="room-nav-slot"></div>
 
       <!-- Hidden inside a room: logging out there would change your user id and drop you from the room -->
       <div v-if="!inRoom" class="nav-links">
@@ -111,6 +114,7 @@ async function logOutAndGoHome() {
       isEditor ? 'p-0 editor-main' : containerClass,
       {
         'pb-3': !isEditor,
+        'pt-3': inRoom && !hideNav,
         'pt-2': hideNav
       }
     ]"
@@ -197,6 +201,26 @@ async function logOutAndGoHome() {
   height: 40px;
   transform-origin: 50% 90%;
   transition: transform 300ms var(--ease-out);
+}
+
+.room-nav-slot {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* In a room the stage bar shares the row with the logo. As the screen narrows things go in this order
+   (the same order as in StageBar.vue): member faces (under 1300px), the logo's name (under 1200px),
+   button words (under 1060px), step names (under 900px), and on very narrow phones the logo (under 400px) */
+@media (max-width: 1199.98px) {
+  .app-nav.in-room .brand-text {
+    display: none;
+  }
+}
+
+@media (max-width: 399.98px) {
+  .app-nav.in-room .brand {
+    display: none;
+  }
 }
 
 .nav-links {

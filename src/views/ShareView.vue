@@ -231,11 +231,6 @@ async function saveToStudio() {
       <button v-else type="button" class="btn btn-outline-secondary w-100 mt-2" @click="goToLogin">Log in to save it to My Studio</button>
       <p v-if="saveMessage" class="hint mt-2 mb-0" role="status">{{ saveMessage }}</p>
     </SharedStrip>
-    <p class="mt-3">
-      <button type="button" class="btn btn-outline-secondary btn-sm step-link" @click="goToStage('export')">
-        <AppIcon name="arrow-left" :size="14" /> Export
-      </button>
-    </p>
   </div>
 
   <!-- Still being made, or something went wrong -->

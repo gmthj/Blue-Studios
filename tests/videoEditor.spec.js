@@ -170,10 +170,10 @@ describe('Component test: Video page, the 15 second limit', () => {
     expect(buttonsNamed(page, 'Save to gallery')[0].attributes('disabled')).toBeDefined()
   })
 
-  it('Test3: "Add session" adds only the clips that fit, and says how many', async () => {
+  it('Test3: "Add shot" adds only the clips that fit, and says how many', async () => {
     room.value.videoTimeline = [whole(A), whole(B), whole(C)] // 9 s, so 6 s are free: room for 2 more clips
     const page = mountPage()
-    await buttonsNamed(page, 'Add session')[1].trigger('click') // Session 2 has 3 clips: D, E, F
+    await buttonsNamed(page, 'Add shot')[1].trigger('click') // Shot 2 has 3 clips: D, E, F
     await flushPromises()
     expect(lastChange().videoTimeline.map((item) => item.clipId)).toEqual(['a1', 'b2', 'c3', 'd4', 'e5'])
     expect(page.text()).toContain('Only 2 of 3 clips fit')
@@ -282,23 +282,16 @@ describe('Component test: Video page, saved edits', () => {
     expect(mocks.updateDoc).not.toHaveBeenCalled()
     expect(page.text()).toContain('Edit 1')
   })
-
-  it('Test8: "Done" moves the whole room back to the Pick page', async () => {
-    const page = mountPage()
-    await page.findAll('button').find((b) => b.text().startsWith('Done')).trigger('click')
-    await flushPromises()
-    expect(lastChange()).toEqual({ stage: 'pick' })
-  })
 })
 
 // ---------- integration test: the page together with its real clip tiles ----------
 
 describe('Integration test: Video page + ClipThumb', () => {
-  it('Test1: every clip recorded in the room is a playable tile, grouped by session', async () => {
+  it('Test1: every clip recorded in the room is a playable tile, grouped by shot', async () => {
     const page = mountPage(true)
     await flushPromises() // each tile fetches its video link
-    expect(page.text()).toContain('Session 1')
-    expect(page.text()).toContain('Session 2')
+    expect(page.text()).toContain('Shot 1')
+    expect(page.text()).toContain('Shot 2')
     expect(page.findAll('video')).toHaveLength(6) // one real video tile per clip
     expect(page.find('video').attributes('src')).toContain('https://example.com/clip.webm')
   })

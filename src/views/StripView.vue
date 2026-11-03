@@ -4,7 +4,7 @@ import { playSound } from '../sounds.js'
 import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import { useAuth } from '../composables/useAuth.js'
-import { LAYOUTS, FRAME_STYLES, saveFields, saveField, cropOf, MAX_ZOOM, emptySlotIndexes, emptySlotsMessage, cutLabel } from '../stripData.js'
+import { LAYOUTS, FRAME_STYLES, saveFields, saveField, cropOf, MAX_ZOOM, emptySlotIndexes, cutLabel } from '../stripData.js'
 import { listMyItems, getFileUrl, templateFrameFields, loadTemplateProject } from '../studio.js'
 import { getItem, listMySaved, searchPublicItems } from '../marketplace.js'
 import { loadSavedFramesFromDB } from '../utils/savedFrameEngine.js'
@@ -12,7 +12,6 @@ import { resolveEditedVideos, editedVideoList } from '../clips.js'
 import EditedVideoThumb from '../components/EditedVideoThumb.vue'
 import ClipThumb from '../components/ClipThumb.vue'
 import StageBar from '../components/StageBar.vue'
-import { askConfirm, showNotice } from '../composables/useDialog.js'
 import PhotoStrip from '../components/PhotoStrip.vue'
 import FrameTile from '../components/FrameTile.vue'
 import AppIcon from '../components/AppIcon.vue'
@@ -23,7 +22,7 @@ import AppIcon from '../components/AppIcon.vue'
 //   Right:  saved frames (Default / Mine / Saved from the marketplace, Cut layouts), Skip video, Next
 // Everything is saved in the room document, so everyone in the room sees the same strip.
 
-const { room, photos, clips, roomRef, goToStage } = useRoom() // goToStage: the whole room moves, and Decorate onwards needs every frame filled
+const { room, photos, clips, roomRef, goToStage, fullStripBlocked } = useRoom() // goToStage: the whole room moves (the empty-state button below)
 const { isAccount } = useAuth()
 
 const selectedPhotoId = ref(null) // phones: the photo tapped (each person has their own)
@@ -297,23 +296,13 @@ const emptySlots = computed(() => emptySlotIndexes(layout.value.slots.length, (i
 const flashEmpty = ref(false) // briefly true after trying to move on too early: the empty slots light up red
 let flashTimer = null
 
-// Next / Export: only when every frame has something in it. Otherwise say which frames are empty, and
-// make them flash on the strip, instead of moving everyone on.
-async function tryLeavePick(stage) {
-  if (emptySlots.value.length > 0) {
-    flashEmpty.value = true
-    clearTimeout(flashTimer)
-    flashTimer = setTimeout(() => (flashEmpty.value = false), 1600)
-    await showNotice({
-      title: 'Fill every frame to continue',
-      message: emptySlotsMessage(emptySlots.value) + ' Drag a photo or video into each frame before moving on.',
-      confirmLabel: 'OK',
-      icon: 'layout',
-    })
-    return
-  }
-  await goToStage(stage)
-}
+// Next / Quick export (RoomStageNav.vue) only move on when every frame has something in it. When they are
+// refused, useRoom.js says which frames are empty and counts it in fullStripBlocked: the empty frames flash red.
+watch(fullStripBlocked, () => {
+  flashEmpty.value = true
+  clearTimeout(flashTimer)
+  flashTimer = setTimeout(() => (flashEmpty.value = false), 1600)
+})
 
 // Used to show a tick on photos that are already on the strip
 function isUsed(photoId) {
@@ -477,18 +466,8 @@ async function chooseStyle(id) {
 // Choose a saved template from the Template Editor
 async function chooseCustomTemplate(tpl) {
   try {
-    const { fields, slotCount } = await templateFrameFields(tpl)
-
-    if (filledCount.value > 0 && slotCount !== layout.value.slots.length) {
-      const sure = await askConfirm({
-        title: 'Use this template?',
-        message: 'It has a different number of photo slots, so the photos on the strip are cleared for everyone.',
-        confirmLabel: 'Use template',
-        danger: true,
-        icon: 'layout',
-      })
-      if (!sure) return
-    }
+    // No question first: a template with a different number of photo slots clears the strip for everyone
+    const { fields } = await templateFrameFields(tpl)
 
     await saveFields(roomRef(), fields)
   } catch (err) {
@@ -521,13 +500,12 @@ watch(
       <div class="panel">
         <div class="d-flex justify-content-between align-items-center mb-1">
           <h2 class="section-title mb-0">Gallery</h2>
-          <button type="button" class="btn btn-link btn-sm p-0 back-link step-link" @click="goToStage('shoot')"><AppIcon name="arrow-left" :size="14" /> Camera</button>
         </div>
-        <p class="hint">Drag a photo or video into a frame. On a phone: tap it, then a frame (or the frame first).</p>
+        <p class="hint">Drag a photo or video into a slot. On a phone: tap it, then a slot (or the slot first).</p>
 
         <!-- A slot was tapped first: say what to do next, with a way to cancel -->
         <div v-if="targetSlot !== null" class="target-hint mb-2" role="status">
-          <span>Frame {{ targetSlot + 1 }} picked. Now tap a photo or video for it.</span>
+          <span>Slot {{ targetSlot + 1 }} picked. Now tap a photo or video for it.</span>
           <button type="button" class="target-cancel" aria-label="Cancel" title="Cancel" @click="targetSlot = null; cropSlot = null"><AppIcon name="close" :size="14" /></button>
         </div>
 
@@ -566,7 +544,7 @@ watch(
         <!-- Scrolls up and down through the sessions; 2 per row in each session (col-6), like the gallery on the camera page -->
         <div class="gallery-scroll">
           <section v-for="session in sessions" :key="session.shotNumber" class="mb-3">
-            <h3 class="group-label">Session {{ session.shotNumber }}</h3>
+            <h3 class="group-label">Shot {{ session.shotNumber }}</h3>
             <div class="row g-2 session-box">
               <div v-for="photo in session.photos" :key="photo.id" class="col-6">
                 <div class="thumb" :class="{ selected: photo.id === selectedPhotoId }">
@@ -772,21 +750,10 @@ watch(
         </div>
 
         <p class="slot-count">
-          <span class="tabular">{{ filledCount }} of {{ layout.slots.length }}</span> frames filled · a photo or video in each
+          <span class="tabular">{{ filledCount }} of {{ layout.slots.length }}</span> slots filled · a photo or video in each
         </p>
 
-        <button class="btn btn-outline-secondary w-100 mb-2" data-test="pick-export" @click="tryLeavePick('export')">
-          Export
-        </button>
-
-        <!-- Opens the Video page, even before any photo is on the strip, as long as the room has photos or clips.
-             The edited video then appears in the gallery on the left, to drag into a slot. -->
-        <button class="btn btn-outline-secondary w-100 mb-2" :disabled="filledCount === 0 && clips.length === 0" @click="goToStage('video')">
-          Edit video
-        </button>
-        <button class="btn btn-primary w-100" data-test="pick-next" @click="tryLeavePick('decorate')">
-          Next
-        </button>
+        <!-- Next, Quick export and Edit video are in the floating pill (RoomStageNav.vue) -->
       </div>
     </div>
   </div>
@@ -830,7 +797,7 @@ watch(
   text-wrap: balance;
 }
 
-/* Small uppercase labels for the parts of a panel (Default, Mine, Saved, Session 1) */
+/* Small uppercase labels for the parts of a panel (Default, Mine, Saved, Shot 1) */
 .group-label {
   margin: 16px 0 8px;
   font-size: 0.72rem;

@@ -21,7 +21,7 @@ import AppIcon from '../components/AppIcon.vue'
 //   Right:  sticker tray, size / rotate, layers, Mix soundtrack
 // Layers use z-index: a bigger z is drawn in front.
 
-const { code, room, photos, clips, roomRef, goToStage } = useRoom() // goToStage: the whole room moves, and Decorate onwards needs every frame filled
+const { code, room, photos, clips, roomRef } = useRoom()
 const myName = getGuestName()
 
 const selectedSlot = ref(0)          // the photo the filters change ("Applied to photo 1")
@@ -1031,11 +1031,6 @@ async function saveToStudio() {
         <div class="mt-auto">
           <!-- PLACEHOLDER (Shannon): the Music Mixer is at /room/:code/music on the music-mixer branch.
                When it is on main and 'music' is added to STAGE_PATHS in RoomLayout.vue, remove "disabled". -->
-          <button class="btn btn-primary w-100 mb-2" @click="goToStage('music')">Mix soundtrack</button>
-          <div class="d-flex gap-2">
-            <button type="button" class="btn btn-outline-secondary btn-sm flex-fill step-link justify-content-center" @click="goToStage('pick')"><AppIcon name="arrow-left" :size="14" /> Pick</button>
-            <button type="button" class="btn btn-outline-secondary btn-sm flex-fill step-link justify-content-center" @click="goToStage('export')">Export <AppIcon name="arrow-right" :size="14" /></button>
-          </div>
           <!-- <button v-if="isAccount" class="btn btn-outline-primary btn-sm w-100 mt-2" :disabled="saving || hasVideoSlot" @click="saveToStudio">
             {{ saving ? 'Saving...' : 'Save to My Studio' }}
           </button> -->
@@ -1407,13 +1402,21 @@ async function saveToStudio() {
   display: none;
 }
 
+/* Equal-width tabs, each name centred (flex: 1 1 0 shares the width evenly, so the bold active tab and the
+   "Mine 5" count do not make one tab wider than the others; min-width keeps a tab from being squashed) */
 .tray-tab {
-  flex: 1 0 auto;
+  flex: 1 1 0;
+  min-width: max-content;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   border: none;
   background: none;
   border-radius: 8px;
-  padding: 5px 8px;
-  font-size: 0.78rem;
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  line-height: 1.3;
   color: #444;
   white-space: nowrap;
 }
@@ -1426,7 +1429,6 @@ async function saveToStudio() {
 }
 
 .tray-count {
-  margin-left: 4px;
   font-size: 0.65rem;
   background: var(--brand-tint);
   color: var(--brand);
@@ -1672,11 +1674,12 @@ async function saveToStudio() {
     clip-path: none;
   }
 
-  /* A round button at the bottom right that opens the tray, always in reach of a thumb */
+  /* A round button at the bottom right that opens the tray, always in reach of a thumb.
+     It sits above the Back / Next bar at the bottom (RoomStageNav.vue sets its height as --stage-nav-h) */
   .tray-fab {
     position: fixed;
     right: 16px;
-    bottom: calc(16px + env(safe-area-inset-bottom));
+    bottom: calc(var(--stage-nav-h, 56px) + 12px);
     z-index: 1040;
     display: flex;
     align-items: center;

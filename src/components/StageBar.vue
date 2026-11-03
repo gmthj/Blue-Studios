@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { updateDoc } from 'firebase/firestore'
 import { useRoom, ROOM_STAGES } from '../composables/useRoom.js'
@@ -10,7 +10,7 @@ import { profileOf } from '../profiles.js'
 import { soundOn, toggleSound } from '../sounds.js'
 import AppIcon from './AppIcon.vue'
 
-// The bar at the top of the room pages: the room code, the steps, everyone in the room,
+// The bar at the top of the room pages: the steps, everyone in the room,
 // and the room buttons (fullscreen, leave, close room).
 // Usage: <StageBar current="pick" />  (current = the stage of this page, see ROOM_STAGES in useRoom.js)
 //
@@ -23,18 +23,56 @@ const props = defineProps({
 
 const router = useRouter()
 const uid = getUid()
-const { code, room, activeMembers, furthestIndex, goToStage, roomRef, exitRoom } = useRoom()
+const { room, activeMembers, visitedStageIds, goToStage, roomRef, exitRoom } = useRoom()
 const { fullscreen, toggleFullscreen } = useFullscreen()
+
+// Is the nav's slot there? (Teleport needs it; if not, the bar just shows in the page)
+const hasSlot = ref(true)
+onMounted(() => (hasSlot.value = !!document.getElementById('room-nav-slot')))
+
+// The steps row scrolls sideways when it is too narrow (no scroll bar), with a soft fade on an edge that has
+// more steps behind it (the same idea as the filter rows in the sticker maker). The current step is kept in view.
+const stepsEl = ref(null)
+const moreLeft = ref(false)
+const moreRight = ref(false)
+let resizeWatcher = null
+
+function updateFades() {
+  const el = stepsEl.value
+  if (!el) return
+  moreLeft.value = el.scrollLeft > 2
+  moreRight.value = el.scrollLeft + el.clientWidth < el.scrollWidth - 2
+}
+
+function showCurrentStep() {
+  const el = stepsEl.value
+  const pill = el && el.querySelector('.step-pill.current')
+  if (!pill) return
+  el.scrollTo({ left: pill.offsetLeft - (el.clientWidth - pill.offsetWidth) / 2, behavior: 'auto' })
+  updateFades()
+}
+
+onMounted(() => {
+  if (typeof ResizeObserver !== 'undefined' && stepsEl.value) {
+    resizeWatcher = new ResizeObserver(updateFades)
+    resizeWatcher.observe(stepsEl.value)
+  }
+  nextTick(showCurrentStep)
+})
+onBeforeUnmount(() => resizeWatcher && resizeWatcher.disconnect())
 
 // Position of the current step
 const currentIndex = computed(() => ROOM_STAGES.findIndex((stage) => stage.id === props.current))
+watch(currentIndex, () => nextTick(showCurrentStep))
 
-// Steps already reached (before the current one, or after it if the room came back): shown with a tick
+// Steps the room has really been on (not just the ones before this one in the list: Quick export skips some):
+// shown blue with a tick
 function isDone(index) {
-  return index !== currentIndex.value && (index < currentIndex.value || index <= furthestIndex.value)
+  return index !== currentIndex.value && visitedStageIds.value.has(ROOM_STAGES[index].id)
 }
 
-// Can this step be clicked? Reached already, not the one we are on, and its page exists
+// Can this step be clicked? Only steps the room has been on (the ticked ones), and only if its page exists.
+// A skipped step stays a plain number: use the Back / Next bar at the bottom to go there.
 function canOpen(index) {
   return isDone(index) && ROOM_STAGES[index].hasPage
 }
@@ -87,15 +125,19 @@ async function closeRoom() {
 </script>
 
 <template>
-  <div class="stage-bar">
-    <!-- The room code -->
-    <div class="room-info">
-      <span class="room-badge">Room <strong>{{ code }}</strong></span>
-    </div>
-
+  <!-- In a room the bar sits inside the top nav (#room-nav-slot in App.vue). In fullscreen the nav is
+       hidden, so the bar stays where it is in the page (disabled = not teleported). -->
+  <Teleport to="#room-nav-slot" :disabled="fullscreen || !hasSlot">
+  <div class="stage-bar" :class="{ 'in-nav': !fullscreen && hasSlot }">
     <!-- The steps, joined by a line. Reached steps get a tick (and can be clicked), the current one is filled in.
          On narrow screens only the current step shows its name (the others are just numbers). -->
-    <ol class="steps" aria-label="Steps">
+    <ol
+      ref="stepsEl"
+      class="steps"
+      :class="{ 'more-left': moreLeft, 'more-right': moreRight }"
+      aria-label="Steps"
+      @scroll.passive="updateFades"
+    >
       <li
         v-for="(stage, index) in ROOM_STAGES"
         :key="stage.id"
@@ -111,10 +153,13 @@ async function closeRoom() {
           :title="'Take everyone to ' + stage.label"
           @click="openStep(stage)"
         >
-          <span class="step-dot"><AppIcon name="check" :size="12" :stroke-width="3" /></span>
+          <span class="step-dot">
+            <AppIcon v-if="isDone(index)" name="check" :size="12" :stroke-width="3" />
+            <template v-else>{{ index + 1 }}</template>
+          </span>
           <span class="step-label">{{ stage.label }}</span>
         </button>
-        <span v-else class="step-btn" :title="isDone(index) ? stage.label + ' (coming soon)' : undefined">
+        <span v-else class="step-btn">
           <span class="step-dot">
             <AppIcon v-if="isDone(index)" name="check" :size="12" :stroke-width="3" />
             <template v-else>{{ index + 1 }}</template>
@@ -181,6 +226,7 @@ async function closeRoom() {
       </div>
     </div>
   </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -194,10 +240,8 @@ async function closeRoom() {
   --danger: #E5484D;
 
   display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-areas:
-    'info faces'
-    'steps steps';
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'steps faces';
   align-items: center;
   gap: 10px 12px;
   margin-bottom: 12px;
@@ -210,34 +254,133 @@ async function closeRoom() {
   color: var(--ink);
 }
 
-/* Bootstrap "lg" (992px) and up: one row, steps in the middle */
-@media (min-width: 992px) {
-  .stage-bar {
-    grid-template-columns: 1fr auto 1fr;
-    grid-template-areas: 'info steps faces';
+/* Inside the top nav: no card around it, the nav is the card */
+.stage-bar.in-nav {
+  margin-bottom: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* In the nav the bar is always one row, and gives things up in this order as the screen gets narrower
+   (the logo's name in App.vue goes at 1200px): member faces under 1300px, button words under 1060px,
+   the names of the steps that are not current under 900px, then on phones smaller step dots and buttons.
+   The sizes match the nav's own buttons (36px tall, in a 56px bar). */
+.stage-bar.in-nav {
+  gap: 8px 12px;
+}
+
+.stage-bar.in-nav .steps {
+  position: relative; /* so a step's offsetLeft is measured from the row (showCurrentStep) */
+  min-width: 0;
+  justify-content: flex-start;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+
+.stage-bar.in-nav .steps::-webkit-scrollbar {
+  display: none;
+}
+
+/* Centred when everything fits (margin auto on the ends, which flex-start + overflow needs instead of
+   justify-content: center, or the first step would be cut off) */
+.stage-bar.in-nav .step-pill:first-child {
+  margin-left: auto;
+}
+
+.stage-bar.in-nav .step-pill:last-child {
+  margin-right: auto;
+}
+
+/* A soft fade on an edge with more steps behind it */
+.stage-bar.in-nav .steps.more-right {
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+
+.stage-bar.in-nav .steps.more-left {
+  mask-image: linear-gradient(to right, transparent, #000 28px);
+}
+
+.stage-bar.in-nav .steps.more-left.more-right {
+  mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
+
+@media (max-width: 1299.98px) {
+  .stage-bar.in-nav .faces {
+    display: none;
   }
 }
 
-.room-info {
-  grid-area: info;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
+@media (max-width: 1059.98px) {
+  .stage-bar.in-nav .btn-label {
+    display: none;
+  }
+
+  .stage-bar.in-nav .bar-btn {
+    padding: 0;
+  }
 }
 
-.room-badge {
-  flex-shrink: 0;
-  padding: 4px 12px;
-  border-radius: 999px;
-  color: var(--brand);
-  background: var(--brand-tint);
-  font-size: 0.85rem;
-  font-weight: 600;
+@media (max-width: 899.98px) {
+  .stage-bar.in-nav .step-pill:not(.current) .step-label {
+    display: none;
+  }
 }
 
-.room-badge strong {
-  letter-spacing: 0.08em;
+/* From 900px every step shows its name (this beats the card layout's own 992-1199px rule above) */
+@media (min-width: 900px) {
+  .stage-bar.in-nav .step-pill:not(.current) .step-label {
+    display: inline;
+  }
+}
+
+@media (min-width: 576px) {
+  .stage-bar.in-nav .bar-btn {
+    min-width: 36px;
+    height: 36px;
+  }
+
+  .stage-bar.in-nav .step-dot {
+    width: 24px;
+    height: 24px;
+  }
+}
+
+@media (max-width: 575.98px) {
+  .stage-bar.in-nav {
+    gap: 6px 8px;
+  }
+
+  .stage-bar.in-nav .step-pill {
+    gap: 4px;
+    font-size: 0.72rem;
+  }
+
+  .stage-bar.in-nav .step-pill + .step-pill::before {
+    width: 4px;
+  }
+
+  .stage-bar.in-nav .step-btn {
+    padding: 2px;
+  }
+
+  .stage-bar.in-nav .step-dot {
+    width: 18px;
+    height: 18px;
+    font-size: 0.65rem;
+  }
+
+  .stage-bar.in-nav .room-actions {
+    gap: 2px;
+  }
+
+  .stage-bar.in-nav .bar-btn {
+    min-width: 28px;
+    height: 28px;
+  }
 }
 
 /* ---------- Steps ---------- */
@@ -362,8 +505,6 @@ button.step-btn:focus-visible {
 /* Phones held sideways (short screens): everything on one row, smaller, so the camera gets the height */
 @media (max-height: 500px) and (orientation: landscape) {
   .stage-bar {
-    grid-template-columns: auto 1fr auto;
-    grid-template-areas: 'info steps faces';
     margin-bottom: 8px;
     padding: 6px 10px;
   }

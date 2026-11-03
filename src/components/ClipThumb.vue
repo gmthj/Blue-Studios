@@ -116,11 +116,12 @@ video.mirrored {
   opacity: 0;
 }
 
-/* The play button sits in the top-right corner, because the name tag of the person who recorded it is in the bottom-left */
+/* The play button sits in the middle of the tile. inset: 0 + margin: auto centres it without a transform,
+   which the button already uses for its press and hover effects. */
 .clip-badge-btn {
   position: absolute;
-  right: 4px;
-  top: 4px;
+  inset: 0;
+  margin: auto;
 }
 
 /* People who turned on "Reduce motion" on their device: nothing slides, pops or shakes.

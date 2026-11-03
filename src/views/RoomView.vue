@@ -20,6 +20,7 @@ import StageBar from '../components/StageBar.vue'
 import AppIcon from '../components/AppIcon.vue'
 import { showNotice } from '../composables/useDialog.js'
 import { playSound } from '../sounds.js'
+import { qrWithLogo } from '../utils/qrWithLogo.js'
 
 // The camera page (a child of RoomLayout.vue, which has already joined the room and the call)
 // Photo mode: everyone's camera takes a photo when the countdown ends.
@@ -149,10 +150,11 @@ const captureMode = computed(() => room.value.captureMode || 'photo')
 // True while this device is busy taking the shot (the countdown, recording, or uploading the clip)
 const capturing = computed(() => countdown.value > 0 || recording.value || savingClip.value)
 
-// Join card: the website address without "https://", the join link, and its QR code (goqr.me API)
+// Join card: the website address without "https://", the join link, and its QR code (with the logo in the middle)
 const siteAddress = window.location.host
 const joinLink = window.location.origin + '/?code=' + code.value
-const qrCodeUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=' + encodeURIComponent(joinLink)
+const qrCodeUrl = ref('')
+qrWithLogo(joinLink, 360).then((url) => (qrCodeUrl.value = url))
 
 // When anyone presses the shutter, shotNumber goes up, so every device starts its own 3-2-1 now
 watch(
@@ -341,7 +343,7 @@ async function copyJoinLink() {
           <div class="card join-card">
             <!-- Phones upright: just the room code, to leave room for the camera -->
             <div class="card-body join-small d-sm-none">
-              <span class="join-label">Room code</span>
+              <span class="join-label">Room</span>
               <strong class="room-code">{{ code }}</strong>
               <button class="btn btn-sm btn-outline-secondary ms-auto d-inline-flex align-items-center gap-1" @click="copyJoinLink">
                 <AppIcon :name="copied ? 'check' : 'duplicate'" :size="14" /> {{ copied ? 'Copied' : 'Invite' }}
@@ -353,7 +355,7 @@ async function copyJoinLink() {
               <img :src="qrCodeUrl" alt="QR code to join this room" class="join-qr" />
               <div class="min-w-0">
                 <span class="join-label">Invite friends</span>
-                <strong class="room-code d-block">{{ code }}</strong>
+                <strong class="room-code">{{ code }}</strong>
                 <p class="join-text">Scan or go to <strong>{{ siteAddress }}</strong> and enter the code</p>
                 <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" @click="copyJoinLink">
                   <AppIcon :name="copied ? 'check' : 'duplicate'" :size="14" /> {{ copied ? 'Link copied!' : 'Copy link' }}
@@ -539,21 +541,21 @@ async function copyJoinLink() {
 
 <style scoped>
 /* ---------- PAGE HEIGHT ----------
-   The page is exactly one screen tall below the navbar (57px tall + 24px space under it) and the
-   page's bottom space (16px): the stage bar takes what it needs and the room fills the rest
+   The page is exactly one screen tall below the navbar (57px tall), the 16px of space under it (pt-3 in App.vue), the docked Back / Next bar (RoomStageNav.vue) and the
+   page's bottom space (16px): the stage bar is in the navbar, so the room fills all of it
    (the Bootstrap columns use h-100). */
 .camera-page {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 81px - 16px);  /* for older browsers */
-  height: calc(100dvh - 81px - 16px); /* 100dvh = the visible screen height */
+  height: calc(100vh - 57px - 16px - 16px - var(--stage-nav-h, 56px));  /* for older browsers */
+  height: calc(100dvh - 57px - 16px - 16px - var(--stage-nav-h, 56px)); /* 100dvh = the visible screen height */
   padding-bottom: 0;
 }
 
 /* Fullscreen (button in the stage bar): no navbar, just 8px of space above the page (pt-2 in App.vue) */
 .camera-page.fullscreen {
-  height: calc(100vh - 8px - 16px);
-  height: calc(100dvh - 8px - 16px);
+  height: calc(100vh - 8px - 16px - var(--stage-nav-h, 56px));
+  height: calc(100dvh - 8px - 16px - var(--stage-nav-h, 56px));
 }
 
 .room-page {
@@ -589,7 +591,7 @@ async function copyJoinLink() {
   }
 
   .room-page {
-    height: calc(100dvh - 32px);
+    height: calc(100dvh - 32px - var(--stage-nav-h, 44px));
   }
 
   .side-col {
@@ -634,13 +636,23 @@ async function copyJoinLink() {
   text-transform: uppercase;
 }
 
-/* The room code: big, spaced-out digits */
+/* The room code: a blue pill with spaced-out digits (the style the stage bar used to show it in) */
 .room-code {
-  color: var(--ink);
-  font-size: 1.4rem;
-  font-weight: 800;
-  letter-spacing: 0.15em;
-  line-height: 1.2;
+  display: inline-block;
+  padding: 2px 14px;
+  border-radius: 999px;
+  color: var(--brand, #2F5BEA);
+  background: var(--brand-tint, #E8EEFF);
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1.4;
+}
+
+/* In the bigger card the code sits on its own line, as wide as its pill */
+.join-big .room-code {
+  display: block;
+  width: fit-content;
 }
 
 .join-text {
@@ -662,7 +674,7 @@ async function copyJoinLink() {
   }
 
   .room-code {
-    font-size: 1.8rem;
+    font-size: 1.5rem;
   }
 }
 
@@ -1015,7 +1027,15 @@ async function copyJoinLink() {
     bottom: auto;
     left: auto;
     right: 86px;
-    transform: translateY(-50%);
+    /* The words turned a quarter turn the other way: the tops of the letters point left, and the switch
+       reads bottom to top, so Photo is below Video. (vertical-rl lays the words out top to bottom with
+       their tops pointing right; rotating 180deg then flips both the words and the order.) */
+    writing-mode: vertical-rl;
+    transform: translateY(-50%) rotate(180deg);
+  }
+
+  .mode-toggle button {
+    padding: 12px 5px;
   }
 }
 
