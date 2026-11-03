@@ -252,6 +252,7 @@ async function createRoom() {
       stripSlots: {},  // the photostrip everyone is making: { 0: photoId, 1: photoId, ... }
       closed: false,
       createdAt: Date.now(),
+      lastActive: Date.now(), // when someone last left; used by the daily room cleanup (api/cleanup.js)
     })
 
     router.push({

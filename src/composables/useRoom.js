@@ -244,6 +244,14 @@ async function exitRoom(removeMember) {
   clearInterval(heartbeatTimer)
 
   if (removeMember && memberRef) {
+    // Leaving deletes my member document, so write down when I left on the room itself: the daily cleanup
+    // (api/cleanup.js) uses it to tell how long the room has been empty. This must come BEFORE the delete,
+    // because only members may change the room. A closed room cannot be changed, which is fine.
+    try {
+      await updateDoc(roomRef(), { lastActive: Date.now() })
+    } catch (error) {
+      console.error(error)
+    }
     await deleteDoc(memberRef)
   }
   // (We keep room/members/photos as they are, so the page on screen does not break while we

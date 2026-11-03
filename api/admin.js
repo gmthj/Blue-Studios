@@ -15,7 +15,8 @@
 // Who is an admin: an account with the custom claim admin: true inside its login token.
 // Only scripts/set-admin.mjs (run by Gabriel on a laptop with the secret key) can give that mark.
 
-import { adminAuth, adminDb, adminStorage, getCaller } from './_lib/firebaseAdmin.js'
+import { adminAuth, adminDb, getCaller } from './_lib/firebaseAdmin.js'
+import { deleteRoomEverything } from './_lib/roomDelete.js'
 
 const UID_PATTERN = /^[A-Za-z0-9]{1,128}$/
 
@@ -173,9 +174,8 @@ async function changeBan(action, body, caller, res) {
 
 // ---------- deleteRoom ----------
 
-// Delete a room with everything inside it (members, photos and any other list teammates added).
-// Done here because the browser cannot find a room's sub-lists to delete them, and a Firestore
-// document's sub-lists are NOT deleted with it.
+// Delete a room with everything inside it (members, photos, video files and any other list teammates added).
+// The work is in _lib/roomDelete.js, shared with the daily cleanup (cleanup.js).
 async function deleteRoom(body, caller, res) {
   const code = String(body.code || '')
   const reason = typeof body.reason === 'string' ? body.reason.trim() : ''
@@ -193,12 +193,7 @@ async function deleteRoom(body, caller, res) {
     return res.status(404).json({ error: 'No room with that code' })
   }
 
-  // Close it first, so everyone still inside is sent back to the home page (RoomLayout.vue)
-  if (room.data().closed !== true) {
-    await roomRef.update({ closed: true })
-  }
-  await db.recursiveDelete(roomRef)
-  await deleteRoomFiles(code)
+  await deleteRoomEverything(code, room)
 
   await db.collection('adminLog').add({
     adminId: caller.uid,
@@ -210,18 +205,6 @@ async function deleteRoom(body, caller, res) {
   })
 
   return res.status(200).json({ ok: true })
-}
-
-// Delete a room's video clip files in Storage (clips/{code}/..., see clips.js). Deleting the room's
-// documents does not delete them. Skipped when the bucket name is not set (the tests).
-async function deleteRoomFiles(code) {
-  const bucketName = process.env.VITE_FIREBASE_STORAGE_BUCKET
-  if (!bucketName) return
-  try {
-    await adminStorage().bucket(bucketName).deleteFiles({ prefix: 'clips/' + code + '/' })
-  } catch (error) {
-    console.error('Could not delete the files of room ' + code, error) // the room itself is already gone
-  }
 }
 
 // Hide every active template and sticker of this account. Returns how many were hidden.
