@@ -34,7 +34,7 @@
               class="d-none"
               @change="handleFileInputChange"
             />
-            <button class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2 px-3 py-1 rounded-pill fw-semibold" title="Upload template or frame image from computer" @click="triggerFileInput">
+            <button class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2 px-3 py-1" title="Upload template or frame image from computer" @click="triggerFileInput">
               <AppIcon name="upload" :size="15" :stroke-width="2" />
               <span>Upload from Computer</span>
             </button>
@@ -95,10 +95,10 @@
               }}
             </p>
             <div class="d-flex align-items-center justify-content-center gap-2 flex-wrap">
-              <button v-if="!searchQuery" class="btn btn-primary rounded-pill px-4 btn-sm fw-semibold" @click="$emit('save-current')">
+              <button v-if="!searchQuery" class="btn btn-primary px-4 btn-sm" @click="$emit('save-current')">
                 💾 Save Current Workspace Frame
               </button>
-              <button class="btn btn-outline-primary rounded-pill px-3 btn-sm fw-semibold d-flex align-items-center gap-2" @click="triggerFileInput">
+              <button class="btn btn-outline-secondary px-3 btn-sm d-flex align-items-center gap-2" @click="triggerFileInput">
                 <AppIcon name="upload" :size="15" :stroke-width="2" />
                 <span>Upload from Computer</span>
               </button>
@@ -134,7 +134,7 @@
                   <!-- Quick Hover Overlay with Open Button -->
                   <div class="frame-hover-overlay">
                     <button
-                      class="btn btn-light btn-sm rounded-pill fw-bold px-3 shadow-sm d-flex align-items-center gap-1"
+                      class="btn btn-outline-secondary btn-sm px-3 shadow-sm d-flex align-items-center gap-1"
                       @click.stop="selectAndOpen(frame)"
                     >
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3">
@@ -173,7 +173,7 @@
                     <!-- Action buttons -->
                     <div v-if="confirmingDeleteId === frame.id" class="d-flex align-items-center gap-1">
                       <button
-                        class="btn btn-sm btn-danger py-0 px-2 fw-semibold"
+                        class="btn btn-sm btn-danger py-0 px-2"
                         style="font-size: 0.72rem; line-height: 1.5;"
                         title="Permanently delete template"
                         @click.stop="handleConfirmDelete(frame)"
@@ -183,10 +183,12 @@
                       <button
                         class="btn btn-sm btn-outline-secondary py-0 px-1"
                         style="font-size: 0.72rem; line-height: 1.5;"
+                        type="button"
                         title="Cancel"
+                        aria-label="Cancel"
                         @click.stop="confirmingDeleteId = null"
                       >
-                        ✕
+                        <AppIcon name="close" :size="12" />
                       </button>
                     </div>
 
@@ -212,7 +214,7 @@
           <span class="small text-muted mb-0">
             💡 <strong>Tip:</strong> Drag and drop any saved <code>.png</code> file from your computer directly onto the workspace to open it!
           </span>
-          <button class="btn btn-dark btn-sm rounded-pill px-4 fw-semibold" @click="$emit('close')">Done</button>
+          <button type="button" class="btn btn-primary btn-sm px-4" @click="$emit('close')">Done</button>
         </div>
       </div>
     </div>
@@ -307,7 +309,7 @@ function formatDate(timestamp) {
   width: 6px;
 }
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--line, #E3E6EE);
   border-radius: 4px;
 }
 
@@ -333,18 +335,22 @@ function formatDate(timestamp) {
   cursor: pointer;
 }
 
-.frame-card:hover {
-  transform: translateY(-3px);
-  border-color: #2563eb !important;
-  box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.15) !important;
+@media (hover: hover) and (pointer: fine) {
+  .frame-card:hover {
+    transform: translateY(-3px);
+    border-color: var(--brand, #2F5BEA) !important;
+    box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.15) !important;
+  }
 }
 
 .frame-thumb-img {
   transition: transform 0.2s ease;
 }
 
-.frame-card:hover .frame-thumb-img {
-  transform: scale(1.03);
+@media (hover: hover) and (pointer: fine) {
+  .frame-card:hover .frame-thumb-img {
+    transform: scale(1.03);
+  }
 }
 
 .frame-hover-overlay {
@@ -359,7 +365,18 @@ function formatDate(timestamp) {
   transition: opacity 0.18s ease;
 }
 
-.frame-card:hover .frame-hover-overlay {
-  opacity: 1;
+@media (hover: hover) and (pointer: fine) {
+  .frame-card:hover .frame-hover-overlay {
+    opacity: 1;
+  }
+}
+
+/* People who turned on "Reduce motion" on their device: nothing slides, pops or shakes.
+   Colour changes and fades stay (design.md). In a scoped style, * only means this component's parts. */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition-property: opacity, color, background-color, border-color, box-shadow !important;
+  }
 }
 </style>

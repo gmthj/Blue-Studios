@@ -181,7 +181,7 @@ defineExpose({ refresh })
         Made {{ formatTime(room.createdAt) }} &middot; stage {{ room.stage }} &middot; {{ room.shotNumber }} shot(s) taken
       </p>
 
-      <h3 class="h6">People ({{ here(room).length }} here now, {{ room.members.length }} joined)</h3>
+      <h3 class="group-label">People ({{ here(room).length }} here now, {{ room.members.length }} joined)</h3>
       <p v-if="room.members.length === 0" class="small text-muted">Nobody.</p>
       <ul class="list-unstyled small mb-3">
         <li v-for="member in room.members" :key="member.id">
@@ -198,7 +198,7 @@ defineExpose({ refresh })
         <button class="btn btn-sm btn-danger" :disabled="busy" @click="deleteThisRoom">Delete room</button>
       </div>
 
-      <h3 class="h6">Photos ({{ room.photos.length }})</h3>
+      <h3 class="group-label">Photos ({{ room.photos.length }})</h3>
       <p v-if="room.photos.length === 0" class="small text-muted">No photos.</p>
       <div class="row g-2">
         <div v-for="photo in room.photos" :key="photo.id" class="col-4 col-md-2">
@@ -208,7 +208,7 @@ defineExpose({ refresh })
         </div>
       </div>
 
-      <h3 class="h6 mt-3">Video clips ({{ room.clips.length }})</h3>
+      <h3 class="group-label">Video clips ({{ room.clips.length }})</h3>
       <p v-if="room.clips.length === 0" class="small text-muted">No video clips.</p>
       <div class="row g-2">
         <div v-for="clip in room.clips" :key="clip.id" class="col-6 col-md-3">
@@ -223,7 +223,7 @@ defineExpose({ refresh })
       </div>
 
       <template v-if="editedVideos.length > 0">
-        <h3 class="h6 mt-3">Edited videos ({{ editedVideos.length }})</h3>
+        <h3 class="group-label">Edited videos ({{ editedVideos.length }})</h3>
         <ul class="list-unstyled small mb-0">
           <li v-for="edit in editedVideos" :key="edit.id" class="mb-1">
             <strong>{{ edit.name }}</strong>
@@ -242,14 +242,16 @@ defineExpose({ refresh })
     <div class="col-12 col-lg-5">
       <form class="input-group input-group-sm" @submit.prevent="openRoom(search.trim())">
         <input v-model="search" type="search" class="form-control" placeholder="Search by code, host or person" aria-label="Search rooms" />
-        <button class="btn btn-outline-primary" type="submit" :disabled="busy">Open code</button>
+        <button class="btn btn-outline-secondary" type="submit" :disabled="busy">Open code</button>
       </form>
     </div>
     <div class="col-12 col-sm-auto">
-      <div class="btn-group btn-group-sm" role="group" aria-label="Open or closed">
+      <div class="chip-row" role="group" aria-label="Open or closed">
         <button
           v-for="s in STATUSES" :key="s.id"
-          class="btn" :class="status === s.id ? 'btn-primary' : 'btn-outline-primary'"
+          type="button"
+          class="chip chip-sm" :class="{ active: status === s.id }"
+          :aria-pressed="status === s.id"
           @click="status = s.id"
         >{{ s.label }} ({{ countFor(s) }})</button>
       </div>

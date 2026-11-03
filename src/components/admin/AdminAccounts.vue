@@ -188,7 +188,7 @@ function unban() {
       <template v-if="picked.isAccount && !picked.admin">
         <input v-model="reason" type="text" maxlength="300" class="form-control form-control-sm mb-2" placeholder="Reason (required, saved in the log)" />
         <button v-if="!picked.banned" class="btn btn-sm btn-danger" :disabled="busy || !reason.trim()" @click="ban">Ban account</button>
-        <button v-else class="btn btn-sm btn-outline-primary" :disabled="busy || !reason.trim()" @click="unban">Unban account</button>
+        <button v-else class="btn btn-sm btn-outline-secondary" :disabled="busy || !reason.trim()" @click="unban">Unban account</button>
       </template>
     </div>
   </div>
@@ -197,14 +197,16 @@ function unban() {
     <div class="col-12 col-lg-5">
       <form class="input-group input-group-sm" @submit.prevent="search.trim() && pick(search)">
         <input v-model="search" type="search" class="form-control" placeholder="Search by name, email or user id" aria-label="Search accounts" />
-        <button class="btn btn-outline-primary" type="submit" :disabled="busy">Find</button>
+        <button class="btn btn-outline-secondary" type="submit" :disabled="busy">Find</button>
       </form>
     </div>
     <div class="col-12 col-sm-auto">
-      <div class="btn-group btn-group-sm flex-wrap" role="group" aria-label="Show">
+      <div class="chip-row" role="group" aria-label="Show">
         <button
           v-for="f in FILTERS" :key="f.id"
-          class="btn" :class="filter === f.id ? 'btn-primary' : 'btn-outline-primary'"
+          type="button"
+          class="chip chip-sm" :class="{ active: filter === f.id }"
+          :aria-pressed="filter === f.id"
           @click="filter = f.id"
         >{{ f.label }} ({{ countFor(f) }})</button>
       </div>

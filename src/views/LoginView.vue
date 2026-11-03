@@ -315,9 +315,11 @@ async function forgotPassword() {
   font-weight: 600;
 }
 
-.google-btn:hover:not(:disabled) {
-  border-color: #C9CEDB;
-  background: var(--soft);
+@media (hover: hover) and (pointer: fine) {
+  .google-btn:hover:not(:disabled) {
+    border-color: #C9CEDB;
+    background: var(--soft);
+  }
 }
 
 .google-g {
@@ -391,9 +393,11 @@ async function forgotPassword() {
   transform: translateY(-50%);
 }
 
-.eye-btn:hover {
-  color: var(--ink);
-  background: var(--soft);
+@media (hover: hover) and (pointer: fine) {
+  .eye-btn:hover {
+    color: var(--ink);
+    background: var(--soft);
+  }
 }
 
 .eye-btn:focus-visible {
@@ -421,7 +425,7 @@ async function forgotPassword() {
 }
 
 .auth-message.info {
-  color: #1E40AF;
+  color: var(--brand-dark, #2449C4);
   background: var(--brand-tint);
 }
 

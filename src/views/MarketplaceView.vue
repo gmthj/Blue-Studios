@@ -279,27 +279,7 @@ const columnClass = computed(() => {
   font-size: 0.875rem;
 }
 
-/* One row of chips. On narrow screens it scrolls sideways (the scroll bar is hidden) */
-.chip-row {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-  scrollbar-width: none;
-  /* room for the chips' focus ring, without it being cut off */
-  padding: 2px;
-  margin: -2px;
-}
-
-.chip-row::-webkit-scrollbar {
-  display: none;
-}
-
-@media (min-width: 768px) {
-  .chip-row {
-    flex-wrap: wrap;
-  }
-}
-
+/* .chip-row (the row of category chips) is shared, see pages.css */
 .skeleton-template {
   height: 300px;
 }

@@ -1033,7 +1033,7 @@ async function copyJoinLink() {
 }
 
 .rec-badge.recording {
-  background: #dc3545;
+  background: var(--danger, #E5484D);
 }
 
 /* ---------- SHUTTER BUTTON ----------
@@ -1111,7 +1111,7 @@ async function copyJoinLink() {
 }
 
 .shutter-btn.video .shutter-inner {
-  background: #dc3545; /* red in video mode, so it is clear the shutter records */
+  background: var(--danger, #E5484D); /* red in video mode, so it is clear the shutter records */
 }
 
 .shutter-btn:disabled {

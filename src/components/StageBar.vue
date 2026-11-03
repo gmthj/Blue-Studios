@@ -443,8 +443,8 @@ button.step-btn:focus-visible {
   }
 
   .bar-btn-danger:hover {
-    border-color: #DC2626;
-    background: #DC2626;
+    border-color: #CE3A3F;
+    background: #CE3A3F;
   }
 }
 
@@ -480,7 +480,7 @@ button.step-btn:focus-visible {
   align-items: center;
   justify-content: center;
   color: var(--muted);
-  background: #F1F3F8;
+  background: var(--soft, #F4F6FA);
   font-size: 0.7rem;
   font-weight: 700;
 }

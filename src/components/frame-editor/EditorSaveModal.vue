@@ -130,8 +130,9 @@ const {
                   v-for="c in CATEGORIES"
                   :key="c.id"
                   type="button"
-                  class="btn btn-sm rounded-pill py-0 px-2 category-pill-btn"
-                  :class="chosenCategories.includes(c.id) ? 'btn-primary' : 'btn-outline-secondary'"
+                  class="chip chip-sm category-pill-btn"
+                  :class="{ active: chosenCategories.includes(c.id) }"
+                  :aria-pressed="chosenCategories.includes(c.id)"
                   :disabled="!chosenCategories.includes(c.id) && chosenCategories.length >= MAX_CATEGORIES"
                   @click="toggleCategory(c.id)"
                 >
@@ -146,7 +147,7 @@ const {
           </div>
 
           <div class="modal-footer bg-light border-top px-4 py-3 d-flex justify-content-between">
-            <button type="button" class="btn btn-outline-secondary btn-sm rounded-pill px-3" @click="isSaveModalOpen = false">
+            <button type="button" class="btn btn-outline-secondary btn-sm px-3" @click="isSaveModalOpen = false">
               Cancel
             </button>
 
@@ -154,7 +155,7 @@ const {
               <button
                 v-if="isAccount && cloudId && isOwner"
                 type="button"
-                class="btn btn-outline-primary btn-sm rounded-pill px-3"
+                class="btn btn-outline-secondary btn-sm px-3"
                 :disabled="isSavingFrame"
                 @click="executeSave({ asCopy: true })"
               >
@@ -162,7 +163,7 @@ const {
               </button>
               <button
                 type="button"
-                class="btn btn-primary btn-sm fw-bold px-4 rounded-pill shadow-sm"
+                class="btn btn-primary btn-sm px-4 shadow-sm"
                 :disabled="isSavingFrame || !templateName.trim()"
                 @click="executeSave({ asCopy: false })"
               >
@@ -203,8 +204,14 @@ const {
   50% { opacity: 0.6; }
 }
 
-.category-pill-btn {
-  font-size: 0.75rem;
-  transition: all 0.15s ease;
+/* The category chips use .chip / .chip-sm from pages.css (design.md) */
+
+/* People who turned on "Reduce motion" on their device: nothing slides, pops or shakes.
+   Colour changes and fades stay (design.md). In a scoped style, * only means this component's parts. */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition-property: opacity, color, background-color, border-color, box-shadow !important;
+  }
 }
 </style>

@@ -10,6 +10,7 @@ import { roomLayout, roomFrameStyle } from '../stripData.js'
 import { FORMATS, exportOptions, stripContents, hasGifSticker } from '../exportRules.js'
 import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
+import AppIcon from '../components/AppIcon.vue'
 
 // The "Export" page (a child of RoomLayout.vue): the room chooses HOW to export the strip and what to call it.
 // Nothing is made here. "Share and download" moves everyone to the Share page, where the file is made.
@@ -155,14 +156,16 @@ async function shareAndDownload() {
 </script>
 
 <template>
-  <!-- The bar at the top with the 7 steps (this page is step 7, Export) -->
+  <!-- app-page: the shared Blue Studios look (colours, font, buttons) from pages.css, see design.md -->
+  <div class="app-page room-page">
+  <!-- The bar at the top with the 7 steps (this page is step 6, Export) -->
   <StageBar current="export" />
 
   <div class="row g-3">
     <!-- LEFT: the final strip, with its videos playing -->
     <div class="col-12 col-lg-4 order-2 order-lg-1">
       <div class="panel">
-        <h2 class="h5 fw-bold">Your strip</h2>
+        <h2 class="section-title">Your strip</h2>
         <!-- mode="view": only shows the strip (no dragging or editing). The videos play and repeat in their slots. -->
         <PhotoStrip
           mode="view"
@@ -182,11 +185,11 @@ async function shareAndDownload() {
     <!-- MIDDLE: the format -->
     <div class="col-12 col-lg-4 order-1 order-lg-2">
       <div class="panel">
-        <h2 class="h5 fw-bold">Export</h2>
-        <p class="small text-muted mb-2">Format</p>
+        <h2 class="section-title">Export</h2>
+        <h3 id="format-label" class="group-label mt-0">Format</h3>
 
         <!-- One card per format. A card that cannot be chosen is blurred, with the reason on top of it. -->
-        <div class="d-grid gap-2">
+        <div class="d-grid gap-2" role="radiogroup" aria-labelledby="format-label">
           <div v-for="format in FORMATS" :key="format" class="format-wrap">
             <div
               class="format-card"
@@ -200,8 +203,8 @@ async function shareAndDownload() {
               @keydown.space.prevent="chooseFormat(format)"
             >
               <div>
-                <div class="fw-bold">{{ FORMAT_INFO[format].name }}</div>
-                <div class="small text-muted">{{ FORMAT_INFO[format].blurb }}</div>
+                <div class="format-name">{{ FORMAT_INFO[format].name }}</div>
+                <div class="format-blurb">{{ FORMAT_INFO[format].blurb }}</div>
               </div>
               <span class="radio-dot"></span>
             </div>
@@ -210,9 +213,12 @@ async function shareAndDownload() {
         </div>
 
         <!-- PNG and GIF cannot carry the music: say so, and point to MP4 if it can be chosen -->
-        <p v-if="chosenFormat && options[chosenFormat].musicLost" class="small text-warning-emphasis bg-warning-subtle rounded p-2 mt-3 mb-0">
-          Your music won't be included in a {{ FORMAT_INFO[chosenFormat].name }}.
-          <template v-if="options.mp4.available">Choose MP4 to keep it.</template>
+        <p v-if="chosenFormat && options[chosenFormat].musicLost" class="music-note" role="status">
+          <AppIcon name="music" :size="16" />
+          <span>
+            Your music won't be included in a {{ FORMAT_INFO[chosenFormat].name }}.
+            <template v-if="options.mp4.available">Choose MP4 to keep it.</template>
+          </span>
         </p>
       </div>
     </div>
@@ -220,8 +226,8 @@ async function shareAndDownload() {
     <!-- RIGHT: the name, and on to the Share page -->
     <div class="col-12 col-lg-4 order-3">
       <div class="panel">
-        <h2 class="h5 fw-bold">Name your photostrip</h2>
-        <label for="strip-name" class="small text-muted mb-1">Everyone in the room sees this as you type</label>
+        <h2 class="section-title">Name your photostrip</h2>
+        <label for="strip-name" class="field-label">Everyone in the room sees this as you type</label>
         <input
           id="strip-name"
           v-model="nameDraft"
@@ -232,27 +238,49 @@ async function shareAndDownload() {
           @input="onNameInput"
           @blur="typing && saveName()"
         />
-        <p class="small text-muted mt-2">It is the title on the Share page, and in My Studio if you save it there.</p>
+        <p class="hint mt-2">It is the title on the Share page, and in My Studio if you save it there.</p>
 
-        <button class="btn btn-primary w-100 mt-2" :disabled="!canShare" @click="shareAndDownload">
+        <button type="button" class="btn btn-primary w-100 mt-2" :disabled="!canShare" @click="shareAndDownload">
           {{ sharing ? 'Opening...' : 'Share and download' }}
         </button>
-        <p v-if="!chosenFormat && !checking" class="small text-muted text-center mt-1 mb-0">Finish the strip first: every slot needs a photo or video.</p>
+        <p v-if="!chosenFormat && !checking" class="hint text-center mt-2 mb-0">Finish the strip first: every slot needs a photo or video.</p>
 
-        <hr />
-        <button class="btn btn-outline-secondary btn-sm" @click="goToStage('music')">&larr; Music</button>
+        <hr class="divider" />
+        <button type="button" class="btn btn-outline-secondary btn-sm step-link" @click="goToStage('music')">
+          <AppIcon name="arrow-left" :size="14" /> Music
+        </button>
       </div>
     </div>
+  </div>
   </div>
 </template>
 
 <style scoped>
-/* A white rounded card, the same look as the other pages */
-.panel {
-  background: #fff;
-  border-radius: 14px;
-  padding: 16px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+/* Styles follow design.md: the colours are the app-page variables (--brand, --ink, --muted, --line, --soft),
+   the cards (.panel) and labels (.group-label) come from pages.css, hover only with a mouse,
+   and movement is switched off for people who ask for reduced motion (at the bottom). */
+.room-page {
+  padding-bottom: 24px;
+}
+
+.hint {
+  margin: 0 0 8px;
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+.field-label {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.divider {
+  margin: 20px 0 16px;
+  border-color: var(--line);
+  opacity: 1;
 }
 
 /* wraps a format card, so the reason can sit on top of it without being blurred too */
@@ -266,19 +294,43 @@ async function shareAndDownload() {
   justify-content: space-between;
   gap: 12px;
   padding: 12px 14px;
-  border: 2px solid #e3e6ef;
+  border: 1px solid var(--line);
   border-radius: 12px;
+  background: #ffffff;
   cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
+  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease,
+    transform 160ms var(--ease-out);
 }
 
-.format-card:hover:not(.locked) {
-  border-color: #b9c6f7;
+.format-card:active:not(.locked) {
+  transform: scale(0.97);
 }
 
+.format-card:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+/* The chosen format: a blue line and a soft blue background */
 .format-card.selected {
-  border-color: #2f5bea;
-  background: #f1f4ff;
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  box-shadow: 0 0 0 1px var(--brand);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .format-card:not(.locked):not(.selected):hover {
+    border-color: var(--brand);
+  }
+}
+
+.format-name {
+  font-weight: 700;
+}
+
+.format-blurb {
+  font-size: 0.82rem;
+  color: var(--muted);
 }
 
 /* Cannot be chosen: blurred and faded */
@@ -294,13 +346,15 @@ async function shareAndDownload() {
   flex: none;
   width: 18px;
   height: 18px;
-  border: 2px solid #b8bdd0;
+  border: 2px solid var(--line);
   border-radius: 50%;
+  background: #ffffff;
+  transition: border-color 150ms ease;
 }
 
 .selected .radio-dot {
-  border-color: #2f5bea;
-  background: radial-gradient(#2f5bea 45%, transparent 50%);
+  border-color: var(--brand);
+  background: radial-gradient(var(--brand) 45%, #ffffff 50%);
 }
 
 /* The reason a card is blurred, in the middle of it, sharp. Lets taps through to the card. */
@@ -314,7 +368,36 @@ async function shareAndDownload() {
   text-align: center;
   font-size: 0.8rem;
   font-weight: 600;
-  color: #1a1a2e;
+  color: var(--ink);
+  text-wrap: balance;
   pointer-events: none;
+}
+
+/* "Your music won't be included": the amber "waiting" colours from design.md */
+.music-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  color: #A15C07;
+  background: #FEF3C7;
+  text-wrap: pretty;
+}
+
+.music-note :deep(svg) {
+  margin-top: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .format-card {
+    transition: none;
+  }
+
+  .format-card:active:not(.locked) {
+    transform: none;
+  }
 }
 </style>

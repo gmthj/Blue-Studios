@@ -7,7 +7,7 @@ import { MAX_EDIT_SECONDS } from '../clips.js'   // the part of the song that ge
 // Data passed IN from MusicView
 const props = defineProps({
   label: String,      // 'Deck A' or 'Deck B'
-  color: String,      // '#14a39a' (teal) or '#7c3aed' (purple)
+  color: String,      // '#2F5BEA' (deck A, brand blue) or '#14172B' (deck B, ink)
   track: Object,      // the Jamendo song, or null if no song is loaded
   speed: Number,      // 0.5 to 1.5
   volume: Number,     // 0 to 100
@@ -118,7 +118,7 @@ const bars = computed(function () {
 
         <div class="deck-info">
           <p class="small text-muted mb-0">{{ simple ? 'Your song' : label }}</p>
-          <h2 class="h5 mb-0 song-name">{{ track ? track.name : 'No song yet' }}</h2>
+          <h2 class="section-title mb-0 song-name">{{ track ? track.name : 'No song yet' }}</h2>
           <p v-if="loading" class="small text-muted mb-0">Loading song...</p>
           <p v-else-if="track" class="small text-muted mb-0">{{ track.artist_name }}</p>
           <p v-else class="small text-muted mb-0">Press {{ simple ? 'Use' : label.slice(-1) }} on a song to load it here.</p>
@@ -273,7 +273,7 @@ const bars = computed(function () {
 
 /* The slider is invisible, so show a ring around the waveform when it's chosen with the keyboard */
 .wave-picker:focus-within {
-  outline: 2px solid #0d6efd;
+  outline: 2px solid var(--brand, #2F5BEA);
   outline-offset: 2px;
   border-radius: 0.375rem;
 }

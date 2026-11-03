@@ -6,7 +6,7 @@ import { useRoom } from '../composables/useRoom.js'
 import { getGuestName } from '../guest.js'
 import { useAuth } from '../composables/useAuth.js'
 import { saveStrip } from '../studio.js'
-import { resolveEditedVideos } from '../clips.js'
+import { resolveEditedVideos, getClipUrl } from '../clips.js'
 import { loadDefaultStickers, loadMyStickers, liveStickerPng, textStickerPng, DEFAULT_SECTIONS } from '../stickerTray.js'
 import { FONT_GROUPS_READY, loadArtFonts } from '../stickerArt.js'
 import { LAYOUTS, FRAME_STYLES, FILTERS, filterCss, saveField, saveFields, cropOf, cropSource } from '../stripData.js'
@@ -21,7 +21,7 @@ import AppIcon from '../components/AppIcon.vue'
 //   Right:  sticker tray, size / rotate, layers, Mix soundtrack
 // Layers use z-index: a bigger z is drawn in front.
 
-const { code, room, photos, clips, roomRef } = useRoom()
+const { code, room, photos, clips, roomRef, goToStage } = useRoom() // goToStage: the whole room moves, and Decorate onwards needs every frame filled
 const myName = getGuestName()
 
 const selectedSlot = ref(0)          // the photo the filters change ("Applied to photo 1")
@@ -316,6 +316,42 @@ function cancelEditSticker() {
 // The photo in the selected slot, used for the filter previews
 const selectedPhoto = computed(() => photosById.value[slotPhotos.value[selectedSlot.value]] || null)
 
+// ---------- FILTER PREVIEWS FOR VIDEOS ----------
+// A slot can hold a clip or an edited video instead of a photo. Its filter previews show one still frame
+// of it: the clip's first moment, or the first clip of the edited video at the point it was trimmed to.
+const selectedVideo = computed(() => {
+  const id = slotPhotos.value[selectedSlot.value]
+  if (!id || selectedPhoto.value) return null
+  const edited = editedVideos.value[id]
+  if (edited && edited.entries.length > 0) {
+    const first = edited.entries[0]
+    return { clip: first.clip, start: first.start || 0 }
+  }
+  const clip = clips.value.find((c) => c.id === id)
+  return clip ? { clip: clip, start: 0 } : null
+})
+const previewVideoSrc = ref('') // the video's local link, once it has downloaded
+
+// Download the selected video (getClipUrl keeps it, so the strip and the previews share one download)
+watch(selectedVideo, async (video) => {
+  previewVideoSrc.value = ''
+  if (!video) return
+  try {
+    const url = await getClipUrl(video.clip)
+    if (selectedVideo.value === video) previewVideoSrc.value = url // still the same slot
+  } catch (err) {
+    console.warn('Could not load the video for the filter previews:', err)
+  }
+}, { immediate: true })
+
+// Once a preview video knows its length, show the right moment (a little after the start, so it is not black)
+function showPreviewFrame(event) {
+  event.target.currentTime = (selectedVideo.value ? selectedVideo.value.start : 0) + 0.1
+}
+
+// "photo" or "video", for the label under the filters
+const selectedKind = computed(() => (selectedVideo.value ? 'video' : 'photo'))
+
 // The selected slot's edit, with the default values for anything not saved yet
 const currentEdit = computed(() => {
   return { filter: 'original', brightness: 0, contrast: 0, saturation: 0, ...(edits.value[selectedSlot.value] || {}) }
@@ -359,7 +395,51 @@ const photoCount = computed(() => Object.values(slotPhotos.value).filter(Boolean
 async function updateEdit(key, value) {
   const newEdit = { ...currentEdit.value }
   newEdit[key] = value
+  appliedToAll.value = false
   await saveField(roomRef(), 'stripEdits.' + selectedSlot.value, newEdit)
+}
+
+// ---------- APPLY TO ALL ----------
+// Copy the selected slot's filter and adjustments to every photo and video on the strip, in one save
+const appliedToAll = ref(false) // shows "Applied to all" until the filter is changed again
+
+const filledSlotIndexes = computed(() =>
+  layout.value.slots.map((_, i) => i).filter((i) => !!slotPhotos.value[i]))
+
+async function applyToAll() {
+  const edit = { ...currentEdit.value }
+  const changes = {}
+  for (const i of filledSlotIndexes.value) {
+    changes['stripEdits.' + i] = edit
+  }
+  if (Object.keys(changes).length === 0) return
+  await updateDoc(roomRef(), changes)
+  appliedToAll.value = true
+}
+
+// ---------- RESET ----------
+// Back to Original with every slider at 0. Resets what the label says it is applied to:
+// just the selected photo / video, or every one after "Apply to all".
+const NO_EDIT = { filter: 'original', brightness: 0, contrast: 0, saturation: 0 }
+
+function isEdited(index) {
+  const edit = edits.value[index]
+  if (!edit) return false
+  return Object.keys(NO_EDIT).some((key) => (edit[key] ?? NO_EDIT[key]) !== NO_EDIT[key])
+}
+
+// Nothing to reset: the button is greyed out
+const canReset = computed(() =>
+  appliedToAll.value ? filledSlotIndexes.value.some(isEdited) : isEdited(selectedSlot.value))
+
+async function resetEdits() {
+  const indexes = appliedToAll.value ? filledSlotIndexes.value : [selectedSlot.value]
+  const changes = {}
+  for (const i of indexes) {
+    changes['stripEdits.' + i] = { ...NO_EDIT }
+  }
+  await updateDoc(roomRef(), changes)
+  appliedToAll.value = false
 }
 
 // Tapping a photo on the strip chooses which photo the filters change
@@ -490,11 +570,6 @@ function onPagePointerDown(event) {
 onMounted(() => document.addEventListener('pointerdown', onPagePointerDown))
 onBeforeUnmount(() => document.removeEventListener('pointerdown', onPagePointerDown))
 
-// Everyone moves to another page together (RoomLayout.vue follows the room's "stage")
-async function goToStage(stage) {
-  await updateDoc(roomRef(), { stage: stage })
-}
-
 // ---------- QUICK DOWNLOAD ----------
 // PLACEHOLDER (Saw Jun Han): a simple JPG download until the Export step is ready.
 // Draws the frame, each photo (cropped like object-fit: cover, with its filter), the stickers
@@ -609,6 +684,8 @@ async function saveToStudio() {
 </script>
 
 <template>
+  <!-- app-page: the shared Blue Studios look (colours, font, buttons) from pages.css, see design.md -->
+  <div class="app-page room-page">
   <StageBar current="decorate" />
 
   <!-- 3 columns from Bootstrap "lg" (992px) up. On phones: strip first -->
@@ -616,19 +693,30 @@ async function saveToStudio() {
     <!-- LEFT: filters and adjustments -->
     <div class="col-12 col-md-6 col-lg-3 order-2 order-lg-1">
       <div class="panel">
-        <h2 class="h5 fw-bold">Filters</h2>
+        <h2 class="section-title">Filters</h2>
         <!-- Each preview is the selected photo with that filter's CSS -->
         <div class="row g-2 mb-3">
           <div v-for="f in FILTERS" :key="f.id" class="col-6">
             <button class="filter-btn w-100" :class="{ active: currentEdit.filter === f.id }" data-sound="filter" @click="updateEdit('filter', f.id)">
               <img v-if="selectedPhoto" :src="selectedPhoto.image" alt="" :style="{ filter: f.css }" />
+              <!-- a video: one still frame of it, with this filter (mirrored like on the strip if it was a selfie) -->
+              <video
+                v-else-if="previewVideoSrc"
+                :src="previewVideoSrc"
+                class="filter-video"
+                muted
+                playsinline
+                preload="auto"
+                :style="{ filter: f.css, transform: selectedVideo.clip.mirrored ? 'scaleX(-1)' : 'none' }"
+                @loadedmetadata="showPreviewFrame"
+              ></video>
               <span v-else class="filter-empty" :style="{ filter: f.css }"></span>
               <span class="small d-block mt-1">{{ f.name }}</span>
             </button>
           </div>
         </div>
 
-        <h2 class="h5 fw-bold">Adjustments</h2>
+        <h2 class="section-title mt-1">Adjustments</h2>
         <!-- Saved on @change (when the slider is let go), so Firestore is not written on every pixel -->
         <label class="form-label small d-flex justify-content-between mb-0">Brightness <span>{{ currentEdit.brightness }}</span></label>
         <input type="range" class="form-range" min="-50" max="50" :value="currentEdit.brightness"
@@ -640,8 +728,34 @@ async function saveToStudio() {
         <input type="range" class="form-range" min="-50" max="50" :value="currentEdit.saturation"
                @change="updateEdit('saturation', Number($event.target.value))" />
 
-        <span class="badge rounded-pill text-bg-light mt-2">Applied to photo {{ selectedSlot + 1 }}</span>
-        <p class="small text-muted mt-2 mb-0">Tap a photo on the strip to choose which one to edit.</p>
+        <div class="d-flex align-items-center justify-content-between gap-2 mt-2 flex-wrap">
+          <span class="badge rounded-pill text-bg-light">
+            {{ appliedToAll ? 'Applied to all' : 'Applied to ' + selectedKind + ' ' + (selectedSlot + 1) }}
+          </span>
+          <div class="d-flex gap-2">
+            <!-- Reset: back to Original and 0 on every slider, for what the label above says -->
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary filter-action"
+              data-test="reset-filter"
+              :disabled="!canReset"
+              :title="appliedToAll ? 'Remove the filter and adjustments from every photo and video' : 'Remove the filter and adjustments from this ' + selectedKind"
+              @click="resetEdits"
+            >
+              <AppIcon name="undo" :size="12" />
+              {{ appliedToAll ? 'Reset all' : 'Reset' }}
+            </button>
+            <!-- Apply to all: the same filter and adjustments on every photo and video in the frame -->
+            <button
+              type="button"
+              class="btn btn-sm btn-outline-secondary filter-action"
+              data-test="apply-all"
+              :disabled="filledSlotIndexes.length < 2"
+              @click="applyToAll"
+            >Apply to all</button>
+          </div>
+        </div>
+        <p class="hint mt-2 mb-0">Tap a photo or video on the strip to choose which one to edit.</p>
       </div>
     </div>
 
@@ -711,8 +825,8 @@ async function saveToStudio() {
              that slides up from the "Stickers" button and closes when a sticker is picked. -->
         <section class="tray" :class="{ open: trayOpen }" aria-label="Sticker tray">
           <div class="tray-head">
-            <h2 class="h5 fw-bold mb-0">Sticker tray</h2>
-            <button type="button" class="tray-close" aria-label="Close the sticker tray" @click="trayOpen = false">✕</button>
+            <h2 class="section-title mb-0">Sticker tray</h2>
+            <button type="button" class="tray-close" aria-label="Close the sticker tray" @click="trayOpen = false"><AppIcon name="close" :size="16" /></button>
           </div>
 
           <!-- Tabs: Default, Live, Mine -->
@@ -877,7 +991,7 @@ async function saveToStudio() {
         <!-- Layers: front at the top. Drag a row by its grip to move a sticker in front of or behind
              others. Photos and frame are always behind the stickers, so they stay at the bottom. -->
         <section class="layers-section" aria-label="Layers">
-          <h2 class="h5 fw-bold mb-2">Layers</h2>
+          <h2 class="section-title">Layers</h2>
           <ul ref="layerListEl" class="list-unstyled layers mb-3">
             <li
               v-for="s in layersFrontToBack"
@@ -919,8 +1033,8 @@ async function saveToStudio() {
                When it is on main and 'music' is added to STAGE_PATHS in RoomLayout.vue, remove "disabled". -->
           <button class="btn btn-primary w-100 mb-2" @click="goToStage('music')">Mix soundtrack</button>
           <div class="d-flex gap-2">
-            <button class="btn btn-outline-secondary btn-sm flex-fill" @click="goToStage('pick')">&larr; Pick</button>
-            <button class="btn btn-outline-primary btn-sm flex-fill" @click="goToStage('export')">Export &rarr;</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm flex-fill step-link justify-content-center" @click="goToStage('pick')"><AppIcon name="arrow-left" :size="14" /> Pick</button>
+            <button type="button" class="btn btn-outline-secondary btn-sm flex-fill step-link justify-content-center" @click="goToStage('export')">Export <AppIcon name="arrow-right" :size="14" /></button>
           </div>
           <!-- <button v-if="isAccount" class="btn btn-outline-primary btn-sm w-100 mt-2" :disabled="saving || hasVideoSlot" @click="saveToStudio">
             {{ saving ? 'Saving...' : 'Save to My Studio' }}
@@ -930,22 +1044,53 @@ async function saveToStudio() {
       </div>
     </div>
   </div>
+  </div>
 </template>
 
 <style scoped>
+/* Styles follow design.md: colours are the app-page variables (--brand, --ink, --muted, --line, --soft),
+   corners 10px (buttons, tiles) / 16px (cards), soft low shadows, hover only with a mouse,
+   and movement switched off for reduced motion. */
+
+.room-page {
+  padding-bottom: 24px;
+}
+
+.section-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  text-wrap: balance;
+}
+
+.hint {
+  font-size: 0.82rem;
+  color: var(--muted);
+  text-wrap: pretty;
+}
+
+/* Keyboard focus is always visible */
+.filter-btn:focus-visible,
+.tray-item:focus-visible,
+.tray-tab:focus-visible,
+.apply-all:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
 .panel {
   background: #fff;
-  border-radius: 14px;
-  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 20px;
   height: 100%;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 2px rgba(20, 23, 43, 0.04);
 }
 
 .canvas-area {
   /* The same space for every frame: the strip is never taller than --stage-h (see PhotoStrip.vue),
      and the area is always at least that tall, so it does not grow or shrink when a different frame is chosen */
   --stage-h: min(72vh, 680px);
-  background: #EEF0F6;
+  background: var(--soft);
   min-height: calc(var(--stage-h) + 32px); /* + the panel's padding */
   display: flex;
   flex-direction: column;
@@ -953,6 +1098,16 @@ async function saveToStudio() {
 }
 
 /* Filters */
+/* "Reset" and "Apply to all" next to the "Applied to" label */
+.filter-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75rem;
+  padding: 2px 10px;
+  border-radius: 999px;
+}
+
 .filter-btn {
   background: none;
   border: none;
@@ -961,6 +1116,7 @@ async function saveToStudio() {
 }
 
 .filter-btn img,
+.filter-btn .filter-video,
 .filter-empty {
   display: block;
   width: 100%;
@@ -968,16 +1124,17 @@ async function saveToStudio() {
   object-fit: cover;
   border-radius: 10px;
   border: 3px solid transparent;
-  background: #F2C94C; /* shown when no photo is selected yet */
+  background: var(--soft, #F4F6FA); /* shown when no photo is selected yet */
 }
 
 .filter-btn.active img,
+.filter-btn.active .filter-video,
 .filter-btn.active .filter-empty {
-  border-color: #2F5BEA;
+  border-color: var(--brand);
 }
 
 .filter-btn.active span {
-  color: #2F5BEA;
+  color: var(--brand);
   font-weight: 600;
 }
 
@@ -997,7 +1154,7 @@ async function saveToStudio() {
   border: none;
   border-radius: 999px;
   background: none;
-  color: #6B7080;
+  color: var(--muted);
 }
 
 /* The tray's content scrolls inside the panel, so Layers and the buttons stay close */
@@ -1066,7 +1223,7 @@ async function saveToStudio() {
   margin: 0 0 6px;
   font-size: 0.78rem;
   font-weight: 700;
-  color: #14172B;
+  color: var(--ink);
 }
 
 /* Mine: "My stickers" and "My GIFs" headers that fold their list away */
@@ -1079,16 +1236,16 @@ async function saveToStudio() {
   padding: 6px 8px;
   border: none;
   border-radius: 8px;
-  background: #F4F5F9;
+  background: var(--soft);
   font-size: 0.8rem;
   font-weight: 700;
-  color: #14172B;
+  color: var(--ink);
 }
 
 .tray-fold-count {
   margin-left: 4px;
   font-weight: 600;
-  color: #6B7080;
+  color: var(--muted);
 }
 
 .tray-chevron {
@@ -1118,17 +1275,17 @@ async function saveToStudio() {
   flex-shrink: 0;
   width: 32px;
   height: 32px;
-  border: 1px solid #E3E6EE;
+  border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
   font-family: Georgia, 'Times New Roman', serif;
-  color: #14172B;
+  color: var(--ink);
 }
 
 .text-toggle.active {
-  border-color: #2F5BEA;
-  background: #E8EEFF;
-  color: #2F5BEA;
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  color: var(--brand);
 }
 
 .text-row-line {
@@ -1136,7 +1293,7 @@ async function saveToStudio() {
   height: 22px;
   margin: 0 4px;
   flex-shrink: 0;
-  background: #E3E6EE;
+  background: var(--line);
 }
 
 /* The colours scroll sideways in a narrow panel */
@@ -1161,7 +1318,7 @@ async function saveToStudio() {
 }
 
 .text-swatch.active {
-  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #2F5BEA;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--brand);
 }
 
 /* "Any colour": a rainbow circle with the real colour picker invisibly on top */
@@ -1188,11 +1345,11 @@ async function saveToStudio() {
 
 .text-font {
   padding: 6px 8px;
-  border: 1px solid #E3E6EE;
+  border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
   font-size: 0.95rem;
-  color: #14172B;
+  color: var(--ink);
   text-align: left;
   white-space: nowrap;
   overflow: hidden;
@@ -1200,9 +1357,9 @@ async function saveToStudio() {
 }
 
 .text-font.active {
-  border-color: #2F5BEA;
-  background: #E8EEFF;
-  color: #2F5BEA;
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  color: var(--brand);
 }
 
 /* The bar for retyping a sticker's words, floating at the top of the strip area */
@@ -1213,7 +1370,7 @@ async function saveToStudio() {
   right: 12px;
   z-index: 50;
   padding: 10px;
-  border: 1px solid #E3E6EE;
+  border: 1px solid var(--line);
   border-radius: 14px;
   background: #fff;
   box-shadow: 0 12px 32px rgba(20, 23, 43, 0.14);
@@ -1239,7 +1396,7 @@ async function saveToStudio() {
 .tray-tabs {
   display: flex;
   gap: 2px;
-  background: #F1F2F6;
+  background: var(--soft);
   border-radius: 10px;
   padding: 3px;
   overflow-x: auto;      /* very narrow: scroll the tabs instead of wrapping them */
@@ -1263,7 +1420,7 @@ async function saveToStudio() {
 
 .tray-tab.active {
   background: #fff;
-  color: #2F5BEA;
+  color: var(--brand);
   font-weight: 600;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
 }
@@ -1271,8 +1428,8 @@ async function saveToStudio() {
 .tray-count {
   margin-left: 4px;
   font-size: 0.65rem;
-  background: #E8EEFF;
-  color: #2F5BEA;
+  background: var(--brand-tint);
+  color: var(--brand);
   border-radius: 999px;
   padding: 0 6px;
 }
@@ -1301,8 +1458,10 @@ async function saveToStudio() {
 .tray-item {
   position: relative;
   aspect-ratio: 1;
+  width: 100%;      /* a <button> does not stretch to its grid cell by itself */
   min-width: 0;
-  background: #F4F5F9;
+  overflow: hidden; /* nothing can poke out of the box */
+  background: var(--soft);
   border-radius: 10px;
   border: 2px solid transparent;
   display: flex;
@@ -1322,16 +1481,23 @@ async function saveToStudio() {
   transform: scale(0.94);
 }
 
+/* The sticker fills the box's inside (6px from each edge), shrunk to fit and centred.
+   Absolute + object-fit instead of max-height: 100%, because Safari (Mac, iPhone) cannot work out a %
+   height inside a box whose height comes from aspect-ratio, so tall stickers spilled out of their box. */
 .tray-item img {
-  max-width: 100%;
-  max-height: 100%;
+  position: absolute;
+  inset: 6px;
+  width: calc(100% - 12px);
+  height: calc(100% - 12px);
+  object-fit: contain;
+  object-position: center;
   pointer-events: none;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .tray-item:hover {
-    border-color: #2F5BEA;
-    background: #E8EEFF;
+    border-color: var(--brand);
+    background: var(--brand-tint);
   }
 }
 
@@ -1363,8 +1529,8 @@ async function saveToStudio() {
 }
 
 .layer.active {
-  background: #E8EEFF;
-  color: #2F5BEA;
+  background: var(--brand-tint);
+  color: var(--brand);
 }
 
 /* The row being dragged lifts off the list, so it is clear which sticker is moving */
@@ -1401,11 +1567,11 @@ async function saveToStudio() {
 
 .layer-grip:active {
   cursor: grabbing;
-  color: #2F5BEA;
+  color: var(--brand);
 }
 
 .layer.muted {
-  color: #6B7080;
+  color: var(--muted);
   cursor: default;
 }
 
@@ -1425,7 +1591,7 @@ async function saveToStudio() {
   border-radius: 6px;
   background: none;
   padding: 0;
-  color: #6B7080;
+  color: var(--muted);
 }
 
 /* A hidden sticker's crossed-out eye is paler, so hidden layers stand out in the list */
@@ -1435,8 +1601,8 @@ async function saveToStudio() {
 
 @media (hover: hover) and (pointer: fine) {
   .icon-btn:hover {
-    color: #2F5BEA;
-    background: #E8EEFF;
+    color: var(--brand);
+    background: var(--brand-tint);
   }
 }
 
@@ -1518,7 +1684,7 @@ async function saveToStudio() {
     padding: 12px 18px;
     border: none;
     border-radius: 999px;
-    background: #2F5BEA;
+    background: var(--brand);
     color: #fff;
     font-weight: 700;
     box-shadow: 0 8px 24px rgba(47, 91, 234, 0.35);

@@ -722,7 +722,7 @@ async function joinRoom() {
 
 /* No name typed: red and shaking, the same as the code boxes (code-shake is further down) */
 .name-input.invalid {
-  border-color: #EF4444;
+  border-color: var(--danger, #E5484D);
   background: #FEF3F2;
   box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15);
   animation: code-shake 360ms var(--ease-out);
@@ -795,7 +795,7 @@ async function joinRoom() {
 }
 
 .code-boxes.invalid .code-box {
-  border-color: #EF4444;
+  border-color: var(--danger, #E5484D);
   background: #FEF3F2;
   box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.15);
 }
@@ -880,9 +880,11 @@ async function joinRoom() {
   background: transparent;
 }
 
-.start-template-remove:hover {
-  color: var(--ink);
-  background: rgba(255, 255, 255, 0.7);
+@media (hover: hover) and (pointer: fine) {
+  .start-template-remove:hover {
+    color: var(--ink);
+    background: rgba(255, 255, 255, 0.7);
+  }
 }
 
 .start-template-remove:focus-visible {
@@ -1117,8 +1119,10 @@ async function joinRoom() {
   text-decoration: none;
 }
 
-.feature-link:hover {
-  text-decoration: underline;
+@media (hover: hover) and (pointer: fine) {
+  .feature-link:hover {
+    text-decoration: underline;
+  }
 }
 
 /* Narrow cards (3 across on a tablet): icon above the text, so the text gets the full width */

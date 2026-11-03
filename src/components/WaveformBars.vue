@@ -1,5 +1,5 @@
 <script setup>
-// bars = an array like [{ height: 80, color: '#14a39a' }, { height: 35, color: '#7c3aed' }, ...]
+// bars = an array like [{ height: 80, color: '#2F5BEA' }, { height: 35, color: '#14172B' }, ...]
 // height is 0 to 100 (percent of the box height)
 const props = defineProps({
   bars: Array,
@@ -27,7 +27,7 @@ const props = defineProps({
   display: flex;
   align-items: center;
   gap: 2px;
-  background: #f1f3f5;
+  background: var(--soft, #F4F6FA);
   border-radius: 0.375rem;
   padding: 0 8px;
 }
@@ -51,6 +51,6 @@ const props = defineProps({
 .empty-line {
   flex: 1;
   height: 2px;
-  background: #ced4da;
+  background: var(--line, #E3E6EE);
 }
 </style>

@@ -717,9 +717,15 @@ onBeforeUnmount(() => {
   left: 4px;
 }
 
-.call-window:hover .call-resize-grip,
+/* While dragging, and (with a mouse) while resting on the call, the corner grips show */
 .call-window.dragging .call-resize-grip {
   opacity: 0.9;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .call-window:hover .call-resize-grip {
+    opacity: 0.9;
+  }
 }
 
 /* Short screens (like phones held sideways): the tiles get less of the height (the script uses the same 500px) */

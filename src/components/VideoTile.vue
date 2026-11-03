@@ -164,7 +164,7 @@ const avatarColour = computed(() => {
   margin: 5px;
   border-radius: 50%;
   color: #ffffff;
-  background: #EF4444;
+  background: var(--danger, #E5484D);
 }
 
 .muted-icon svg {

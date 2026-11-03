@@ -257,7 +257,7 @@ function positionStyle(entry) {
     </div>
     <div class="d-flex align-items-center gap-2 mt-2">
       <!-- One button: Play all when stopped, Stop while playing. Disabled when the timeline is empty. -->
-      <button class="btn btn-dark btn-sm d-inline-flex align-items-center gap-1" :disabled="entries.length === 0" @click="playing ? stop() : play()">
+      <button class="btn btn-primary btn-sm d-inline-flex align-items-center gap-1" :disabled="entries.length === 0" @click="playing ? stop() : play()">
         <AppIcon :name="playing ? 'stop-fill' : 'play-fill'" :size="12" />
         {{ playing ? 'Stop' : 'Play all' }}
       </button>

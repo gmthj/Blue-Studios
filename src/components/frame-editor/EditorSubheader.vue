@@ -72,7 +72,7 @@ const {
 
     <!-- Mobile Left: Brand Title 'Frame Editor' -->
     <div class="d-lg-none d-flex align-items-center">
-      <h1 class="h6 fw-bold text-dark m-0" style="font-size: 1.05rem; letter-spacing: -0.01em;">Frame Editor</h1>
+      <h1 class="section-title m-0">Frame Editor</h1>
     </div>
 
     <!-- Desktop Center: Controls -->
@@ -191,8 +191,9 @@ const {
 
       <!-- Cutouts Toggle -->
       <button
-        class="btn btn-sm rounded-pill d-flex align-items-center gap-1"
+        class="btn btn-sm d-flex align-items-center gap-1"
         :class="showCutouts ? 'btn-primary' : 'btn-outline-secondary'"
+        :aria-pressed="showCutouts"
         :title="showCutouts ? 'Click to hide photo cutouts' : 'Click to show photo cutouts'"
         @click="toggleCutouts"
       >
@@ -209,8 +210,9 @@ const {
 
       <!-- Rulers & Guides Toggle -->
       <button
-        class="btn btn-sm rounded-pill d-flex align-items-center gap-1"
+        class="btn btn-sm d-flex align-items-center gap-1"
         :class="showRulers ? 'btn-primary' : 'btn-outline-secondary'"
+        :aria-pressed="showRulers"
         :title="showRulers ? 'Click to hide pixel rulers & guides (⇧R)' : 'Click to show pixel rulers & guides (⇧R)'"
         @click="handleToggleRulers"
       >
@@ -243,7 +245,7 @@ const {
       <!-- Save Frame Button -->
       <button
         v-if="isAccount"
-        class="btn btn-sm btn-primary d-flex align-items-center gap-1 fw-bold shadow-sm px-3"
+        class="btn btn-sm btn-primary d-flex align-items-center gap-1 shadow-sm px-3"
         :disabled="isSavingFrame"
         @click="saveFrame"
         :title="cloudId ? (isOwner ? `Save Frame to My Studio (${shortcuts.save})` : `Save a Copy to My Studio (${shortcuts.save})`) : `Save Frame to My Studio (${shortcuts.save})`"
@@ -256,7 +258,7 @@ const {
       <router-link
         v-else
         :to="'/login?redirect=' + encodeURIComponent($route.fullPath)"
-        class="btn btn-sm btn-primary d-flex align-items-center gap-1 fw-bold shadow-sm text-decoration-none px-3"
+        class="btn btn-sm btn-primary d-flex align-items-center gap-1 shadow-sm text-decoration-none px-3"
         :title="`Log in to save your template to My Studio (${shortcuts.save})`"
       >
         <IconSave :size="14" :stroke-width="2.3" />

@@ -3,6 +3,7 @@ import { ref, watch } from 'vue'
 import { playSound } from '../sounds.js'
 import QRCode from 'qrcode'
 import { shareLink } from '../shares.js'
+import AppIcon from './AppIcon.vue'
 
 // A finished strip and how to pass it on: the picture or video, a QR code of its link, the link, and Download.
 // Used by the Share page in a room (ShareView.vue) and by the page the link opens (PublicShareView.vue).
@@ -56,8 +57,12 @@ async function copyLink() {
         <img v-if="qr" :src="qr" alt="QR code of the link to this strip" class="qr" />
         <p class="small text-break mt-2 mb-3"><a :href="link">{{ link }}</a></p>
 
-        <a :href="share.fileUrl" download class="btn btn-primary w-100 mb-2">Download {{ share.format.toUpperCase() }}</a>
-        <button class="btn btn-outline-secondary w-100" @click="copyLink">{{ copied ? 'Link copied!' : 'Copy link' }}</button>
+        <a :href="share.fileUrl" download class="btn btn-primary w-100 mb-2 icon-btn-text">
+          <AppIcon name="download" :size="16" /> Download {{ share.format.toUpperCase() }}
+        </a>
+        <button type="button" class="btn btn-outline-secondary w-100 icon-btn-text" @click="copyLink">
+          <AppIcon :name="copied ? 'check' : 'duplicate'" :size="16" /> {{ copied ? 'Link copied!' : 'Copy link' }}
+        </button>
 
         <slot />
       </div>
@@ -66,19 +71,22 @@ async function copyLink() {
 </template>
 
 <style scoped>
-.panel {
-  background: #fff;
-  border-radius: 14px;
-  padding: 16px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06);
-}
+/* The cards (.panel) and colours come from pages.css: both pages that use this are inside app-page (design.md) */
 
-/* The strip: not taller than the screen */
+/* The strip: not taller than the screen, on a soft grey well while it loads */
 .result {
   max-width: 100%;
   max-height: 70vh;
-  border-radius: 8px;
-  background: #f3f4f8;
+  border-radius: 10px;
+  background: var(--soft);
+}
+
+/* Download / Copy link: the icon next to the words */
+.icon-btn-text {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .qr {

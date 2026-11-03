@@ -94,6 +94,56 @@ const artSections = computed(() => [
 // The text bar's alignment button steps through these.
 const ALIGNS = ['left', 'center', 'right']
 
+// ----
+// Long chip rows (sticker tags, folders)
+// WHY: the rows scroll sideways with no scroll bar (design.md), so a chip at the edge was just cut off.
+// Now a soft fade at an edge says "more this way", tapping a half-hidden chip slides it into the
+// middle, and a mouse wheel scrolls the row sideways. Used as v-chip-scroll on the row.
+// ----
+const vChipScroll = {
+  mounted(el) {
+    // Which edges have more chips behind them (the CSS fades those edges)
+    const update = () => {
+      el.classList.toggle('more-left', el.scrollLeft > 2)
+      el.classList.toggle('more-right', el.scrollLeft + el.clientWidth < el.scrollWidth - 2)
+    }
+    // Tapping a chip centres it, so the ones next to it come into view too
+    const onClick = (event) => {
+      const chip = event.target.closest('.chip')
+      if (!chip || !el.contains(chip)) return
+      const still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      el.scrollTo({ left: chip.offsetLeft - (el.clientWidth - chip.offsetWidth) / 2, behavior: still ? 'auto' : 'smooth' })
+    }
+    // An up/down mouse wheel scrolls the row sideways, until it reaches the end (then the panel scrolls)
+    const onWheel = (event) => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return
+      const atStart = el.scrollLeft <= 0
+      const atEnd = el.scrollLeft + el.clientWidth >= el.scrollWidth - 1
+      if ((event.deltaY < 0 && atStart) || (event.deltaY > 0 && atEnd)) return
+      event.preventDefault()
+      el.scrollLeft += event.deltaY
+    }
+    el.addEventListener('scroll', update, { passive: true })
+    el.addEventListener('click', onClick)
+    el.addEventListener('wheel', onWheel, { passive: false })
+    const resize = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(update) : null
+    if (resize) resize.observe(el)
+    el._chipScroll = { update, onClick, onWheel, resize }
+    update()
+  },
+  updated(el) {
+    if (el._chipScroll) el._chipScroll.update() // chips added or removed (e.g. a new folder)
+  },
+  unmounted(el) {
+    const saved = el._chipScroll
+    if (!saved) return
+    el.removeEventListener('scroll', saved.update)
+    el.removeEventListener('click', saved.onClick)
+    el.removeEventListener('wheel', saved.onWheel)
+    if (saved.resize) saved.resize.disconnect()
+  },
+}
+
 // WHY check first: the screen colour picker (EyeDropper) only exists in Chrome and Edge on
 // computers. Elsewhere its button is simply not shown.
 const canPickFromScreen = typeof window !== 'undefined' && 'EyeDropper' in window
@@ -480,8 +530,6 @@ const currentToolLabel = computed(() => {
   return found ? found.label : 'Tools'
 })
 
-// How big the preview is compared with the file you export.
-const zoomPercent = computed(() => Math.round((stageWidth.value / EXPORT_SIZE) * 100))
 
 // Folder tabs: "All" shows everything, a folder shows only the stickers inside it.
 const visibleStickers = computed(() => {
@@ -2135,7 +2183,7 @@ function imageStyle(layer) {
           <!-- ---------- STICKERS ---------- -->
           <template v-if="tool === 'stickers'">
             <!-- Tag filter: the tags come from the shared library -->
-            <div class="sm-chip-row" role="group" aria-label="Filter stickers">
+            <div v-chip-scroll class="sm-chip-row" role="group" aria-label="Filter stickers">
               <button
                 v-for="tag in ART_TAGS"
                 :key="tag"
@@ -2191,7 +2239,7 @@ function imageStyle(layer) {
               </div>
               <template v-else>
                 <!-- Folder tabs: "All" plus one per folder -->
-                <div class="sm-chip-row" role="group" aria-label="Folders">
+                <div v-chip-scroll class="sm-chip-row" role="group" aria-label="Folders">
                   <button
                     type="button"
                     class="chip chip-sm"
@@ -2418,7 +2466,6 @@ function imageStyle(layer) {
           <template v-if="!drawing && !selectedText">
             <span class="sm-stage-pill sm-stage-tag">{{ EXPORT_SIZE }} × {{ EXPORT_SIZE }}</span>
             <span v-if="playing" class="sm-stage-pill sm-stage-zoom sm-stage-playing">Playing · tap to stop</span>
-            <span v-else class="sm-stage-pill sm-stage-zoom">{{ zoomPercent }}%</span>
           </template>
 
           <!-- Drawing tools on the canvas itself: pen or highlighter, colours, undo, done -->
@@ -2683,7 +2730,7 @@ function imageStyle(layer) {
             <button
               type="button"
               class="btn btn-sm sm-play-btn"
-              :class="[playing ? 'btn-primary' : 'btn-outline-primary', { 'sm-tip-target': gifTip && gifTip.target === 'play' }]"
+              :class="[playing ? 'btn-primary' : 'btn-outline-secondary', { 'sm-tip-target': gifTip && gifTip.target === 'play' }]"
               :disabled="frames.length < 2"
               :title="frames.length < 2 ? 'Add a second frame to see it move' : ''"
               :aria-pressed="playing"
@@ -2779,7 +2826,7 @@ function imageStyle(layer) {
               <button
                 v-if="canCutOut"
                 type="button"
-                class="btn btn-outline-primary w-100 sm-action mt-3"
+                class="btn btn-outline-secondary w-100 sm-action mt-3"
                 :disabled="removingBg"
                 @click="cutOutBackground(selectedLayer)"
               >
@@ -3303,12 +3350,18 @@ function imageStyle(layer) {
 
 /* Chip rows scroll sideways inside themselves on narrow panels (design.md: no page scroll) */
 .sm-chip-row {
+  position: relative; /* so a chip's offsetLeft is measured from the row (v-chip-scroll) */
   display: flex; gap: 6px;
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   padding-bottom: 2px;
   scrollbar-width: none;
 }
 .sm-chip-row::-webkit-scrollbar { display: none; }
+/* A soft fade on an edge with more chips behind it, so the row clearly scrolls (v-chip-scroll sets these) */
+.sm-chip-row.more-right { mask-image: linear-gradient(to right, #000 calc(100% - 36px), transparent); }
+.sm-chip-row.more-left { mask-image: linear-gradient(to right, transparent, #000 36px); }
+.sm-chip-row.more-left.more-right { mask-image: linear-gradient(to right, transparent, #000 36px, #000 calc(100% - 36px), transparent); }
 .sm-chip-wrap { flex-wrap: wrap; overflow: visible; }
 .sm-chip-add { display: inline-flex; align-items: center; gap: 4px; color: var(--brand); border-style: dashed; }
 

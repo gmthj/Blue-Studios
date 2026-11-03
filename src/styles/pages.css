@@ -85,6 +85,40 @@
 }
 
 /* ---------- Cards ---------- */
+/* The white cards on the room pages (Pick, Video, Decorate, Export, Share) */
+.app-page .panel {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 1px 2px rgba(20, 23, 43, 0.04);
+}
+
+/* Small uppercase labels for the parts of a panel ("Session 1", "Format") */
+.app-page .group-label {
+  margin: 16px 0 8px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* Progress bars (video length, making the export): a round brand bar on a grey track */
+.app-page .progress {
+  --bs-progress-height: 8px;
+  --bs-progress-bg: var(--soft);
+  --bs-progress-bar-bg: var(--brand);
+  --bs-progress-border-radius: 999px;
+}
+
+/* A back / next button on a room page: the arrow icon sits next to the words */
+.app-page .step-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .app-page .card {
   --bs-card-border-color: var(--line);
   --bs-card-border-radius: 16px;
@@ -189,6 +223,14 @@
   border-radius: 8px;
 }
 
+/* Phones: 16px text in boxes, otherwise iPhones zoom in when one is tapped (design.md section 9) */
+@media (max-width: 575.98px) {
+  .app-page .form-control,
+  .app-page .form-select {
+    font-size: 16px;
+  }
+}
+
 /* Standard input-group (first item rounded on left, middle flat, last item rounded on right) */
 .app-page .input-group > :first-child {
   border-top-left-radius: 10px;
@@ -237,6 +279,82 @@
   box-shadow: 0 0 0 4px rgba(47, 91, 234, 0.15);
 }
 
+/* ---------- Dropdown lists ----------
+   Browsers that let a <select>'s open list be styled (Chrome and Edge 135+) show it as one of our
+   floating cards: white, 12px corners, the soft float shadow, the chosen option in brand blue.
+   Other browsers keep their own list, which still works the same. */
+@supports (appearance: base-select) {
+  .app-page select.form-select,
+  .app-page select.form-select::picker(select) {
+    appearance: base-select;
+  }
+
+  /* Bootstrap already draws the arrow, so the browser's own arrow is hidden */
+  .app-page select.form-select::picker-icon {
+    display: none;
+  }
+
+  .app-page select.form-select::picker(select) {
+    margin-top: 4px;
+    padding: 6px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #ffffff;
+    box-shadow: 0 1px 2px rgba(20, 23, 43, 0.04), 0 12px 32px rgba(20, 23, 43, 0.06);
+    font-family: 'Plus Jakarta Sans', var(--bs-body-font-family);
+  }
+
+  /* A group's name ("Badge"): a small uppercase label, like .group-label */
+  .app-page select.form-select optgroup {
+    padding-top: 4px;
+    color: var(--muted);
+    font-size: 0.72rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+
+  .app-page select.form-select optgroup + optgroup {
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px solid var(--line);
+  }
+
+  .app-page select.form-select option {
+    padding: 7px 10px;
+    border-radius: 8px;
+    color: var(--ink);
+    font-size: 0.9rem;
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    cursor: pointer;
+  }
+
+  /* The keyboard's place in the list, and (with a mouse) the option under the pointer */
+  .app-page select.form-select option:focus-visible {
+    outline: none;
+    background: var(--soft);
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .app-page select.form-select option:hover {
+      background: var(--soft);
+    }
+  }
+
+  /* The chosen option */
+  .app-page select.form-select option:checked {
+    color: var(--brand);
+    background: var(--brand-tint);
+    font-weight: 600;
+  }
+
+  .app-page select.form-select option::checkmark {
+    display: none;
+  }
+}
+
 .app-page .form-check-input:checked {
   border-color: var(--brand);
   background-color: var(--brand);
@@ -264,9 +382,11 @@
   transition: background-color 150ms ease;
 }
 
-.app-page .form-range:hover,
-.app-page input[type="range"]:hover {
-  background: #D3D7E2;
+@media (hover: hover) and (pointer: fine) {
+  .app-page .form-range:hover,
+  .app-page input[type="range"]:hover {
+    background: #D3D7E2;
+  }
 }
 
 .app-page .form-range:focus-visible,
@@ -286,9 +406,11 @@
   transition: background-color 150ms ease;
 }
 
-.app-page .form-range:hover::-webkit-slider-runnable-track,
-.app-page input[type="range"]:hover::-webkit-slider-runnable-track {
-  background: #D3D7E2;
+@media (hover: hover) and (pointer: fine) {
+  .app-page .form-range:hover::-webkit-slider-runnable-track,
+  .app-page input[type="range"]:hover::-webkit-slider-runnable-track {
+    background: #D3D7E2;
+  }
 }
 
 /* Chrome, Safari, Edge, Opera Thumb */
@@ -307,11 +429,13 @@
   transition: transform 140ms var(--ease-out), background-color 140ms ease, box-shadow 140ms ease;
 }
 
-.app-page .form-range::-webkit-slider-thumb:hover,
-.app-page input[type="range"]::-webkit-slider-thumb:hover {
-  background: var(--brand-dark);
-  transform: scale(1.12);
-  box-shadow: 0 2px 6px rgba(47, 91, 234, 0.35);
+@media (hover: hover) and (pointer: fine) {
+  .app-page .form-range::-webkit-slider-thumb:hover,
+  .app-page input[type="range"]::-webkit-slider-thumb:hover {
+    background: var(--brand-dark);
+    transform: scale(1.12);
+    box-shadow: 0 2px 6px rgba(47, 91, 234, 0.35);
+  }
 }
 
 .app-page .form-range::-webkit-slider-thumb:active,
@@ -333,9 +457,11 @@
   transition: background-color 150ms ease;
 }
 
-.app-page .form-range:hover::-moz-range-track,
-.app-page input[type="range"]:hover::-moz-range-track {
-  background: #D3D7E2;
+@media (hover: hover) and (pointer: fine) {
+  .app-page .form-range:hover::-moz-range-track,
+  .app-page input[type="range"]:hover::-moz-range-track {
+    background: #D3D7E2;
+  }
 }
 
 /* Firefox Thumb */
@@ -351,11 +477,13 @@
   transition: transform 140ms var(--ease-out), background-color 140ms ease, box-shadow 140ms ease;
 }
 
-.app-page .form-range::-moz-range-thumb:hover,
-.app-page input[type="range"]::-moz-range-thumb:hover {
-  background: var(--brand-dark);
-  transform: scale(1.12);
-  box-shadow: 0 2px 6px rgba(47, 91, 234, 0.35);
+@media (hover: hover) and (pointer: fine) {
+  .app-page .form-range::-moz-range-thumb:hover,
+  .app-page input[type="range"]::-moz-range-thumb:hover {
+    background: var(--brand-dark);
+    transform: scale(1.12);
+    box-shadow: 0 2px 6px rgba(47, 91, 234, 0.35);
+  }
 }
 
 .app-page .form-range::-moz-range-thumb:active,
@@ -511,6 +639,27 @@
 }
 
 /* ---------- Chips ---------- */
+/* One row of chips. On narrow screens it scrolls sideways (the scroll bar is hidden) */
+.chip-row {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  /* room for the chips' focus ring, without it being cut off */
+  padding: 2px;
+  margin: -2px;
+}
+
+.chip-row::-webkit-scrollbar {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .chip-row {
+    flex-wrap: wrap;
+  }
+}
+
 .chip {
   padding: 5px 12px;
   border: 1px solid var(--line);

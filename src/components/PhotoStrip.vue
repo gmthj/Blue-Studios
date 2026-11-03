@@ -529,14 +529,8 @@ function onStripClick(event) {
         <span class="crop-hint" :class="{ show: showHint(index) }">✥ Hold &amp; drag to reposition</span>
       </template>
 
-      <button
-        v-if="mode === 'pick' && (photoIn(index) || editedIn(index) || clipIn(index))"
-        class="btn btn-sm btn-light remove-btn"
-        title="Remove photo"
-        @click.stop="emit('clear-slot', index)"
-      >&times;</button>
 
-      <span v-if="mode === 'pick' && editedIn(index)" class="media-badge edited">✂ {{ editedIn(index).name }}</span>
+      <span v-if="mode === 'pick' && editedIn(index)" class="media-badge edited"><AppIcon name="scissors" :size="10" /> {{ editedIn(index).name }}</span>
       <span v-else-if="mode === 'pick' && clipIn(index)" class="media-badge"><AppIcon name="play-fill" :size="8" /> video</span>
     </div>
 
@@ -575,6 +569,24 @@ function onStripClick(event) {
 
   <!-- The selected sticker's box with handles (Decorate page) -->
   <div ref="handlesLayer" class="handles-layer" :class="{ templated: !!frameStyle.thumbnailUrl }">
+    <!-- Pick page: a round × on the top-right corner of each filled slot, to take the photo / video out.
+         It sits in this layer (over the strip, not inside the slot), so a rounded or circle slot cannot
+         cut it off: it is always fully shown, half outside the slot's corner. -->
+    <template v-if="mode === 'pick'">
+      <button
+        v-for="(slot, index) in layout.slots"
+        v-show="photoIn(index) || editedIn(index) || clipIn(index)"
+        :key="'remove-' + index"
+        type="button"
+        class="slot-remove"
+        :style="{ left: (slot.x + slot.w) + '%', top: slot.y + '%' }"
+        :title="'Take it out of frame ' + (index + 1)"
+        :aria-label="'Remove from frame ' + (index + 1)"
+        :data-test="'remove-slot-' + index"
+        @pointerdown.stop
+        @click.stop="emit('clear-slot', index)"
+      >&times;</button>
+    </template>
     <div v-if="boxSticker" class="sticker-box" :style="boxStyle(boxSticker)">
       <!-- Corners and sides: resize (the sticker keeps its shape) -->
       <span
@@ -689,7 +701,7 @@ function onStripClick(event) {
 }
 
 .slot.flash-empty .slot-empty {
-  color: #C9353A;
+  color: #CE3A3F;
 }
 
 @keyframes slot-shake {
@@ -763,7 +775,7 @@ function onStripClick(event) {
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  background: #1A1A2E;
+  background: #161A2E;
   color: #fff;
   font-size: 0.6rem;
   font-weight: 600;
@@ -773,15 +785,47 @@ function onStripClick(event) {
 }
 
 .media-badge.edited {
-  background: #7B61FF; /* the same purple as the edited video in the gallery */
+  background: var(--ink, #14172B); /* dark ink, the same as the edited videos in the gallery */
 }
 
-.remove-btn {
+/* The round × on a filled slot's top-right corner (Pick page). Its centre sits a little inside the corner,
+   so it reads as belonging to that slot, but most of it is outside, so no slot shape can hide it. */
+.slot-remove {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  transform: translate(-65%, -35%);
+  border-radius: 50%;
+  border: 2px solid #fff;
+  background: #14172B;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 700;
   line-height: 1;
-  padding: 0 6px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 6px rgba(20, 23, 43, 0.3);
+  cursor: pointer;
+  pointer-events: auto;
+  transition: background-color 150ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .slot-remove:hover {
+    background: #E5484D;
+  }
+}
+
+.slot-remove:active {
+  transform: translate(-65%, -35%) scale(0.92);
+}
+
+.slot-remove:focus-visible {
+  outline: 2px solid #2F5BEA;
+  outline-offset: 2px;
 }
 
 .sticker {
@@ -798,7 +842,7 @@ function onStripClick(event) {
 .align-guide {
   position: absolute;
   z-index: 9999;
-  background: #F04438;
+  background: var(--danger, #E5484D);
   pointer-events: none;
 }
 
@@ -841,7 +885,7 @@ function onStripClick(event) {
 
 .sticker-box {
   position: absolute;
-  border: 2px solid #7C4DFF;
+  border: 2px solid var(--brand, #2F5BEA);
   border-radius: 2px;
 }
 
@@ -849,7 +893,7 @@ function onStripClick(event) {
 .handle {
   position: absolute;
   background: #fff;
-  border: 1.5px solid #9AA0B4;
+  border: 1.5px solid var(--muted, #6B7080);
   box-shadow: 0 1px 3px rgba(20, 23, 43, 0.2);
   pointer-events: auto;
   touch-action: none; /* a finger drags the handle instead of scrolling the page */
@@ -900,7 +944,7 @@ function onStripClick(event) {
   margin-left: -13px;
   border-radius: 50%;
   background: #fff;
-  border: 1.5px solid #9AA0B4;
+  border: 1.5px solid var(--muted, #6B7080);
   box-shadow: 0 1px 4px rgba(20, 23, 43, 0.25);
   color: #14172B;
   font-size: 0.95rem;
@@ -922,7 +966,7 @@ function onStripClick(event) {
   position: absolute;
   left: 50%;
   bottom: -60px;
-  background: #7C4DFF;
+  background: var(--brand, #2F5BEA);
   color: #fff;
   font-size: 0.65rem;
   font-weight: 700;
@@ -955,15 +999,17 @@ function onStripClick(event) {
   pointer-events: auto;
 }
 
-.sticker-delete:hover {
-  background: #C9353A;
+@media (hover: hover) and (pointer: fine) {
+  .sticker-delete:hover {
+    background: #CE3A3F;
+  }
 }
 
 .moved-by {
   position: absolute;
   left: -2px;
   top: -26px;
-  background: #F2711C;
+  background: var(--ink, #14172B);
   color: #fff;
   font-size: 0.65rem;
   padding: 1px 8px;
@@ -979,5 +1025,14 @@ function onStripClick(event) {
   font-weight: 600;
   font-size: 0.85rem;
   margin: 0;
+}
+
+/* People who turned on "Reduce motion" on their device: nothing slides, pops or shakes.
+   Colour changes and fades stay (design.md). In a scoped style, * only means this component's parts. */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition-property: opacity, color, background-color, border-color, box-shadow !important;
+  }
 }
 </style>
