@@ -129,7 +129,7 @@ async function setFaceFilter(id) {
     console.error(error)
     // Swiping through filters quickly: an older choice failing must not undo a newer one
     if (thisChoice !== latestChoice) return
-    faceFilterError.value = 'Could not load the filter. Please check your internet and try again.'
+    faceFilterError.value = 'Filters still loading... Please refresh your page.'
     faceFilterId.value = 'none'
   }
   if (thisChoice === latestChoice) {
