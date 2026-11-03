@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { listRooms, getRoomWithPhotos, closeRoom, deleteRoom, deletePhoto, deleteClip } from '../../admin.js'
 import { isActive } from '../../room.js'
 import { useAdminTab, useSort, formatTime } from '../../composables/useAdminTab.js'
@@ -7,7 +7,7 @@ import SortHeader from './SortHeader.vue'
 import { askConfirm } from '../../composables/useDialog.js'
 import { ROOM_STAGES, stageIndex } from '../../composables/useRoom.js'
 
-// Rooms tab: the newest 200 rooms, open and closed, with who is in each one. Open one to see its
+// Rooms tab: the newest 200 rooms (more with "Show more"), open and closed, with who is in each one. Open one to see its
 // photos and videos, delete a photo or video clip, close the room or delete it. Older rooms can still be opened by their code.
 
 const rooms = ref([])
@@ -22,10 +22,30 @@ const note = ref('')
 // "Here now" = seen in the last 45 seconds (see room.js)
 const now = ref(Date.now())
 
+// How many of the newest rooms to load; "Show more" adds another page
+const PAGE = 200
+const roomLimit = ref(PAGE)
+const loadingMore = ref(false)
+const hasMore = computed(() => rooms.value.length >= roomLimit.value)
+
 const { loading, busy, errorMessage, message, run, reload } = useAdminTab(async () => {
-  rooms.value = await listRooms()
+  rooms.value = await listRooms(roomLimit.value)
   now.value = Date.now()
 })
+
+async function showMore() {
+  loadingMore.value = true
+  roomLimit.value += PAGE
+  try {
+    rooms.value = await listRooms(roomLimit.value)
+    now.value = Date.now()
+  } catch (error) {
+    console.error(error)
+    roomLimit.value -= PAGE
+    errorMessage.value = 'Could not load more rooms.'
+  }
+  loadingMore.value = false
+}
 
 function here(r) {
   return r.members.filter((member) => isActive(member, now.value))
@@ -75,6 +95,26 @@ const shown = computed(() => {
       || (r.hostName || '').toLowerCase().includes(text)
       || r.members.some((member) => (member.name || '').toLowerCase().includes(text)))))
 })
+
+// The opened room shows in a popup over the list, so the list keeps its scroll position.
+// It is a <dialog> like AppDialog.vue: the confirm popups (askConfirm) open on top of it.
+const roomDialog = ref(null)
+
+watch(room, (current) => {
+  const el = roomDialog.value
+  if (!el) return
+  if (current && !el.open) el.showModal ? el.showModal() : el.setAttribute('open', '')
+  if (!current && el.open) el.close()
+})
+
+function closeRoomDialog() {
+  room.value = null
+}
+
+// A click on the dim area outside the box closes it (the click lands on the <dialog> itself)
+function onDialogClick(event) {
+  if (event.target === roomDialog.value) closeRoomDialog()
+}
 
 async function openRoom(code) {
   if (!/^[0-9]{4}$/.test(code)) {
@@ -167,16 +207,24 @@ defineExpose({ refresh })
   <div v-if="errorMessage" class="alert alert-danger">{{ errorMessage }}</div>
   <div v-if="message" class="alert alert-success">{{ message }}</div>
 
-  <div v-if="room" class="card mb-4">
-    <div class="card-body">
+  <dialog
+    ref="roomDialog"
+    class="room-dialog"
+    aria-labelledby="room-dialog-title"
+    @click="onDialogClick"
+    @cancel.prevent="closeRoomDialog"
+  >
+    <div v-if="room" class="dialog-body">
       <div class="d-flex justify-content-between align-items-start">
-        <p class="mb-1">
+        <p id="room-dialog-title" class="mb-1">
           Room <strong>{{ room.code }}</strong>, host {{ room.hostName }}
           <span v-if="room.closed" class="badge text-bg-secondary ms-1">Closed</span>
           <span v-else class="badge text-bg-success ms-1">Open</span>
         </p>
-        <button type="button" class="btn-close" aria-label="Close" @click="room = null"></button>
+        <button type="button" class="btn-close" aria-label="Close" @click="closeRoomDialog"></button>
       </div>
+      <div v-if="errorMessage" class="alert alert-danger small py-2 my-2">{{ errorMessage }}</div>
+      <div v-if="message" class="alert alert-success small py-2 my-2">{{ message }}</div>
       <p class="small text-muted mb-3">
         Made {{ formatTime(room.createdAt) }} &middot; stage {{ room.stage }} &middot; {{ room.shotNumber }} shot(s) taken
       </p>
@@ -236,7 +284,7 @@ defineExpose({ refresh })
         </ul>
       </template>
     </div>
-  </div>
+  </dialog>
 
   <div class="row g-2 mb-2">
     <div class="col-12 col-lg-5">
@@ -309,12 +357,60 @@ defineExpose({ refresh })
       </table>
     </div>
     <p v-if="shown.length === 0" class="small text-muted">No rooms here.</p>
+    <div v-if="hasMore" class="text-center my-3">
+      <button class="btn btn-sm btn-outline-primary" :disabled="loadingMore" @click="showMore">
+        {{ loadingMore ? 'Loading...' : 'Show ' + PAGE + ' more (older) rooms' }}
+      </button>
+    </div>
   </template>
 </template>
 
 <style scoped>
 .clickable {
   cursor: pointer;
+}
+
+/* The opened room: a big box in the middle of the screen that scrolls inside itself.
+   Pops in like AppDialog.vue. */
+.room-dialog {
+  width: min(960px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 0;
+  border: 0;
+  border-radius: 20px;
+  background: #ffffff;
+  box-shadow: 0 24px 64px rgba(20, 23, 43, 0.24);
+  opacity: 1;
+  transform: scale(1);
+  transition: opacity 180ms ease, transform 180ms cubic-bezier(0.23, 1, 0.32, 1), overlay 180ms allow-discrete,
+    display 180ms allow-discrete;
+}
+
+.room-dialog:not([open]) {
+  opacity: 0;
+  transform: scale(0.96);
+}
+
+@starting-style {
+  .room-dialog[open] {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+}
+
+.room-dialog::backdrop {
+  background: rgba(20, 23, 43, 0.4);
+  backdrop-filter: blur(2px);
+}
+
+.dialog-body {
+  padding: 22px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .room-dialog {
+    transition: none;
+  }
 }
 
 .dot {
