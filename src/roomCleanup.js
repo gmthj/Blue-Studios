@@ -10,6 +10,8 @@ import { isActive } from './roomTiming.js'
 //   R3  open, has media, nobody here for 6 hours         -> close
 //   R4  closed, has media, nobody here for 30 days       -> delete
 //   R5  open for more than 24 hours in total             -> close (even if someone is "here": a tab left open)
+//   R6  host is named "Playwright" (our automatic tests)  -> delete 1 hour after it was made, whatever is inside
+//       (R6 skips the others: a test room is junk even if it has photos, or someone is "here")
 // A room with keep: true (set by an admin) is never touched. Rooms with someone here now only follow R5.
 
 const HOUR = 60 * 60 * 1000
@@ -21,6 +23,14 @@ export const CLEANUP = {
   emptyWithMediaMs: 6 * HOUR, // R3
   closedWithMediaMs: 30 * DAY, // R4
   openMaxMs: 1 * DAY, // R5
+  testRoomMs: 1 * HOUR, // R6
+}
+
+// The name the Playwright tests (tests e2e) give their host. Rooms made by them are deleted by R6.
+export const TEST_HOST_NAME = 'Playwright'
+
+export function isTestRoom(room) {
+  return typeof room.hostName === 'string' && room.hostName.trim().toLowerCase() === TEST_HOST_NAME.toLowerCase()
 }
 
 // Does the room hold anything worth keeping? Every photo and clip needs shotNumber >= 1,
@@ -52,6 +62,12 @@ export function cleanupStatus(room, members, now) {
   const none = { rule: 0, action: 'none', dueAt: null, due: false }
   if (room.keep === true) return none
   if (typeof room.createdAt !== 'number') return none
+
+  // R6: a test room is deleted an hour after it was made, so a test that is still running is not cut off
+  if (isTestRoom(room)) {
+    const dueAt = room.createdAt + CLEANUP.testRoomMs
+    return { rule: 6, action: 'delete', dueAt: dueAt, due: dueAt <= now }
+  }
 
   const media = hasMedia(room)
   const presence = lastPresence(room, members)
@@ -100,4 +116,5 @@ export const RULE_NAMES = {
   3: 'R3: open room left empty for 6 hours',
   4: 'R4: closed room, 30 days',
   5: 'R5: open for more than 24 hours',
+  6: 'R6: test room (host named Playwright)',
 }

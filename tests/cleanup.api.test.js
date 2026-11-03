@@ -52,6 +52,12 @@ before(async () => {
   await db.doc('rooms/1006/members/m1').set({ name: 'B', joinedAt: now - 3 * HOUR, lastSeen: now - 5000 })
   // keep: true -> stays although it is old and empty
   await db.doc('rooms/1007').set({ ...base, keep: true, createdAt: now - 10 * DAY })
+  // R6: a test room with photos, someone in it, and open -> still deleted (over an hour old)
+  await db.doc('rooms/1009').set({ ...base, hostName: 'Playwright', shotNumber: 3, createdAt: now - 2 * HOUR })
+  await db.doc('rooms/1009/photos/p1').set({ image: 'data:image/jpeg;base64,x' })
+  await db.doc('rooms/1009/members/m1').set({ name: 'T', joinedAt: now - 2 * HOUR, lastSeen: now - 5000 })
+  // a test room only 5 minutes old -> stays (the test may still be running)
+  await db.doc('rooms/1010').set({ ...base, hostName: 'Playwright', createdAt: now - 5 * 60 * 1000 })
   // R2: closed and unused for 2 days -> deleted
   await db.doc('rooms/1008').set({ ...base, closed: true, createdAt: now - 3 * DAY, lastActive: now - 2 * DAY })
 })
@@ -69,7 +75,7 @@ test('dryRun reports what would happen and changes nothing', async () => {
   const { status, body } = await callApi(SECRET, { dryRun: '1' })
   assert.equal(status, 200)
   assert.equal(body.dryRun, true)
-  assert.deepEqual(body.deleted.map((d) => d.code).sort(), ['1001', '1004', '1008'])
+  assert.deepEqual(body.deleted.map((d) => d.code).sort(), ['1001', '1004', '1008', '1009'])
   assert.deepEqual(body.closed.map((d) => d.code), ['1003'])
   assert.equal(await exists('rooms/1001'), true)
   assert.equal((await adminDb().collection('adminLog').get()).size, 0)
@@ -81,7 +87,7 @@ test('the real run closes and deletes the right rooms, and logs each one', async
   assert.equal(body.dryRun, false)
 
   // deleted, with everything inside
-  for (const code of ['1001', '1004', '1008']) assert.equal(await exists('rooms/' + code), false, code)
+  for (const code of ['1001', '1004', '1008', '1009']) assert.equal(await exists('rooms/' + code), false, code)
   assert.equal((await adminDb().collection('rooms/1001/members').get()).size, 0)
   assert.equal((await adminDb().collection('rooms/1004/photos').get()).size, 0)
 
@@ -90,15 +96,15 @@ test('the real run closes and deletes the right rooms, and logs each one', async
   assert.equal(await exists('rooms/1003/photos/p1'), true)
 
   // untouched
-  for (const code of ['1002', '1005', '1006', '1007']) assert.equal(await exists('rooms/' + code), true, code)
+  for (const code of ['1002', '1005', '1006', '1007', '1010']) assert.equal(await exists('rooms/' + code), true, code)
   assert.equal((await adminDb().doc('rooms/1002').get()).data().closed, false)
   assert.equal((await adminDb().doc('rooms/1007').get()).data().closed, false)
 
   const log = await adminDb().collection('adminLog').get()
-  assert.equal(log.size, 4)
+  assert.equal(log.size, 5)
   log.docs.forEach((entry) => assert.equal(entry.data().adminId, 'system'))
   const deletes = log.docs.filter((entry) => entry.data().action === 'deleteRoom')
-  assert.equal(deletes.length, 3)
+  assert.equal(deletes.length, 4)
   assert.match(log.docs.find((entry) => entry.data().targetId === '1004').data().reason, /R4/)
 })
 

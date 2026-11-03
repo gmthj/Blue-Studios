@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { cleanupStatus, cleanupLabel, hasMedia, lastPresence, CLEANUP } from '../src/roomCleanup.js'
+import { cleanupStatus, cleanupLabel, hasMedia, lastPresence, isTestRoom, CLEANUP } from '../src/roomCleanup.js'
 
 const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
@@ -75,6 +75,15 @@ describe('cleanupStatus', () => {
   it('the lower rule number wins when two are due (delete beats close)', () => {
     const both = room({ createdAt: NOW - 30 * HOUR }) // empty, no media: R1 and R5 are both due
     expect(cleanupStatus(both, [], NOW)).toMatchObject({ rule: 1, action: 'delete' })
+  })
+
+  it('R6: a room whose host is named Playwright is deleted an hour after it was made, whatever is in it', () => {
+    const test = room({ hostName: 'Playwright', shotNumber: 5, stripSlots: { 0: 'p' }, createdAt: NOW - 2 * HOUR })
+    expect(cleanupStatus(test, [here], NOW)).toMatchObject({ rule: 6, action: 'delete', due: true })
+    const fresh = room({ hostName: ' playwright ', createdAt: NOW - 10 * 60 * 1000 })
+    expect(cleanupStatus(fresh, [here], NOW)).toMatchObject({ rule: 6, action: 'delete', due: false })
+    expect(isTestRoom(room({ hostName: 'Playwright Fan' }))).toBe(false)
+    expect(isTestRoom(room({ hostName: 'Gabriel' }))).toBe(false)
   })
 
   it('keep: true is never touched', () => {

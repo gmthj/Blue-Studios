@@ -43,6 +43,7 @@ npm install
 | --- | --- | --- | --- |
 | `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID` | the website (`src/firebase.js`) | no, every visitor's browser gets them; the security rules protect the data | Firebase console > gear icon > **Project settings** > **Your apps** > the web app's config |
 | `FIREBASE_SERVICE_ACCOUNT` | the server (`api/`), and the scripts `set-admin` / `set-cors` | **yes** | Firebase console > Project settings > **Service accounts** > **Generate new private key**, then the downloaded `.json` file as **one line of base64** (commands below) |
+| `CRON_SECRET` | the server (`api/cleanup.js`, the daily room cleanup) | **yes** | You make it up: any long random string. Add it on Vercel only (Vercel sends it to the cron job automatically). Put it in `.env` too only if you want to call `/api/cleanup` yourself on your laptop |
 | `AGORA_APP_ID` | the server (`api/token.js`) | no | Agora console > **Projects** |
 | `AGORA_APP_CERTIFICATE` | the server (`api/token.js`) | **yes** | Agora console > Projects > your project > **Primary Certificate** |
 
@@ -187,7 +188,9 @@ src/App.vue                navbar (Marketplace, My Studio, Admin, log in/out) + 
 src/router.js              URL -> page (see the routes list in the file); pages for accounts / admins only
 src/firebase.js            Firebase config (read from .env), exports db, auth and storage
 src/guest.js               guest name saved in localStorage, device type (Phone/Tablet/Computer)
-src/room.js                6-person room limit, "is this member still here?" check
+src/room.js                6-person room limit (re-exports the timing below)
+src/roomTiming.js          heartbeat / "is this member still here?" check (no imports, the server uses it too)
+src/roomCleanup.js         the room cleanup rules R1 to R5 (used by api/cleanup.js and the admin Rooms tab)
 src/stripData.js           photostrip layouts, frame styles, sticker tray, filters (Pick + Decorate pages)
 src/studio.js              My Studio: save / list / publish / delete templates, stickers, strips; CATEGORIES
 src/marketplace.js         marketplace: browse / save / unsave / report
@@ -222,6 +225,8 @@ src/components/admin/*.vue          admin tabs: Overview, Reports, Items, Accoun
 
 api/token.js               GET /api/token?code=1234 -> Agora token (room members only)
 api/admin.js               POST /api/admin (admins only): list, look up, ban, unban accounts; delete rooms
+api/cleanup.js             GET /api/cleanup (daily cron, needs CRON_SECRET): closes / deletes old and empty rooms
+api/_lib/roomDelete.js     deleting a room for good (documents, sub-lists, video files), shared by admin.js and cleanup.js
 api/_lib/firebaseAdmin.js  server-only Firebase Admin setup + getCaller(req). "_" = not a web address
 
 firestore.rules            Firestore security rules (who can read/write what)
@@ -374,7 +379,7 @@ They then log out and in again (or refresh), and an **Admin** button appears in 
 - **Reports:** reported items, grouped by item, with each reason; filter open / resolved / dismissed / all. "Hide item" takes it out of the marketplace and closes its reports as resolved. "Dismiss" closes the reports. "Owner's account..." opens the account tab.
 - **Items:** every template and sticker (public, private and hidden), with search and filters; hide or unhide.
 - **Accounts:** every login, accounts and guests (from Firebase Auth through `/api/admin`), with search and filters (accounts, guests, banned, admins). Pick one to see what they made and reported, then ban or unban it (a reason is required).
-- **Rooms:** the newest 200 rooms, open and closed, with who is in each one (green = here now, grey = left). Filter by open/closed, people and stage; sort by any column. Open one to see its photos, delete a photo, close the room, or delete it with everything inside (through `/api/admin`; an open room is closed first so everyone is sent home). Older rooms can be opened by code.
+- **Rooms:** the newest 200 rooms, open and closed, with who is in each one (green = here now, grey = left) and a **Cleanup** column saying what the daily cleanup will do and when (for example "deletes in 23 days"). Filter by open/closed, people and stage; sort by any column. Open one to see its photos, delete a photo, close the room, **keep** it (the cleanup skips it), or delete it with everything inside (through `/api/admin`; an open room is closed first so everyone is sent home). Older rooms can be opened by code.
 - **Log:** everything moderators did, filterable by action.
 
 **What a ban does** (`api/admin.js`, which uses the Admin SDK because only the server can switch off a login):
@@ -384,6 +389,34 @@ They then log out and in again (or refresh), and an **Admin** button appears in 
 4. Writes the ban to `adminLog`.
 
 Admins can't ban themselves, other admins (remove the mark first), or guests (they have no account). Unbanning turns the login back on; their items stay hidden until an admin unhides them.
+
+## Room cleanup
+
+Rooms pile up, so a daily job closes and deletes old and empty ones. The rules are in `src/roomCleanup.js` (one file, so the admin page always shows what the job will really do). The first rule that is due wins (R6 is checked first):
+
+| Rule | Room | When | What happens |
+| --- | --- | --- | --- |
+| R1 | open, **no photos or videos** | nobody there for 1 hour | deleted |
+| R2 | closed, no photos or videos | 24 hours since anyone was there | deleted |
+| R3 | open, has photos or videos | nobody there for 6 hours | **closed** (data kept so people can still export) |
+| R4 | closed, has photos or videos | 30 days since anyone was there | deleted |
+| R5 | open | 24 hours since it was made, even with someone in it (a tab left open) | closed |
+| R6 | **host named "Playwright"** (rooms made by our automatic browser tests) | 1 hour since it was made, whatever is inside | deleted |
+
+- R6 skips the other rules (test rooms are junk even with photos in them). The name is matched ignoring capitals and spaces, and set in `TEST_HOST_NAME` in `src/roomCleanup.js`; make sure no real person uses that name.
+- A room with someone in it right now only follows R5. An admin can mark a room **Keep** in the Rooms tab, and the job never touches it.
+- "Has photos or videos" means the shutter was pressed, a strip slot is filled, or an edited video exists.
+- "Nobody there" is measured from `rooms/{code}.lastActive` (written when someone leaves, because leaving deletes their member document) and from the members' `lastSeen`.
+- **When it runs:** `vercel.json` has a cron for `/api/cleanup` at `0 16 * * *` (16:00 UTC = 12:00 am Singapore). The Hobby plan allows one run a day and may start it anywhere in that hour. So "1 hour" really means "at the next daily run after 1 hour". A run changes at most 200 rooms or 45 seconds' worth; the rest wait for the next day.
+- **Needs** the `CRON_SECRET` variable on Vercel (Vercel sends it as `Authorization: Bearer ...`). Without it the endpoint refuses to run.
+- **Every automatic action** is written to the admin Log with `adminId: system` and the rule that caused it.
+- **Try it safely:** a dry run reports what would happen and changes nothing. In PowerShell:
+
+```powershell
+Invoke-RestMethod -Uri "https://YOUR-ADDRESS/api/cleanup?dryRun=1" -Headers @{ Authorization = "Bearer YOUR_CRON_SECRET" }
+```
+
+- To change a time limit, edit `CLEANUP` at the top of `src/roomCleanup.js` (the tests in `tests/roomCleanup.spec.js` then show what breaks).
 
 ## Known limitations
 
