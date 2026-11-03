@@ -351,7 +351,7 @@ const mixBars = computed(function () {
     const a = (peaksA[i] || 0) * (volumeA.value / 100) * (1 - soundCrossfade.value)
     const b = (peaksB[i] || 0) * (volumeB.value / 100) * soundCrossfade.value
 
-    let color = '#14172B'   // ink = Deck B is louder (design.md --ink)
+    let color = '#F76B15'   // orange = Deck B is louder
     if (a >= b) {
       color = '#2F5BEA'     // blue = Deck A is louder (design.md --brand)
     }
@@ -659,7 +659,7 @@ onMounted(loadTracks)
         <div v-if="djMode" class="col-12 col-md-5 deck-col">
           <DeckCard
             label="Deck B"
-            color="#14172B"
+            color="#F76B15"
             :track="trackB"
             :speed="speedB"
             :volume="volumeB"
@@ -779,9 +779,10 @@ onMounted(loadTracks)
 
 <style scoped>
 /* Deck colours from the Figma */
-/* Deck A is the brand blue and deck B is ink (design.md palette), so the two are easy to tell apart */
+/* Deck A is the brand blue and deck B is orange: opposite colours, so the two are easy to tell apart.
+   (Orange, not ink: a near-black label disappears on the black record.) */
 .text-deck-a { color: var(--brand); }   
-.text-deck-b { color: var(--ink); }
+.text-deck-b { color: #F76B15; }
 .btn-deck-a {
   --bs-btn-color: #fff;
   --bs-btn-bg: var(--brand);
@@ -795,14 +796,14 @@ onMounted(loadTracks)
 }
 .btn-deck-b {
   --bs-btn-color: #fff;
-  --bs-btn-bg: var(--ink);
-  --bs-btn-border-color: var(--ink);
+  --bs-btn-bg: #F76B15;
+  --bs-btn-border-color: #F76B15;
   --bs-btn-hover-color: #fff;
-  --bs-btn-hover-bg: #0E1020;
-  --bs-btn-hover-border-color: #0E1020;
+  --bs-btn-hover-bg: #D85A0C;
+  --bs-btn-hover-border-color: #D85A0C;
   --bs-btn-active-color: #fff;
-  --bs-btn-active-bg: #0E1020;
-  --bs-btn-active-border-color: #0E1020;
+  --bs-btn-active-bg: #D85A0C;
+  --bs-btn-active-border-color: #D85A0C;
 }
 
 .track-icon {
