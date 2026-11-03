@@ -262,6 +262,14 @@ export async function closeRoom(code, reason) {
   await batch.commit()
 }
 
+// Keep a room (keep = true): the daily cleanup never closes or deletes it. keep = false puts it back under the rules.
+export async function setRoomKeep(code, keep, reason) {
+  const batch = writeBatch(db)
+  batch.update(doc(db, 'rooms', code), { keep: keep })
+  addLog(batch, 'keepRoom', 'rooms', code, (keep ? 'Keep. ' : 'Stop keeping. ') + (reason || ''))
+  await batch.commit()
+}
+
 // Delete a room and everything in it, for good (through /api/admin: only the server can delete a
 // room's sub-lists). If it is still open, it is closed first so everyone inside is sent home.
 export async function deleteRoom(code, reason) {

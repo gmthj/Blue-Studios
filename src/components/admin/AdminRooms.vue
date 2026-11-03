@@ -1,7 +1,8 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
-import { listRooms, getRoomWithPhotos, closeRoom, deleteRoom, deletePhoto, deleteClip } from '../../admin.js'
+import { listRooms, getRoomWithPhotos, closeRoom, deleteRoom, deletePhoto, deleteClip, setRoomKeep } from '../../admin.js'
 import { isActive } from '../../room.js'
+import { cleanupStatus, cleanupLabel, RULE_NAMES } from '../../roomCleanup.js'
 import { useAdminTab, useSort, formatTime } from '../../composables/useAdminTab.js'
 import SortHeader from './SortHeader.vue'
 import { askConfirm } from '../../composables/useDialog.js'
@@ -51,6 +52,15 @@ function here(r) {
   return r.members.filter((member) => isActive(member, now.value))
 }
 
+// What the daily cleanup will do to a room, and when (rules in roomCleanup.js, run by api/cleanup.js)
+function cleanup(r) {
+  return cleanupStatus(r, r.members, now.value)
+}
+
+function cleanupText(r) {
+  return cleanupLabel(cleanup(r), r, now.value)
+}
+
 const STATUSES = [
   { id: 'all', label: 'All', test: () => true },
   { id: 'open', label: 'Open', test: (r) => !r.closed },
@@ -81,6 +91,7 @@ const sort = useSort({
   shots: { get: (r) => r.shotNumber, first: 'desc' },
   people: { get: (r) => here(r).length * 1000 + r.members.length, first: 'desc' },
   status: { get: (r) => (r.closed ? 1 : 0), first: 'asc' },
+  cleanup: { get: (r) => cleanup(r).dueAt ?? Infinity, first: 'asc' }, // soonest first; kept rooms last
 }, 'createdAt')
 
 const shown = computed(() => {
@@ -178,6 +189,15 @@ async function closeThisRoom() {
   }, 'Room closed.')
 }
 
+async function toggleKeep() {
+  const keep = room.value.keep !== true
+  run(async () => {
+    await setRoomKeep(room.value.code, keep, note.value)
+    await openRoom(room.value.code)
+    rooms.value = await listRooms(roomLimit.value)
+  }, keep ? 'Room kept: it will not be cleaned up.' : 'Room is under the cleanup rules again.')
+}
+
 async function deleteThisRoom() {
   const code = room.value.code
   const warning = room.value.closed ? '' : ' It is still open: everyone in it is sent back to the home page.'
@@ -229,6 +249,11 @@ defineExpose({ refresh })
         Made {{ formatTime(room.createdAt) }} &middot; stage {{ room.stage }} &middot; {{ room.shotNumber }} shot(s) taken
       </p>
 
+      <p v-if="cleanupText(room)" class="small mb-3">
+        <strong>Cleanup:</strong> {{ cleanupText(room) }}
+        <span v-if="cleanup(room).rule" class="text-muted">&middot; {{ RULE_NAMES[cleanup(room).rule] }}</span>
+      </p>
+
       <h3 class="group-label">People ({{ here(room).length }} here now, {{ room.members.length }} joined)</h3>
       <p v-if="room.members.length === 0" class="small text-muted">Nobody.</p>
       <ul class="list-unstyled small mb-3">
@@ -242,6 +267,9 @@ defineExpose({ refresh })
 
       <input v-model="note" type="text" maxlength="300" class="form-control form-control-sm mb-2" placeholder="Note for the log (optional)" />
       <div class="d-flex flex-wrap gap-2 mb-3">
+        <button class="btn btn-sm btn-outline-primary" :disabled="busy" @click="toggleKeep">
+          {{ room.keep === true ? 'Stop keeping' : 'Keep (skip cleanup)' }}
+        </button>
         <button v-if="!room.closed" class="btn btn-sm btn-outline-danger" :disabled="busy" @click="closeThisRoom">Close room</button>
         <button class="btn btn-sm btn-danger" :disabled="busy" @click="deleteThisRoom">Delete room</button>
       </div>
@@ -331,6 +359,7 @@ defineExpose({ refresh })
             <SortHeader :sort="sort" column="stage" label="Stage" />
             <SortHeader :sort="sort" column="shots" label="Shots" />
             <SortHeader :sort="sort" column="status" label="Status" />
+            <SortHeader :sort="sort" column="cleanup" label="Cleanup" />
           </tr>
         </thead>
         <tbody>
@@ -352,6 +381,7 @@ defineExpose({ refresh })
               <span v-if="r.closed" class="badge text-bg-secondary">Closed</span>
               <span v-else class="badge text-bg-success">Open</span>
             </td>
+            <td class="text-nowrap text-muted">{{ cleanupText(r) }}</td>
           </tr>
         </tbody>
       </table>

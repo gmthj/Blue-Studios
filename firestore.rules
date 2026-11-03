@@ -160,7 +160,8 @@ service cloud.firestore {
     }
 
     // ---------- Rooms ----------
-    // rooms/{code}  { hostId, hostName, shotNumber, shotStartedBy, stage, stripSlots, closed, createdAt }
+    // rooms/{code}  { hostId, hostName, shotNumber, shotStartedBy, stage, stripSlots, closed, createdAt, lastActive, keep }
+    // lastActive: when someone last left (the cleanup in api/cleanup.js needs it). keep: set by an admin, never cleaned up.
 
     match /rooms/{code} {
       // Anyone with the app can look up ONE room by its code (to join it).
@@ -171,14 +172,15 @@ service cloud.firestore {
       // Create: I must be the host, and the room must start empty
       allow create: if signedIn()
         && code.matches('^[0-9]{4}$')
-        && request.resource.data.keys().hasOnly(['hostId', 'hostName', 'shotNumber', 'stage', 'stripSlots', 'closed', 'createdAt'])
+        && request.resource.data.keys().hasOnly(['hostId', 'hostName', 'shotNumber', 'stage', 'stripSlots', 'closed', 'createdAt', 'lastActive'])
         && request.resource.data.hostId == request.auth.uid
         && isName(request.resource.data.hostName)
         && request.resource.data.shotNumber == 0
         && (request.resource.data.stage == 'shoot' || request.resource.data.stage == 'camera') //TODO: remove camera option
         && request.resource.data.stripSlots == {}
         && request.resource.data.closed == false
-        && request.resource.data.createdAt is int;
+        && request.resource.data.createdAt is int
+        && (!('lastActive' in request.resource.data) || request.resource.data.lastActive is int);
 
       // Update: only people in the room, and only while it is open
       allow update: if signedIn()
@@ -191,6 +193,11 @@ service cloud.firestore {
         && onlyChanged(['closed'])
         && request.resource.data.closed == true;
 
+      // Admins can mark a room "keep" so the daily cleanup (api/cleanup.js) never closes or deletes it
+      allow update: if isAdmin()
+        && onlyChanged(['keep'])
+        && request.resource.data.keep is bool;
+
       allow delete: if false;
 
       // Shutter: shotNumber goes up by exactly 1 (see pressShutter() in RoomView.vue)
@@ -202,11 +209,13 @@ service cloud.firestore {
 
       // DEV (open while we are still building): members can change any other room field
       // (stage, stripSlots, stripEdits, stripStickers, music, ...), so teammates can add fields freely.
-      // Still protected: who the host is, when it was made, the shutter counter and closing.
+      // Still protected: who the host is, when it was made, the shutter counter, closing and keep.
+      // lastActive (when someone last left, used by the cleanup) must stay a number.
       // TODO lockdown: check each field again (stage names, slot keys, sizes) before submission.
       function devRoomChange() {
         return !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(['hostId', 'hostName', 'createdAt', 'shotNumber', 'shotStartedBy', 'closed']);
+          .hasAny(['hostId', 'hostName', 'createdAt', 'shotNumber', 'shotStartedBy', 'closed', 'keep'])
+          && (!('lastActive' in request.resource.data) || request.resource.data.lastActive is int);
       }
 
       // Close the room for everyone (closed can only go from false to true)
@@ -547,7 +556,7 @@ service cloud.firestore {
       allow create: if isAdmin()
         && request.resource.data.keys().hasOnly(['adminId', 'action', 'targetType', 'targetId', 'reason', 'createdAt'])
         && request.resource.data.adminId == request.auth.uid
-        && request.resource.data.action in ['hide', 'unhide', 'resolveReport', 'dismissReport', 'closeRoom', 'deletePhoto', 'deleteClip']
+        && request.resource.data.action in ['hide', 'unhide', 'resolveReport', 'dismissReport', 'closeRoom', 'keepRoom', 'deletePhoto', 'deleteClip']
         && request.resource.data.targetType in ['templates', 'stickers', 'reports', 'rooms', 'photos', 'clips']
         && request.resource.data.targetId is string
         && request.resource.data.targetId.size() >= 1

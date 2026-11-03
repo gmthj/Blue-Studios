@@ -185,6 +185,28 @@ test('an admin can close any room', async () => {
   await assertSucceeds(updateDoc(doc(dbAsAdmin(), 'rooms/1234'), { closed: true }))
 })
 
+test('a room can be created with lastActive, but only as a number', async () => {
+  await assertSucceeds(setDoc(doc(dbAs('host'), 'rooms/5555'), { ...newRoom('host'), lastActive: Date.now() }))
+  await assertFails(setDoc(doc(dbAs('host'), 'rooms/5556'), { ...newRoom('host'), lastActive: 'now' }))
+})
+
+test('a member can write lastActive when leaving, and only while the room is open', async () => {
+  await seedRoom()
+  await assertSucceeds(updateDoc(doc(dbAs('guest'), 'rooms/1234'), { lastActive: Date.now() }))
+  await assertFails(updateDoc(doc(dbAs('guest'), 'rooms/1234'), { lastActive: 'yesterday' }))
+  await assertFails(updateDoc(doc(dbAs('stranger'), 'rooms/1234'), { lastActive: Date.now() }))
+})
+
+test('only an admin can mark a room keep', async () => {
+  await seedRoom()
+  await assertFails(updateDoc(doc(dbAs('host'), 'rooms/1234'), { keep: true }))
+  await assertFails(updateDoc(doc(dbAs('stranger'), 'rooms/1234'), { keep: true }))
+  await assertSucceeds(updateDoc(doc(dbAsAdmin(), 'rooms/1234'), { keep: true }))
+  await assertFails(updateDoc(doc(dbAsAdmin(), 'rooms/1234'), { keep: 'yes' }))
+  // members still cannot switch it off
+  await assertFails(updateDoc(doc(dbAs('host'), 'rooms/1234'), { keep: false }))
+})
+
 test('nobody can delete a room', async () => {
   await seedRoom()
   await assertFails(deleteDoc(doc(dbAs('host'), 'rooms/1234')))
