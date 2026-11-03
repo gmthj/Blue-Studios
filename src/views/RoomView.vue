@@ -343,7 +343,7 @@ async function copyJoinLink() {
           <div class="card join-card">
             <!-- Phones upright: just the room code, to leave room for the camera -->
             <div class="card-body join-small d-sm-none">
-              <span class="join-label">Room code</span>
+              <span class="join-label">Room</span>
               <strong class="room-code">{{ code }}</strong>
               <button class="btn btn-sm btn-outline-secondary ms-auto d-inline-flex align-items-center gap-1" @click="copyJoinLink">
                 <AppIcon :name="copied ? 'check' : 'duplicate'" :size="14" /> {{ copied ? 'Copied' : 'Invite' }}
@@ -355,7 +355,7 @@ async function copyJoinLink() {
               <img :src="qrCodeUrl" alt="QR code to join this room" class="join-qr" />
               <div class="min-w-0">
                 <span class="join-label">Invite friends</span>
-                <strong class="room-code d-block">{{ code }}</strong>
+                <strong class="room-code">{{ code }}</strong>
                 <p class="join-text">Scan or go to <strong>{{ siteAddress }}</strong> and enter the code</p>
                 <button class="btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1" @click="copyJoinLink">
                   <AppIcon :name="copied ? 'check' : 'duplicate'" :size="14" /> {{ copied ? 'Link copied!' : 'Copy link' }}
@@ -636,13 +636,23 @@ async function copyJoinLink() {
   text-transform: uppercase;
 }
 
-/* The room code: big, spaced-out digits */
+/* The room code: a blue pill with spaced-out digits (the style the stage bar used to show it in) */
 .room-code {
-  color: var(--ink);
-  font-size: 1.4rem;
-  font-weight: 800;
-  letter-spacing: 0.15em;
-  line-height: 1.2;
+  display: inline-block;
+  padding: 2px 14px;
+  border-radius: 999px;
+  color: var(--brand, #2F5BEA);
+  background: var(--brand-tint, #E8EEFF);
+  font-size: 1.2rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1.4;
+}
+
+/* In the bigger card the code sits on its own line, as wide as its pill */
+.join-big .room-code {
+  display: block;
+  width: fit-content;
 }
 
 .join-text {
@@ -664,7 +674,7 @@ async function copyJoinLink() {
   }
 
   .room-code {
-    font-size: 1.8rem;
+    font-size: 1.5rem;
   }
 }
 

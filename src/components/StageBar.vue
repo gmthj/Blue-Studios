@@ -10,7 +10,7 @@ import { profileOf } from '../profiles.js'
 import { soundOn, toggleSound } from '../sounds.js'
 import AppIcon from './AppIcon.vue'
 
-// The bar at the top of the room pages: the room code, the steps, everyone in the room,
+// The bar at the top of the room pages: the steps, everyone in the room,
 // and the room buttons (fullscreen, leave, close room).
 // Usage: <StageBar current="pick" />  (current = the stage of this page, see ROOM_STAGES in useRoom.js)
 //
@@ -23,7 +23,7 @@ const props = defineProps({
 
 const router = useRouter()
 const uid = getUid()
-const { code, room, activeMembers, furthestIndex, goToStage, roomRef, exitRoom } = useRoom()
+const { room, activeMembers, furthestIndex, goToStage, roomRef, exitRoom } = useRoom()
 const { fullscreen, toggleFullscreen } = useFullscreen()
 
 // Is the nav's slot there? (Teleport needs it; if not, the bar just shows in the page)
@@ -127,11 +127,6 @@ async function closeRoom() {
        hidden, so the bar stays where it is in the page (disabled = not teleported). -->
   <Teleport to="#room-nav-slot" :disabled="fullscreen || !hasSlot">
   <div class="stage-bar" :class="{ 'in-nav': !fullscreen && hasSlot }">
-    <!-- The room code -->
-    <div class="room-info">
-      <span class="room-badge"><span class="room-word">Room </span><strong>{{ code }}</strong></span>
-    </div>
-
     <!-- The steps, joined by a line. Reached steps get a tick (and can be clicked), the current one is filled in.
          On narrow screens only the current step shows its name (the others are just numbers). -->
     <ol
@@ -240,10 +235,8 @@ async function closeRoom() {
   --danger: #E5484D;
 
   display: grid;
-  grid-template-columns: 1fr auto;
-  grid-template-areas:
-    'info faces'
-    'steps steps';
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: 'steps faces';
   align-items: center;
   gap: 10px 12px;
   margin-bottom: 12px;
@@ -266,12 +259,11 @@ async function closeRoom() {
   box-shadow: none;
 }
 
-/* In the nav the bar is always one row, and shrinks step by step as the screen gets narrower:
-   step names (all but the current one) go under 1400px, then the faces and button words under 1200px,
-   then on phones the word "Room" and smaller step dots. */
+/* In the nav the bar is always one row, and gives things up in this order as the screen gets narrower
+   (the logo's name in App.vue goes at 1200px): member faces under 1300px, button words under 1060px,
+   the names of the steps that are not current under 900px, then on phones smaller step dots and buttons.
+   The sizes match the nav's own buttons (36px tall, in a 56px bar). */
 .stage-bar.in-nav {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  grid-template-areas: 'info steps faces';
   gap: 8px 12px;
 }
 
@@ -311,14 +303,13 @@ async function closeRoom() {
   mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
 }
 
-@media (max-width: 1399.98px) {
-  .stage-bar.in-nav .step-pill:not(.current) .step-label {
+@media (max-width: 1299.98px) {
+  .stage-bar.in-nav .faces {
     display: none;
   }
 }
 
-@media (max-width: 1199.98px) {
-  .stage-bar.in-nav .faces,
+@media (max-width: 1059.98px) {
   .stage-bar.in-nav .btn-label {
     display: none;
   }
@@ -328,17 +319,34 @@ async function closeRoom() {
   }
 }
 
+@media (max-width: 899.98px) {
+  .stage-bar.in-nav .step-pill:not(.current) .step-label {
+    display: none;
+  }
+}
+
+/* From 900px every step shows its name (this beats the card layout's own 992-1199px rule above) */
+@media (min-width: 900px) {
+  .stage-bar.in-nav .step-pill:not(.current) .step-label {
+    display: inline;
+  }
+}
+
+@media (min-width: 576px) {
+  .stage-bar.in-nav .bar-btn {
+    min-width: 36px;
+    height: 36px;
+  }
+
+  .stage-bar.in-nav .step-dot {
+    width: 24px;
+    height: 24px;
+  }
+}
+
 @media (max-width: 575.98px) {
   .stage-bar.in-nav {
     gap: 6px 8px;
-  }
-
-  .stage-bar.in-nav .room-word {
-    display: none;
-  }
-
-  .stage-bar.in-nav .room-badge {
-    padding: 4px 8px;
   }
 
   .stage-bar.in-nav .step-pill {
@@ -368,36 +376,6 @@ async function closeRoom() {
     min-width: 28px;
     height: 28px;
   }
-}
-
-/* Bootstrap "lg" (992px) and up: one row, steps in the middle */
-@media (min-width: 992px) {
-  .stage-bar {
-    grid-template-columns: 1fr auto 1fr;
-    grid-template-areas: 'info steps faces';
-  }
-}
-
-.room-info {
-  grid-area: info;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-
-.room-badge {
-  flex-shrink: 0;
-  padding: 4px 12px;
-  border-radius: 999px;
-  color: var(--brand);
-  background: var(--brand-tint);
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
-.room-badge strong {
-  letter-spacing: 0.08em;
 }
 
 /* ---------- Steps ---------- */
@@ -522,8 +500,6 @@ button.step-btn:focus-visible {
 /* Phones held sideways (short screens): everything on one row, smaller, so the camera gets the height */
 @media (max-height: 500px) and (orientation: landscape) {
   .stage-bar {
-    grid-template-columns: auto 1fr auto;
-    grid-template-areas: 'info steps faces';
     margin-bottom: 8px;
     padding: 6px 10px;
   }

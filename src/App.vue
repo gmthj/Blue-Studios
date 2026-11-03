@@ -208,15 +208,16 @@ async function logOutAndGoHome() {
   min-width: 0;
 }
 
-/* In a room the stage bar shares the row with the logo, so the logo's name goes first when space runs out,
-   and on phones the whole logo (the code and steps need the width) */
+/* In a room the stage bar shares the row with the logo. As the screen narrows things go in this order
+   (the same order as in StageBar.vue): member faces (under 1300px), the logo's name (under 1200px),
+   button words (under 1060px), step names (under 900px), and on very narrow phones the logo (under 400px) */
 @media (max-width: 1199.98px) {
   .app-nav.in-room .brand-text {
     display: none;
   }
 }
 
-@media (max-width: 575.98px) {
+@media (max-width: 399.98px) {
   .app-nav.in-room .brand {
     display: none;
   }
