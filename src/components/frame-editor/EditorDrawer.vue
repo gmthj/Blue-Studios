@@ -1,6 +1,7 @@
 <script setup>
 import { ref, watch } from "vue"
 import { useFrameEditorContext } from "../../composables/useFrameEditor.js"
+import { cleanSvg } from "../../utils/cleanSvg.js" // uploaded SVGs can hold scripts: always clean before v-html
 
 
 const editor = useFrameEditorContext()
@@ -550,7 +551,7 @@ watch(activeTextElement, (newEl) => {
                   @click="addElement(item)"
                 >
                   <!-- Vector SVG Preview -->
-                  <div v-if="item.isSvg" class="element-drawer-svg" v-html="item.svgRaw"></div>
+                  <div v-if="item.isSvg" class="element-drawer-svg" v-html="cleanSvg(item.svgRaw)"></div>
 
                   <!-- Sticker emoji content -->
                   <span v-else-if="item.type === 'sticker'" class="fs-4">{{ item.content }}</span>
@@ -654,7 +655,7 @@ watch(activeTextElement, (newEl) => {
                 >
                   <!-- Thumbnail -->
                   <div class="bg-light rounded d-flex align-items-center justify-content-center overflow-hidden mb-1" style="height: 72px;">
-                    <div v-if="item.isSvg" class="w-100 h-100 d-flex align-items-center justify-content-center p-2" v-html="item.svgContent"></div>
+                    <div v-if="item.isSvg" class="w-100 h-100 d-flex align-items-center justify-content-center p-2" v-html="cleanSvg(item.svgContent)"></div>
                     <img v-else :src="item.dataUrl" :alt="item.name" class="w-100 h-100 object-fit-cover" draggable="false" />
                   </div>
                   <span class="badge bg-primary position-absolute top-0 start-0 m-1" style="font-size: 0.6rem;">{{ item.isSvg ? 'SVG' : (item.type || 'IMG').toUpperCase() }}</span>

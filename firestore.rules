@@ -9,9 +9,9 @@ rules_version = '2';
 //     so it cannot be faked. We compare it with hostId / member ids / ownerId.
 //   - Every write is checked field by field, so nobody can add extra fields or wrong types.
 //
-// DEV MODE (19 Oct 2026): while the team is still building, room fields, room sub-lists and any NEW
-// collection or Storage folder are open to signed-in users (search for "DEV" below), so teammates are
-// not blocked. Accounts, My Studio, marketplace and reports stay strict. Tighten these before submission.
+// LOCKED DOWN (phase 7): every room field, room sub-list and collection has its own rule below, and
+// anything not listed is blocked. If you add a new field or collection to the app, add a rule and a
+// test for it too.
 //
 // Deploy with:  firebase deploy --only firestore:rules
 // Test with:    npm run test:rules
@@ -176,7 +176,7 @@ service cloud.firestore {
         && request.resource.data.hostId == request.auth.uid
         && isName(request.resource.data.hostName)
         && request.resource.data.shotNumber == 0
-        && (request.resource.data.stage == 'shoot' || request.resource.data.stage == 'camera') //TODO: remove camera option
+        && request.resource.data.stage == 'shoot'
         && request.resource.data.stripSlots == {}
         && request.resource.data.closed == false
         && request.resource.data.createdAt is int
@@ -186,7 +186,8 @@ service cloud.firestore {
       allow update: if signedIn()
         && isMember(code)
         && resource.data.closed == false
-        && (pressShutter() || closeRoom() || devRoomChange());
+        && (pressShutter() || closeRoom() || leaveRoom() || changeStage() || changeExport() || changeStrip()
+            || changeStickers() || changeVideo() || changeMusic() || changeCaptureMode() || changeFriends());
 
       // Admins can close any room (e.g. one left open by mistake)
       allow update: if isAdmin()
@@ -207,15 +208,208 @@ service cloud.firestore {
           && isName(request.resource.data.shotStartedBy);
       }
 
-      // DEV (open while we are still building): members can change any other room field
-      // (stage, stripSlots, stripEdits, stripStickers, music, ...), so teammates can add fields freely.
-      // Still protected: who the host is, when it was made, the shutter counter, closing and keep.
-      // lastActive (when someone last left, used by the cleanup) must stay a number.
-      // TODO lockdown: check each field again (stage names, slot keys, sizes) before submission.
-      function devRoomChange() {
-        return !request.resource.data.diff(resource.data).affectedKeys()
-          .hasAny(['hostId', 'hostName', 'createdAt', 'shotNumber', 'shotStartedBy', 'closed', 'keep'])
-          && (!('lastActive' in request.resource.data) || request.resource.data.lastActive is int);
+      // ---------- What members may change in a room ----------
+      // One small function per kind of change. Each one lists the ONLY fields it may touch, then checks
+      // the types, allowed values and sizes of the new values. The host, creation time, shutter counter,
+      // closed and keep can never be changed by these (they have their own rules).
+      // Rules cannot look inside every item of a list or map, so list items (stickers, timeline) are only
+      // checked for type and size here. The pages treat them as untrusted (see isTrustedStickerSrc).
+
+      // Did this field change in this update?
+      function changed(field) {
+        return request.resource.data.diff(resource.data).affectedKeys().hasAny([field]);
+      }
+
+      function isStageName(value) {
+        return value is string && value in ['shoot', 'pick', 'video', 'decorate', 'music', 'export', 'share'];
+      }
+
+      // A short id or name (photo ids, template ids, edit ids ...)
+      function isShortText(value, max) {
+        return value is string && value.size() >= 1 && value.size() <= max;
+      }
+
+      // The slot numbers of a strip (up to 12 photos)
+      function slotNames() {
+        return ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11'];
+      }
+
+      // One slot of stripSlots: not there, empty (null), or the id of a photo / edited video
+      function isSlotId(m, k) {
+        return !(k in m) || m[k] == null || isShortText(m[k], 40);
+      }
+
+      function isSlotMap(m) {
+        return m is map && m.keys().hasOnly(slotNames())
+          && isSlotId(m, '0') && isSlotId(m, '1') && isSlotId(m, '2') && isSlotId(m, '3')
+          && isSlotId(m, '4') && isSlotId(m, '5') && isSlotId(m, '6') && isSlotId(m, '7')
+          && isSlotId(m, '8') && isSlotId(m, '9') && isSlotId(m, '10') && isSlotId(m, '11');
+      }
+
+      // One slot of stripEdits / stripCrops: not there, empty (null), or a small map
+      function isSlotObject(m, k) {
+        return !(k in m) || m[k] == null || (m[k] is map && m[k].size() <= 6);
+      }
+
+      function isSlotObjectMap(m) {
+        return m is map && m.keys().hasOnly(slotNames())
+          && isSlotObject(m, '0') && isSlotObject(m, '1') && isSlotObject(m, '2') && isSlotObject(m, '3')
+          && isSlotObject(m, '4') && isSlotObject(m, '5') && isSlotObject(m, '6') && isSlotObject(m, '7')
+          && isSlotObject(m, '8') && isSlotObject(m, '9') && isSlotObject(m, '10') && isSlotObject(m, '11');
+      }
+
+      // A template's picture inside a room: our own Storage link, or a small picture made in this browser.
+      // No quotes or brackets are allowed, because the page puts it inside a CSS url(...).
+      function isFramePicture(value) {
+        return value == null || (value is string && value.size() <= 300000
+          && (value.matches('https://firebasestorage[.]googleapis[.]com/[^"\'() ]*')
+              || value.matches('data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=]*')));
+      }
+
+      // The frame chosen from a template (the same fields as templateFrameFields in src/studio.js)
+      function isCustomTemplate(t) {
+        return t == null || (t is map
+          && t.keys().hasOnly(['id', 'name', 'aspect', 'slots', 'shape', 'background', 'border', 'caption', 'captionColor', 'thumbnailUrl'])
+          && isShortText(t.id, 60)
+          && t.name is string && t.name.size() <= 100
+          && t.aspect is number && t.aspect > 0 && t.aspect < 10
+          && t.slots is list && t.slots.size() >= 1 && t.slots.size() <= 12
+          && t.shape in ['square', 'rounded', 'circle']
+          && t.background is string && t.background.size() <= 500
+          && t.border is string && t.border.size() <= 500
+          && t.caption is string && t.caption.size() <= 200
+          && t.captionColor is string && t.captionColor.size() <= 500
+          && isFramePicture(t.get('thumbnailUrl', null)));
+      }
+
+      // One song deck in the shared mixer (the same fields as roomTrack in MusicView.vue)
+      function isMixerTrack(t) {
+        return t is map
+          && t.keys().hasOnly(['id', 'name', 'artist_name', 'duration', 'audio', 'waveform', 'musicinfo'])
+          && ((t.id is string && t.id.size() <= 60) || t.id is int)
+          && t.name is string && t.name.size() <= 200
+          && t.artist_name is string && t.artist_name.size() <= 200
+          && t.duration is number
+          && t.audio is string && t.audio.size() <= 1000 && t.audio.matches('https://.*')
+          && t.waveform is string && t.waveform.size() <= 20000
+          && t.musicinfo is map && t.musicinfo.size() <= 3;
+      }
+
+      function isMixer(m) {
+        return m is map
+          && m.keys().hasOnly(['trackA', 'trackB', 'speedA', 'speedB', 'volumeA', 'volumeB', 'crossfade', 'djMode', 'startA', 'startB'])
+          && (!('trackA' in m) || isMixerTrack(m.trackA))
+          && (!('trackB' in m) || isMixerTrack(m.trackB))
+          && (!('speedA' in m) || (m.speedA is number && m.speedA >= 0.5 && m.speedA <= 1.5))
+          && (!('speedB' in m) || (m.speedB is number && m.speedB >= 0.5 && m.speedB <= 1.5))
+          && (!('volumeA' in m) || (m.volumeA is number && m.volumeA >= 0 && m.volumeA <= 100))
+          && (!('volumeB' in m) || (m.volumeB is number && m.volumeB >= 0 && m.volumeB <= 100))
+          && (!('crossfade' in m) || (m.crossfade is number && m.crossfade >= 0 && m.crossfade <= 1))
+          && (!('djMode' in m) || m.djMode is bool)
+          && (!('startA' in m) || (m.startA is number && m.startA >= 0 && m.startA <= 3600))
+          && (!('startB' in m) || (m.startB is number && m.startB >= 0 && m.startB <= 3600));
+      }
+
+      // The export job that one device takes and does (see ShareView.vue)
+      function isExportJob(j) {
+        return j is map
+          && j.keys().hasOnly(['status', 'format', 'name', 'progress', 'label', 'updatedAt', 'by', 'byName', 'shareId', 'error'])
+          && j.status in ['pending', 'working', 'done', 'failed']
+          && j.format in ['png', 'gif', 'mp4']
+          && j.name is string && j.name.size() <= 80
+          && (!('progress' in j) || (j.progress is number && j.progress >= 0 && j.progress <= 1))
+          && (!('label' in j) || (j.label is string && j.label.size() <= 200))
+          && (!('updatedAt' in j) || j.updatedAt is int)
+          && (!('by' in j) || (j.by is string && j.by.size() <= 128))
+          && (!('byName' in j) || (j.byName is string && j.byName.size() <= 40))
+          && (!('shareId' in j) || (j.shareId is string && j.shareId.size() <= 40))
+          && (!('error' in j) || (j.error is string && j.error.size() <= 500));
+      }
+
+      // Leaving the room: lastActive (used by the cleanup in api/cleanup.js) is a number
+      function leaveRoom() {
+        return onlyChanged(['lastActive'])
+          && request.resource.data.lastActive is int;
+      }
+
+      function isVisitedStages(value) {
+        return value is list && value.size() <= 7
+          && value.hasOnly(['shoot', 'pick', 'video', 'decorate', 'music', 'export', 'share']);
+      }
+
+      // Moving the whole room to another step (see goToStage in useRoom.js)
+      function changeStage() {
+        return onlyChanged(['stage', 'furthestStage', 'visitedStages'])
+          && (!changed('stage') || isStageName(request.resource.data.stage))
+          && (!changed('furthestStage') || isStageName(request.resource.data.furthestStage))
+          && (!changed('visitedStages') || isVisitedStages(request.resource.data.visitedStages));
+      }
+
+      // The Export page: format, name, and the job for the Share page (it also moves the room on)
+      function changeExport() {
+        return onlyChanged(['stage', 'furthestStage', 'visitedStages', 'exportFormat', 'exportName', 'exportJob'])
+          && (!changed('stage') || isStageName(request.resource.data.stage))
+          && (!changed('furthestStage') || isStageName(request.resource.data.furthestStage))
+          && (!changed('visitedStages') || isVisitedStages(request.resource.data.visitedStages))
+          && (!changed('exportFormat') || request.resource.data.exportFormat in ['png', 'gif', 'mp4'])
+          && (!changed('exportName') || (request.resource.data.exportName is string && request.resource.data.exportName.size() <= 80))
+          && (!changed('exportJob') || isExportJob(request.resource.data.exportJob));
+      }
+
+      // The Pick page: the frame, and which photo is in which slot (crops and edits too)
+      function changeStrip() {
+        return onlyChanged(['stripLayoutId', 'stripStyleId', 'stripCustomTemplate', 'stripSlots', 'stripCrops', 'stripEdits', 'startTemplateId'])
+          && (!changed('stripLayoutId') || isShortText(request.resource.data.stripLayoutId, 60))
+          && (!changed('stripStyleId') || isShortText(request.resource.data.stripStyleId, 60))
+          && (!changed('stripCustomTemplate') || isCustomTemplate(request.resource.data.stripCustomTemplate))
+          && (!changed('stripSlots') || isSlotMap(request.resource.data.stripSlots))
+          && (!changed('stripCrops') || isSlotObjectMap(request.resource.data.stripCrops))
+          && (!changed('stripEdits') || isSlotObjectMap(request.resource.data.stripEdits))
+          // The template the host started the room with: only the host sets it
+          && (!changed('startTemplateId') || (request.auth.uid == resource.data.hostId
+               && isShortText(request.resource.data.startTemplateId, 60)));
+      }
+
+      // The Decorate page: the stickers on the strip (the whole list is saved each time)
+      function changeStickers() {
+        return onlyChanged(['stripStickers'])
+          && request.resource.data.stripStickers is list
+          && request.resource.data.stripStickers.size() <= 40;
+      }
+
+      // The Video page: the timeline and the saved edits (deleting an edit also empties its strip slot)
+      function changeVideo() {
+        return onlyChanged(['stage', 'videoTimeline', 'videoEditing', 'editedVideos', 'stripSlots', 'stripEdits'])
+          && (!changed('stage') || isStageName(request.resource.data.stage))
+          && (!changed('videoTimeline') || (request.resource.data.videoTimeline is list && request.resource.data.videoTimeline.size() <= 30))
+          && (!changed('videoEditing') || request.resource.data.videoEditing == null || isShortText(request.resource.data.videoEditing, 60))
+          && (!changed('editedVideos') || (request.resource.data.editedVideos is map && request.resource.data.editedVideos.size() <= 30))
+          && (!changed('stripSlots') || isSlotMap(request.resource.data.stripSlots))
+          && (!changed('stripEdits') || isSlotObjectMap(request.resource.data.stripEdits));
+      }
+
+      // The Music page: the shared mixer, and the saved mix (a file in this room's own Storage folder)
+      function changeMusic() {
+        return onlyChanged(['mixer', 'music'])
+          && (!changed('mixer') || isMixer(request.resource.data.mixer))
+          && (!changed('music') || (request.resource.data.music is map
+               && request.resource.data.music.keys().hasOnly(['audioPath', 'duration'])
+               && request.resource.data.music.audioPath == 'music/' + code + '/mix.wav'
+               && request.resource.data.music.duration is number));
+      }
+
+      // Photo or video mode on the camera page
+      function changeCaptureMode() {
+        return onlyChanged(['captureMode'])
+          && request.resource.data.captureMode in ['photo', 'video'];
+      }
+
+      // Virtual Friends: only the host's line-up is saved, so only the host may change it
+      function changeFriends() {
+        return onlyChanged(['virtualFriends'])
+          && request.auth.uid == resource.data.hostId
+          && request.resource.data.virtualFriends is list
+          && request.resource.data.virtualFriends.size() <= 20;
       }
 
       // Close the room for everyone (closed can only go from false to true)
@@ -280,20 +474,36 @@ service cloud.firestore {
         allow delete: if isAdmin();
       }
 
-      // rooms/{code}/clips/{clipId}  video clips (clips.js). Admins can see and delete them on the admin page.
-      // TODO lockdown: members' rules for clips (for now they come from the DEV block below).
+      // ---------- Video clips ----------
+      // rooms/{code}/clips/{clipId}  { ownerId, name, shotNumber, path, mime, mirrored, createdAt }  (see clips.js)
+      // The video file itself is in Storage: clips/{code}/{uid}/{clipId}.webm or .mp4
+
       match /clips/{clipId} {
-        allow read, delete: if isAdmin();
+        // Only people in the room (and admins) can see its clips
+        allow read: if signedIn() && (isMember(code) || isAdmin());
+
+        // Record a clip: only in an open room I am in, only as myself, and the file must be MY file for this clip
+        allow create: if signedIn()
+          && isMember(code)
+          && get(roomPath(code)).data.closed == false
+          && request.resource.data.keys().hasOnly(['ownerId', 'name', 'shotNumber', 'path', 'mime', 'mirrored', 'createdAt'])
+          && request.resource.data.ownerId == request.auth.uid
+          && isName(request.resource.data.name)
+          && request.resource.data.shotNumber is int
+          && request.resource.data.shotNumber >= 0
+          && request.resource.data.mime in ['video/webm', 'video/mp4']
+          && request.resource.data.path in [
+               'clips/' + code + '/' + request.auth.uid + '/' + clipId + '.webm',
+               'clips/' + code + '/' + request.auth.uid + '/' + clipId + '.mp4']
+          && request.resource.data.mirrored is bool
+          && request.resource.data.createdAt is int;
+
+        // Clips cannot be changed. Admins can remove them (moderation).
+        allow update: if false;
+        allow delete: if isAdmin();
       }
 
-      // DEV: any other list inside a room (e.g. rooms/{code}/clips, rooms/{code}/music) for teammates' features.
-      // Only people in the room can read and write it.
-      // TODO lockdown: replace with real rules for each one before submission.
-      match /{listName}/{docId=**} {
-        allow read, write: if signedIn()
-          && !(listName in ['members', 'photos'])
-          && isMember(code);
-      }
+      // Any other list inside a room is blocked: nothing else is used.
     }
 
     // Admins can list the members of every room in one query (the Rooms tab of the admin page)
@@ -568,14 +778,35 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    // ---------- DEV: new collections for teammates' features ----------
-    // While we are still building, anyone signed in (guests too) can read and write any NEW top-level
-    // collection, so teammates are not blocked. The collections above keep their own strict rules.
-    // TODO lockdown: replace with real rules for each new collection, then delete this block.
+    // ---------- Folders (for sorting my stickers and templates) ----------
+    // stickerCategories/{id}  { ownerId, name, type, itemIds, createdAt, updatedAt }   (see stickerCategories.js)
+    // A folder only holds the ids of items, so deleting a folder never deletes the items. Private to the owner.
+    // (Folders made before "type" existed may have stickerIds instead of itemIds. They can still be read.)
 
-    match /{collectionName}/{docId=**} {
-      allow read, write: if signedIn()
-        && !(collectionName in ['rooms', 'users', 'templates', 'stickers', 'strips', 'shares', 'reports', 'adminLog']);
+    match /stickerCategories/{folderId} {
+      allow read: if signedIn() && resource.data.ownerId == request.auth.uid;
+
+      allow create: if isCreator()
+        && request.resource.data.keys().hasOnly(['ownerId', 'name', 'type', 'itemIds', 'createdAt', 'updatedAt'])
+        && request.resource.data.ownerId == request.auth.uid
+        && isName(request.resource.data.name)
+        && request.resource.data.type in ['sticker', 'template']
+        && request.resource.data.itemIds == []
+        && request.resource.data.createdAt is int
+        && request.resource.data.updatedAt is int;
+
+      // Rename it, or put items in it (the owner only)
+      allow update: if isCreator()
+        && resource.data.ownerId == request.auth.uid
+        && onlyChanged(['name', 'itemIds', 'updatedAt'])
+        && isName(request.resource.data.name)
+        && request.resource.data.get('itemIds', []) is list
+        && request.resource.data.get('itemIds', []).size() <= 500
+        && request.resource.data.updatedAt is int;
+
+      allow delete: if signedIn() && resource.data.ownerId == request.auth.uid;
     }
+
+    // Everything else is blocked (deny by default).
   }
 }

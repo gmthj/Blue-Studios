@@ -191,7 +191,12 @@ src/guest.js               guest name saved in localStorage, device type (Phone/
 src/room.js                6-person room limit (re-exports the timing below)
 src/roomTiming.js          heartbeat / "is this member still here?" check (no imports, the server uses it too)
 src/roomCleanup.js         the room cleanup rules R1 to R5 (used by api/cleanup.js and the admin Rooms tab)
-src/stripData.js           photostrip layouts, frame styles, sticker tray, filters (Pick + Decorate pages)
+src/stripData.js           photostrip layouts, frame styles, filters, saving room fields, isTrustedStickerSrc / safeStickers (Pick + Decorate pages)
+src/clips.js               recording and uploading video clips, the Video page's timeline helpers
+src/shares.js              making and reading a share (a finished strip with a link and QR code)
+src/stickerCategories.js   my folders of stickers and templates
+src/dynamicStickers.js     live stickers (time, date, weather, location)
+src/exportFile.js, exportRules.js, stripRender.js, gif.js, ffmpeg.js, mixRender.js   building the exported PNG / GIF / MP4 and the music mix
 src/studio.js              My Studio: save / list / publish / delete templates, stickers, strips; CATEGORIES
 src/marketplace.js         marketplace: browse / save / unsave / report
 src/admin.js               moderator actions for the admin page (calls /api/admin for accounts)
@@ -209,7 +214,14 @@ src/views/AdminView.vue          admin page (/admin, admins only); each tab is i
 src/views/RoomLayout.vue         parent page of a room: joins the room + call once, shows the floating call window, moves everyone with the room's stage
 src/views/RoomView.vue           (child, /room/1234/shoot) camera, shutter, countdown, join card, gallery
 src/views/StripView.vue          (child, /room/1234/pick) "Pick": choose the cut and frame, drag photos into slots
+src/views/VideoView.vue          (child, /room/1234/video) put the room's clips on a timeline and save edited videos
 src/views/DecorateView.vue       (child, /room/1234/decorate) filters, stickers, Download JPG, Save to My Studio
+src/views/MusicView.vue          (child, /room/1234/music) shared two-deck music mixer (Jamendo songs or an upload), saves the mix
+src/views/ExportView.vue         (child, /room/1234/export) choose MP4 / GIF / PNG and a name
+src/views/ShareView.vue          (child, /room/1234/share) one device builds the file, everyone gets the link and QR code
+src/views/PublicShareView.vue    (/s/{id}, anyone) opens a finished strip by its link
+src/views/FrameEditorView.vue    the template editor (make a frame for the strip)
+src/views/StickerMakerView.vue   the sticker maker
 
 src/components/VideoCallCard.vue    the floating call window (drag anywhere, minimise): tiles + Mute/Unmute, Leave, Close room
 src/components/VideoTile.vue        one person: live video, name, device type, mute icon
@@ -225,12 +237,15 @@ src/components/admin/*.vue          admin tabs: Overview, Reports, Items, Accoun
 
 api/token.js               GET /api/token?code=1234 -> Agora token (room members only)
 api/admin.js               POST /api/admin (admins only): list, look up, ban, unban accounts; delete rooms
+api/remove-bg.js           POST /api/remove-bg (accounts only): removes a sticker's background with remove.bg
+api/weather.js             GET /api/weather: live weather for the weather sticker (OpenWeatherMap, cached 10 minutes)
+api/place.js               GET /api/place: place names and landmarks for the location sticker (OpenStreetMap, cached a day)
 api/cleanup.js             GET /api/cleanup (daily cron, needs CRON_SECRET): closes / deletes old and empty rooms
 api/_lib/roomDelete.js     deleting a room for good (documents, sub-lists, video files), shared by admin.js and cleanup.js
 api/_lib/firebaseAdmin.js  server-only Firebase Admin setup + getCaller(req). "_" = not a web address
 
 firestore.rules            Firestore security rules (who can read/write what)
-storage.rules              Firebase Storage rules (template files, stickers, strips)
+storage.rules              Firebase Storage rules (templates, stickers, strips, shares, avatars, video clips, music)
 firestore.indexes.json     indexes the marketplace queries need (deployed with the rules)
 storage.cors.json          lets the website fetch Storage files / draw them on a canvas (applied with npm run set-cors)
 firebase.json, .firebaserc Firebase CLI settings (project, rules files, emulator ports)
@@ -240,7 +255,7 @@ scripts/set-admin.mjs      give / remove the admin mark (npm run set-admin -- em
 scripts/set-cors.mjs       apply storage.cors.json to the Storage bucket (npm run set-cors)
 docs/team/                 a guide for each teammate on using accounts, My Studio, marketplace and rooms
 docs/phase-7-lockdown-prompt.md  instructions for the security lockdown before submission
-vercel.json                sends every page URL to index.html so the app's router shows it (only URLs with no dot, not /api/ or /@vite...: those are real files)
+vercel.json                sends every page URL to index.html so the app's router shows it (only URLs with no dot, not /api/ or /@vite...: those are real files), the daily cleanup cron, and the security headers
 .env.example               the environment variables needed (copy to .env)
 ```
 
@@ -249,9 +264,15 @@ vercel.json                sends every page URL to index.html so the app's route
 Firestore data:
 
 ```
-rooms/{code}                 { hostId, hostName, shotNumber, shotStartedBy, stage, stripSlots, closed, createdAt }
+rooms/{code}                 { hostId, hostName, shotNumber, shotStartedBy, stage, furthestStage, visitedStages, lastActive, keep, closed, createdAt,
+                               captureMode, virtualFriends, startTemplateId,
+                               stripLayoutId, stripStyleId, stripCustomTemplate, stripSlots, stripCrops, stripEdits, stripStickers,
+                               videoTimeline, videoEditing, editedVideos, mixer, music, exportFormat, exportName, exportJob }
 rooms/{code}/members/{id}    { name, deviceType, joinedAt, lastSeen }
 rooms/{code}/photos/{auto}   { ownerId, name, shotNumber, image, createdAt }
+rooms/{code}/clips/{auto}    { ownerId, name, shotNumber, path, mime, mirrored, createdAt }   (the video file is in Storage)
+shares/{id}                  { ownerId, title, format, filePath, fileUrl, size, roomCode, createdAt }   a finished strip opened by its link
+stickerCategories/{id}       { ownerId, name, type, itemIds, createdAt, updatedAt }   my folders of stickers / templates
 ```
 
 **Who is who:** when the app opens, `main.js` waits for `startAuth()` (in `useAuth.js`). If nobody is signed in, it signs in **anonymously**: Firebase gives the browser a real user id (`uid`) with no email or password, and remembers it, so a refresh keeps the same uid. The `uid` is used as the member document id, the room's `hostId`, a photo's `ownerId` and the Agora user id. Because Firebase itself checks the uid, the Firestore security rules can trust it (a random id in localStorage could be faked).
@@ -295,8 +316,10 @@ Agora projects have an **App Certificate** (a secret). To join a channel, the br
 
 `firestore.rules` is checked by Firebase on its own servers for every read and write, so it protects the data even if someone edits the code in their browser. Everything is blocked unless a rule allows it. In short:
 
-- **Rooms:** anyone signed in can look up one room by code (not list them). Only the host can create it, as themselves. Members can press the shutter (`shotNumber` + 1 only), change `stage`, change strip slots 0-3, and close the room. A closed room cannot be changed or reopened. Nobody can delete a room.
+- **Rooms:** anyone signed in can look up one room by code (not list them). Only the host can create it, as themselves, at stage `shoot`. Members can change a room only in small, checked steps, and only while it is open (`pressShutter`, `closeRoom`, `leaveRoom`, `changeStage`, `changeExport`, `changeStrip`, `changeStickers`, `changeVideo`, `changeMusic`, `changeCaptureMode`, `changeFriends` in `firestore.rules`). Each one may only touch its own fields and checks the values: stage names, strip slots `0` to `11` holding an id or `null`, at most 40 stickers, at most 30 timeline items, mixer speed / volume / crossfade ranges, the export job's status and format, and so on. A template's picture in the room must be a link into our own Storage or a small PNG / JPEG / WebP made in the browser. Only the host can change `virtualFriends` and `startTemplateId`. `hostId`, `hostName`, `createdAt`, `shotNumber` and `keep` can never be changed by members. A closed room cannot be changed or reopened. Nobody can delete a room (the server does that).
+- **List items are untrusted:** rules cannot look inside every sticker or timeline item, so the pages check them: `safeStickers` (in `src/stripData.js`) drops any sticker whose picture is not from our Storage, a `data:image/` URL or GIPHY, before it is shown or exported.
 - **Members:** you can only join, update (heartbeat) and leave as yourself, only into an open room, and every field is checked.
+- **Clips** (`rooms/{code}/clips`): only members (and admins) can see them. A member can add a clip as themselves, in an open room, pointing at their own file `clips/{code}/{uid}/{clipId}.webm` or `.mp4`. Clips cannot be changed. Admins can delete them.
 - **Photos:** only members can see them. You can only add a photo as yourself (`ownerId`), for a shot that has happened, as a JPEG under about 900KB. Photos cannot be edited.
 - **User profiles** (`users/{uid}` `{ displayName, createdAt }`): anyone signed in can read one profile (only admins can list them). Only accounts (not guests) can create one, only their own, and they can only change `displayName` (1-30 characters). The email is not stored in Firestore.
 - **Templates, stickers** (`templates/{id}`, `stickers/{id}`): only accounts that are not banned can save them, as themselves, with their real profile name (`ownerName`), and their files must be in their own Storage folder. They need 1 to 3 categories from the fixed list. New items start `private`, `active`, with 0 saves. Only accounts with a **confirmed email** can make one `public`. Who can see one: the owner, admins, and anyone signed in (guests too) if it is public and not hidden. Only admins can change `status` (hide / unhide). Only the owner or an admin can delete.
@@ -306,10 +329,26 @@ Agora projects have an **App Certificate** (a secret). To join a channel, the br
 - **Reports** (`reports/{itemId_uid}`): accounts (not guests, not banned) can report someone else's marketplace item, once (the id includes their uid). Only the reporter and admins can read a report, and only admins can list or close them.
 - **Banned accounts** (`users/{uid}.banned == true`, set by an admin) cannot create or change anything.
 - **Admins** have the custom claim `admin: true` in their login token (only `scripts/set-admin.mjs` can set it). They can see private and hidden items, hide/unhide items, close reports, list profiles and rooms, close any room and delete room photos. **Admin log** (`adminLog`): only admins can read it or add to it, as themselves, and nobody can change or delete an entry.
-- **Storage** (`storage.rules`): files are in a folder named after the owner's uid (`templates/{uid}/...`, `stickers/{uid}/...`, `strips/{uid}/...`). Only the owner (an account) can upload there, only images (or the template's `project.json`) under 2-5 MB. Public files can be downloaded while their Firestore document is public and not hidden.
-- **DEV mode (while we are still building, look for `DEV` in the rules files):** so teammates are not blocked, members of an open room can change any room field except its core (`hostId`, `hostName`, `createdAt`, `shotNumber`, `shotStartedBy`, `closed`). New lists inside a room are open to its members. Any **new** top-level collection, and any **new** Storage folder (files under 50 MB, no HTML/SVG/JS/XML), are open to anyone signed in. Users, templates, stickers, strips, reports, members and photos stay strict. **Before submission**, replace the DEV blocks with real rules for each feature, plus tests.
+- **Shares** (`shares/{id}`): anyone signed in (guests too) can open one if they know its long random id, nobody can list them, and they never change. Only the maker or an admin can delete one.
+- **Folders** (`stickerCategories/{id}`): only the owner (an account, not banned) can see, make, rename, fill and delete their own folders. Names are 1 to 20 characters.
+- **Anything without a rule is blocked.** There is no catch-all rule any more: a new collection, room list or room field needs its own rule and test.
+- **Storage** (`storage.rules`): personal files are in a folder named after the owner's uid (`templates/{uid}/...`, `stickers/{uid}/...`, `strips/{uid}/...`, `shares/{uid}/...`, `avatars/{uid}/...`). Only the owner can upload there, only images (or the template's `project.json`, or the share's MP4) under 1 to 50 MB. Public template and sticker files can be downloaded while their Firestore document is public and not hidden. Room files (`clips/{code}/{uid}/...`, `music/{code}/...`) can only be read and uploaded by members of that room (checked with the room's `members` document): clips only as `video/webm` or `video/mp4` under 50 MB, the mix only as `audio/wav` under 20 MB, uploaded songs only as audio under 15 MB. Room files cannot be replaced. Any other folder is blocked, so HTML, SVG, JavaScript and XML can never be stored.
 
 GitHub runs the tests on every pull request (Actions tab). To run them yourself (optional, needs Java): `npm run test:rules`. It starts local copies of Auth, Firestore and Storage, so it never touches the real data. Deploy the rules and indexes with `firebase deploy --only firestore,storage`.
+
+### Security summary
+
+A short version for markers:
+
+- **Identity:** everyone is signed in to Firebase Auth, guests anonymously. Signing up links the new login to the guest uid, so nothing is lost. The rules and the server only trust `request.auth` / the checked ID token, never anything the browser says about itself.
+- **Rules:** Firestore and Storage are deny by default. Every collection, room field, room list and Storage folder has its own rule that checks who is writing, which fields, their types, allowed values and sizes. `npm run test:rules` runs the rules against local emulators (allowed and not allowed cases: guests, outsiders, banned accounts, wrong types, too big).
+- **Server functions (`api/`):** each one allows one HTTP method, checks its input, and reads secrets only from environment variables with no `VITE_` prefix. `token` needs a room member, `admin` an admin, `remove-bg` an account, `cleanup` the `CRON_SECRET`. Errors sent to the browser are generic, and the details go to the Vercel logs. `weather` and `place` are open to guests by design and cached.
+- **Admin and bans:** the admin mark is a custom claim set only by `scripts/set-admin.mjs`. A ban disables the login, logs the person out everywhere and sets `banned` on their profile, which the rules check on every write. Every moderation action is written to a log nobody can edit.
+- **Storage:** owner folders and room-member checks, content types and size limits, no HTML / SVG / JS / XML.
+- **Uploaded SVGs:** an SVG can contain code, so the template editor cleans every SVG with DOMPurify (`src/utils/cleanSvg.js`) when it is uploaded and again every time it is shown. Pictures added in the editor are shrunk to at most 1600 px so templates stay small.
+- **Browser API key:** the Firebase web key is public by design (it is in the JavaScript every visitor downloads). It only says which project to talk to and gives no access by itself: the security rules above decide what anyone can do. A budget alert in Google Cloud warns us about unexpected costs.
+- **Headers** (`vercel.json`): `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `X-Frame-Options: DENY` and `frame-ancestors 'none'` (the site cannot be put in a frame), and `Permissions-Policy` allowing camera, microphone and location only for our own pages. There is no full Content-Security-Policy: Agora, Firebase, GIPHY and Jamendo load from many addresses, and a wrong one would break the video call.
+- **Not done:** Firebase App Check, rate limiting on the open API routes, restrictions on the browser API key, and a full CSP (see Known limitations).
 
 ## My Studio: saving templates, stickers and strips (for teammates)
 
@@ -428,6 +467,8 @@ Invoke-RestMethod -Uri "https://YOUR-ADDRESS/api/cleanup?dryRun=1" -Headers @{ A
 - Two normal tabs in the same browser share one user id (uid), so Agora treats them as the same user. Use an Incognito window for the second guest.
 - Testing several unmuted devices in the same physical room causes echo/feedback. Keep all but one muted, or use earphones.
 - If a page is opened by refreshing (no tap on the page yet), the browser may block others' audio until you tap anywhere on the page.
+- Rules cannot look inside every item of a list, so stickers in a room are only checked for type and count in the rules, and the pages filter their pictures (`safeStickers`). `stripEdits` and `stripCrops` values are only checked to be small maps.
+- There is no App Check, so a script outside our site that has a valid guest login could still call Firestore and Storage within the rules. The open API routes (`weather`, `place`) have no rate limit, only caching.
 - Agora minutes are used by every connected device until it leaves or the room is closed. Close the room when finished testing.
 
 ## Use of AI

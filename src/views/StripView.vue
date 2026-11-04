@@ -4,7 +4,7 @@ import { playSound } from '../sounds.js'
 import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import { useAuth } from '../composables/useAuth.js'
-import { LAYOUTS, FRAME_STYLES, saveFields, saveField, cropOf, MAX_ZOOM, emptySlotIndexes, cutLabel } from '../stripData.js'
+import { LAYOUTS, FRAME_STYLES, saveFields, saveField, cropOf, MAX_ZOOM, emptySlotIndexes, cutLabel, safeStickers } from '../stripData.js'
 import { listMyItems, getFileUrl, templateFrameFields, loadTemplateProject } from '../studio.js'
 import { getItem, listMySaved, searchPublicItems } from '../marketplace.js'
 import { loadSavedFramesFromDB } from '../utils/savedFrameEngine.js'
@@ -595,7 +595,7 @@ watch(
           :edited-videos="editedVideos"
           :edits="room.stripEdits || {}"
           :crops="shownCrops"
-          :stickers="room.stripStickers || []"
+          :stickers="safeStickers(room.stripStickers)"
           :selected-slot="targetSlot !== null ? targetSlot : cropSlot"
           :flash-empty="flashEmpty"
           @drop-photo="placePhoto"

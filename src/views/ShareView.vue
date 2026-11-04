@@ -8,7 +8,7 @@ import { useRoom } from '../composables/useRoom.js'
 import { useAuth, getUid } from '../composables/useAuth.js'
 import { getGuestName } from '../guest.js'
 import { resolveEditedVideos } from '../clips.js'
-import { roomLayout, roomFrameStyle } from '../stripData.js'
+import { roomLayout, roomFrameStyle, safeStickers } from '../stripData.js'
 import { buildExportFile } from '../exportFile.js'
 import { newShareId, createShare, getShare } from '../shares.js'
 import { saveStripFile } from '../studio.js'
@@ -50,7 +50,7 @@ const slotPhotos = computed(() => room.value.stripSlots || {})
 const editedVideos = computed(() => resolveEditedVideos(room.value.editedVideos, clips.value))
 const edits = computed(() => room.value.stripEdits || {})
 const crops = computed(() => room.value.stripCrops || {})
-const stickers = computed(() => room.value.stripStickers || [])
+const stickers = computed(() => safeStickers(room.value.stripStickers))
 const photosById = computed(() => {
   const map = {}
   for (const p of photos.value) {
@@ -132,7 +132,7 @@ async function build() {
   } catch (error) {
     console.error(error)
     if (stillMine()) {
-      await updateDoc(roomRef(), { 'exportJob.status': 'failed', 'exportJob.error': error.message || 'Something went wrong.' }).catch(console.error)
+      await updateDoc(roomRef(), { 'exportJob.status': 'failed', 'exportJob.error': String(error.message || 'Something went wrong.').slice(0, 300) }).catch(console.error)
     }
   } finally {
     clearInterval(beat)

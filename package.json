@@ -9,9 +9,8 @@
     "preview": "vite preview",
     "set-admin": "node --env-file=.env scripts/set-admin.mjs",
     "set-cors": "node --env-file=.env scripts/set-cors.mjs",
-    "make-cards": "node --env-file=.env scripts/make-cards.mjs",
-    "test": "vitest run tests/client.spec.js tests/exportRules.spec.js tests/gifFrames.spec.js tests/clips.spec.js tests/roomFrame.spec.js tests/shares.spec.js tests/videoEditor.spec.js tests/exportPage.spec.js tests/sharedStrip.spec.js tests/sharePage.spec.js tests/music.spec.js tests/deckCard.spec.js tests/roomCleanup.spec.js",
-    "test:unit": "vitest run tests/client.spec.js tests/exportRules.spec.js tests/gifFrames.spec.js tests/clips.spec.js tests/roomFrame.spec.js tests/shares.spec.js tests/videoEditor.spec.js tests/exportPage.spec.js tests/sharedStrip.spec.js tests/sharePage.spec.js tests/music.spec.js tests/deckCard.spec.js tests/roomCleanup.spec.js",
+    "test": "vitest run tests/client.spec.js tests/exportRules.spec.js tests/gifFrames.spec.js tests/clips.spec.js tests/roomFrame.spec.js tests/shares.spec.js tests/videoEditor.spec.js tests/exportPage.spec.js tests/sharedStrip.spec.js tests/sharePage.spec.js tests/music.spec.js tests/deckCard.spec.js tests/roomCleanup.spec.js tests/cleanSvg.spec.js",
+    "test:unit": "vitest run tests/client.spec.js tests/exportRules.spec.js tests/gifFrames.spec.js tests/clips.spec.js tests/roomFrame.spec.js tests/shares.spec.js tests/videoEditor.spec.js tests/exportPage.spec.js tests/sharedStrip.spec.js tests/sharePage.spec.js tests/music.spec.js tests/deckCard.spec.js tests/roomCleanup.spec.js tests/cleanSvg.spec.js",
     "test:rules": "firebase emulators:exec --only auth,firestore,storage --project demo-blue-studios \"node --test --test-concurrency=1 tests/firestore.rules.test.js tests/storage.rules.test.js tests/admin.api.test.js tests/cleanup.api.test.js\"",
     "test:e2e": "playwright test"
   },
@@ -23,6 +22,7 @@
     "agora-token": "^2.0.7",
     "axios": "^1.20.0",
     "bootstrap": "^5.3.8",
+    "dompurify": "^3.4.17",
     "firebase": "^13.0.0",
     "firebase-admin": "^14.5.0",
     "gifenc": "^1.0.3",
@@ -39,7 +39,6 @@
     "@vitejs/plugin-vue": "^6.0.10",
     "@vue/test-utils": "^2.5.1",
     "jsdom": "^29.1.1",
-    "sharp": "^0.34.5",
     "vite": "^8.3.4",
     "vitest": "^5.0.5"
   },

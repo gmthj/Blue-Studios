@@ -135,6 +135,7 @@ Write each as numbered steps, with what to check afterwards. After each one, ask
 
 - **README "Security rules":** remove the DEV mode paragraph and describe the final rules for each feature, in the same short style as the existing bullets.
 - Add a short "Security summary" section that a marker can read in a minute: identity (anonymous plus account linking), rules (deny by default, field checks, tests), the server functions, admin and bans, Storage, the API key restrictions, and the headers.
+- read through the codebase and update the README accordingly
 - If Gabriel asks, add a "Use of AI" entry in the README's style describing this lockdown.
 
 ### 11. Check everything, and report

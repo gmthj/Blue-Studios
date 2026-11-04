@@ -1,6 +1,6 @@
 rules_version = '2';
 
-// Firebase Storage rules (files: images and template project files).
+// Firebase Storage rules (images, template project files, video clips and music).
 // Like firestore.rules, Firebase checks these on its own servers for every upload and download.
 //
 // Every file lives in a folder named after its owner's uid, e.g. templates/{uid}/{id}/thumbnail.png,
@@ -8,8 +8,7 @@ rules_version = '2';
 // Public files are readable only while their Firestore document says public AND not hidden
 // (firestore.get below reads the document).
 //
-// DEV MODE (20 Oct 2026): while the team is still building, ALL of Storage is open to signed-in users
-// (the DEV-OPEN block at the bottom), so teammates are not blocked. Delete it before submission.
+// LOCKED DOWN (phase 7): every folder has its own rule below and anything not listed is blocked.
 //
 // Deploy with:  firebase deploy --only storage
 // Test with:    npm run test:rules
@@ -60,7 +59,8 @@ service firebase.storage {
         (fileName == 'thumbnail.png' && isImageUnder(2))
         || (fileName in ['card.webp', 'card.png'] && isImageUnder(1))
         || (fileName == 'project.json'
-            && request.resource.size < 5 * 1024 * 1024
+            // No size limit: pictures uploaded in the template editor are saved inside this file
+            // (as data: URLs), so a frame with photos can be big. Only the owner can upload, and only JSON.
             && request.resource.contentType == 'application/json'));
 
       allow delete: if isOwner(uid) || isAdmin();
@@ -130,26 +130,55 @@ service firebase.storage {
       allow delete: if isOwner(uid) || isAdmin();
     }
 
+    // Am I in this room? (I have a document in rooms/{code}/members; guests count too)
+    function isRoomMember(code) {
+      return signedIn()
+        && firestore.exists(/databases/(default)/documents/rooms/$(code)/members/$(request.auth.uid));
+    }
+
     // ---------- Video clips (room gallery) ----------
     // clips/{code}/{uid}/{clipId}.webm or .mp4   (see clips.js)
+    // Only people in the room can play them, and each person uploads into their own folder.
     // Admins can play and delete them on the admin page.
-    // TODO lockdown: members' rules for clips (for now they come from the DEV block below).
 
     match /clips/{code}/{uid}/{fileName} {
-      allow read, delete: if isAdmin();
+      allow read: if isRoomMember(code) || isAdmin();
+      // resource == null: there is no file there yet, so a clip can never be replaced
+      allow create: if resource == null && isRoomMember(code) && request.auth.uid == uid
+        && request.resource.size < 50 * 1024 * 1024
+        && (
+          (fileName.matches('[A-Za-z0-9]+[.]webm') && request.resource.contentType == 'video/webm')
+          || (fileName.matches('[A-Za-z0-9]+[.]mp4') && request.resource.contentType == 'video/mp4')
+        );
+      allow update: if false;
+      allow delete: if isAdmin();
     }
 
-    // DEV-OPEN-START
-    // ---------- DEV: ALL of Storage is open to anyone signed in (guests too) ----------
-    // While we are still building, any signed-in user can read, upload, overwrite and delete ANY file,
-    // in any folder (including templates/, stickers/ and strips/), so teammates are not blocked.
-    // Firebase allows a request if ANY rule allows it, so this block overrides the strict rules above.
-    // The tests remove this block before testing, so they still check the strict rules.
-    // TODO lockdown: write real rules for each new folder (e.g. videos/), then delete this block.
+    // ---------- Music (Music page) ----------
+    // music/{code}/mix.wav                  the finished mix, saved by anyone in the room
+    // music/{code}/uploads/{uid}/{time}     a song someone uploaded, in their own folder
+    // Only people in the room can use them (the Export page reads the mix). Only audio types are allowed,
+    // so nothing here can be a web page or script.
 
-    match /{allPaths=**} {
-      allow read, write: if signedIn();
+    match /music/{code}/mix.wav {
+      allow read: if isRoomMember(code) || isAdmin();
+      allow create, update: if isRoomMember(code)
+        && request.resource.size < 20 * 1024 * 1024
+        && request.resource.contentType == 'audio/wav';
+      allow delete: if isAdmin();
     }
-    // DEV-OPEN-END
+
+    match /music/{code}/uploads/{uid}/{fileName} {
+      allow read: if isRoomMember(code) || isAdmin();
+      allow create: if resource == null && isRoomMember(code) && request.auth.uid == uid
+        && fileName.matches('[0-9]+')
+        && request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches('audio/(mpeg|mp3|wav|x-wav|ogg|aac|mp4|x-m4a|m4a|webm|flac)');
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    // Everything else is blocked (deny by default). Every folder above only accepts images, JSON, audio
+    // or video, so HTML, SVG, JavaScript and XML files can never be stored.
   }
 }
