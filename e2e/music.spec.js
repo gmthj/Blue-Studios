@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, makeStrip, nextStage } from './support/fixtures.js'
 
 // The whole flow, in a NEW room each time, so the test never depends on a room someone else can change:
 // create a room → take 4 photos → put them in the 4 frames → Decorate → Music → mix a song
@@ -7,51 +7,11 @@ import { test, expect } from '@playwright/test'
 test('should make a photostrip, then load a song, preview the mix and update it after choosing another part', async ({ page }) => {
   test.setTimeout(120000)   // longer than the others: 4 photos, each with a 3 s countdown
 
-  // (1) setup: create a room
-  await page.goto('/')
-  await page.getByLabel('Your name').fill('Playwright')
-  await page.getByRole('button', { name: 'Create a new room' }).click()
-  await expect(page).toHaveURL(/\/room\/\d{4}\/shoot/)
+  // (1) setup: a strip in a new room (create, 4 photos, fill the 4 frames: see makeStrip in support/fixtures.js)
+  await makeStrip(page)
 
   // (2) actions
-  // The floating video call window can cover buttons and photos (e.g. "Mix soundtrack" on a 1280×720 screen),
-  // so minimise it first, like a user would. It stays small on every step of the room.
-  await page.getByRole('button', { name: 'Minimise' }).click()
-
-  // Shoot: wait for the camera first. Pressing the shutter before it's ready takes no photo (takePhoto in RoomView.vue).
-  // The shutter shows first, so "Starting your camera..." is already on screen when we wait for it to go.
-  await expect(page.getByRole('button', { name: 'Take a photo' })).toBeVisible({ timeout: 15000 })
-  await expect(page.getByText('Starting your camera...')).toBeHidden({ timeout: 15000 })
-  // Then wait until the camera shows a picture (videoWidth is 0 until the first frame arrives).
-  // Not in the slides: expect.poll keeps asking until the answer passes; evaluate reads a value from the page.
-  const camera = page.locator('.camera-page video').first()
-  await expect.poll(() => camera.evaluate((video) => video.videoWidth), { timeout: 15000 }).toBeGreaterThan(0)
-
-  // 4 photos (the fake camera from playwright.config.js). Wait for each one to reach the gallery.
-  // Now and then a press doesn't start the countdown, so press again, like a person would.
-  // Not in the slides: toPass() runs the block again until everything in it passes.
-  const galleryCount = page.locator('.gallery-count').locator('visible=true')
-  for (let i = 1; i <= 4; i++) {
-    await expect(async () => {
-      // Already have this many (a slow earlier photo arrived)? Then there's nothing to take.
-      if ((await galleryCount.count()) > 0 && Number(await galleryCount.textContent()) >= i) return
-      await page.getByRole('button', { name: 'Take a photo' }).click()
-      await expect(galleryCount).toHaveText(String(i), { timeout: 8000 })
-    }).toPass({ timeout: 40000 })
-  }
-  await page.locator('[data-test="stage-next"]').click()
-  await expect(page).toHaveURL(/\/pick$/)
-
-  // Pick: tap a photo, then tap a frame, for every frame (the same as dragging, but easier to test)
-  for (let i = 0; i < 4; i++) {
-    await page.getByAltText('Photo by Playwright').nth(i).click()
-    await page.locator('[data-test="slot-' + i + '"]').click()
-  }
-  await page.locator('[data-test="stage-next"]').click()
-  await expect(page).toHaveURL(/\/decorate$/)
-
-  await page.locator('[data-test="stage-next"]').click()
-  await expect(page).toHaveURL(/\/music$/)
+  await nextStage(page, 'music')
 
   // Music: upload our song, then use it (a new room starts in simple mode, so there's one deck and a "Use" button)
   await page.getByLabel('Or use your own song').setInputFiles('e2e/files/test-song.wav')

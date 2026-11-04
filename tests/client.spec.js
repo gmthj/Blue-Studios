@@ -9,10 +9,18 @@ import { embedProjectInPngBytes } from '../src/utils/savedFrameEngine.js'
 
 import AppIcon from '../src/components/AppIcon.vue'
 import StageBar from '../src/components/StageBar.vue'
-import { ROOM_STAGES, stageIndex } from '../src/composables/useRoom.js'
+import { ROOM_STAGES, stageIndex, useRoom } from '../src/composables/useRoom.js'
 import { dialog, askConfirm, askText, showNotice, answer, cancelDialog } from '../src/composables/useDialog.js'
 import MarketplaceCard from '../src/components/MarketplaceCard.vue'
 import ItemDetailsForm from '../src/components/ItemDetailsForm.vue'
+
+// The stage bar moves itself into the navbar (<Teleport to="#room-nav-slot">, see App.vue), which is not on the page
+// in a component test. Stubbing Teleport keeps the bar inside the wrapper, so the tests can find it.
+// jsdom has no scrollTo, which the bar uses to scroll the current step into view on narrow screens.
+function mountStageBar(current) {
+  if (!Element.prototype.scrollTo) Element.prototype.scrollTo = () => {}
+  return mount(StageBar, { props: { current: current }, global: { stubs: { teleport: true } } })
+}
 
 // ============================================================================
 // PART 1: Photostrip Layout & Filter Engine (8 Tests)
@@ -242,14 +250,7 @@ describe('Critical UI components (AppIcon, StageBar, MarketplaceCard, ItemDetail
 
   // 24. StageBar step pills rendering
   it('renders all 7 photostrip workflow steps in order (no lobby)', () => {
-    const wrapper = mount(StageBar, {
-      props: { current: 'pick' },
-      global: {
-        provide: {
-          // Provide room stub if useRoom is invoked
-        }
-      }
-    })
+    const wrapper = mountStageBar('pick')
     const steps = wrapper.findAll('.step-pill')
     expect(steps).toHaveLength(7)
     expect(steps[0].text()).toContain('Shoot')
@@ -261,10 +262,13 @@ describe('Critical UI components (AppIcon, StageBar, MarketplaceCard, ItemDetail
 
   // 25. StageBar current and completed status
   it('applies the .current class to active step and .done class to completed steps', () => {
-    const wrapper = mount(StageBar, { props: { current: 'pick' } })
+    // A tick means the room has really been on that step (room.visitedStages), not just that it comes first
+    const { room } = useRoom()
+    room.value = { stage: 'pick', visitedStages: ['shoot', 'pick'] }
+    const wrapper = mountStageBar('pick')
     const steps = wrapper.findAll('.step-pill')
 
-    // The step before 'pick' (Shoot, index 0) is done
+    // Shoot (index 0) was visited, so it is done
     expect(steps[0].classes()).toContain('done')
 
     // Step 'pick' (index 1) is current
@@ -274,13 +278,16 @@ describe('Critical UI components (AppIcon, StageBar, MarketplaceCard, ItemDetail
     // Steps after 'pick' are neither
     expect(steps[2].classes()).not.toContain('current')
     expect(steps[2].classes()).not.toContain('done')
+    room.value = null // the room is shared by every test in this file
   })
 
-  // 26. StageBar room badge display
-  it('renders the room code badge in the stage header', () => {
-    const wrapper = mount(StageBar, { props: { current: 'pick' } })
-    const badge = wrapper.find('.room-badge')
-    expect(badge.exists()).toBe(true)
+  // 26. StageBar room buttons (the room code moved to the Shoot page's invite card, so it is not in the bar any more)
+  it('renders the room buttons (sound, fullscreen, leave) and no room code', () => {
+    const wrapper = mountStageBar('pick')
+    expect(wrapper.find('[aria-label="Turn sounds off"], [aria-label="Turn sounds on"]').exists()).toBe(true)
+    expect(wrapper.find('[aria-label="Fullscreen"]').exists()).toBe(true)
+    expect(wrapper.findAll('button').some((b) => b.text().includes('Leave'))).toBe(true)
+    expect(wrapper.find('.room-badge').exists()).toBe(false)
   })
 
   // 27. MarketplaceCard template details display
@@ -392,7 +399,7 @@ describe('Room stages (useRoom.js)', () => {
   })
 
   it('marks the page passed as current="shoot" as the current step in the stage bar', () => {
-    const wrapper = mount(StageBar, { props: { current: 'shoot' } })
+    const wrapper = mountStageBar('shoot')
     const steps = wrapper.findAll('.step-pill')
     expect(steps[0].classes()).toContain('current')
     expect(steps[0].text()).toContain('Shoot')

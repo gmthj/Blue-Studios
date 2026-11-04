@@ -56,7 +56,9 @@ vi.mock('../src/shares.js', async (importOriginal) => ({
   getShare: mocks.getShare,
 }))
 vi.mock('../src/studio.js', async (importOriginal) => ({ ...(await importOriginal()), saveStripFile: mocks.saveStripFile }))
-vi.mock('qrcode', () => ({ default: { toDataURL: mocks.toDataURL } }))
+// The QR code (with the logo in the middle) is drawn on a canvas, which the test browser does not have:
+// a fake qrWithLogo that only remembers what it was asked to encode
+vi.mock('../src/utils/qrWithLogo.js', () => ({ qrWithLogo: mocks.toDataURL }))
 
 const { room } = useRoom()
 const { isAccount } = useAuth()

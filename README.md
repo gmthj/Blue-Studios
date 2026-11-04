@@ -98,6 +98,30 @@ npm run test:rules                            # OPTIONAL: runs the rules + admin
 - The tests never touch the real data: `npm run test:rules` starts local copies of Auth, Firestore and Storage.
 - The first time you deploy `storage.rules`, the CLI may ask to let Storage read Firestore (the rules check whether a marketplace item is public). Answer **Y**.
 
+#### End-to-end tests (Playwright)
+
+`npm run test:e2e` opens Chromium (with a fake camera) and uses the whole app like a person would: the home page,
+sign up / log in / log out, My Studio, the marketplace (search, save, report), the admin page (reports, items, bans,
+rooms), rooms with two people (join by code, shared photos, following the host, closing), a strip from Shoot to its public
+share page, the music mixer, the Frame Editor and the Sticker Maker. The tests are in `e2e/`, one file per area.
+
+```bash
+npx playwright install chromium   # once
+npm run test:e2e                  # all of them (about 2 minutes)
+npx playwright test e2e/admin.spec.js   # one file
+npx playwright show-report        # the results, with a trace of every failed test
+```
+
+- They run against the **Firebase emulators** (needs Java and the Firebase CLI, like `npm run test:rules`), never the real
+  project. Playwright starts the emulators and a copy of the app on port **5174** with `VITE_USE_EMULATORS=true`
+  (see `playwright.config.js` and the end of `src/firebase.js`), so your normal `npm run dev` on 5173 is never used.
+- `e2e/emulator/prepare.mjs` copies the security rules for the emulators with one change: links to our files also may start
+  with the Storage emulator's address (`http://127.0.0.1:9199`). Everything else is the real rules.
+- `e2e/support/fixtures.js` has the helpers: `createAccount({ admin })`, `logIn`, `seedTemplate`, `seedSticker`, `seedReport`,
+  `createRoom`, `makeStrip`... Import `test` and `expect` from there, not from `@playwright/test`: it also answers `/api/*`
+  (the Vercel functions, which the test server doesn't run) with "not available", unless a test answers it itself.
+- GitHub runs them on every pull request too (`.github/workflows/e2e-tests.yml`).
+
 ### 5. Deploy to Vercel, and test with your phone
 
 **The team project is already connected.** Every push to GitHub deploys automatically:
@@ -177,7 +201,8 @@ Already done for the team project. Follow these only to run your own copy.
 - **Agora Web SDK** (`agora-rtc-sdk-ng`) for the video call, and `agora-token` to make tokens on the server.
 - **MediaDevices API** (`getUserMedia`) for the camera, and the **Canvas API** to capture photos and export strips.
 - **goqr.me** API for the join QR code. **axios** to call our API.
-- **Tests:** `@firebase/rules-unit-testing` with the Firebase emulators and `node --test` (`npm run test:rules`).
+- **Tests:** `@firebase/rules-unit-testing` with the Firebase emulators and `node --test` (`npm run test:rules`), Vitest for
+  components (`npm test`), and Playwright end-to-end tests against the emulators (`npm run test:e2e`).
 
 ## Project structure
 
@@ -250,7 +275,8 @@ firestore.indexes.json     indexes the marketplace queries need (deployed with t
 storage.cors.json          lets the website fetch Storage files / draw them on a canvas (applied with npm run set-cors)
 firebase.json, .firebaserc Firebase CLI settings (project, rules files, emulator ports)
 tests/                     rules tests (Firestore, Storage) + admin API tests, run with npm run test:rules
-.github/workflows/         GitHub runs the tests automatically on pull requests (rules-tests.yml)
+e2e/                       Playwright end-to-end tests (npm run test:e2e), helpers in e2e/support/fixtures.js
+.github/workflows/         GitHub runs the tests automatically on pull requests (rules-tests.yml, e2e-tests.yml)
 scripts/set-admin.mjs      give / remove the admin mark (npm run set-admin -- email)
 scripts/set-cors.mjs       apply storage.cors.json to the Storage bucket (npm run set-cors)
 docs/team/                 a guide for each teammate on using accounts, My Studio, marketplace and rooms

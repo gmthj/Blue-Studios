@@ -1,7 +1,7 @@
 import { initializeApp } from 'firebase/app'
-import { getFirestore } from 'firebase/firestore'
-import { getAuth } from 'firebase/auth'
-import { getStorage } from 'firebase/storage'
+import { getFirestore, connectFirestoreEmulator } from 'firebase/firestore'
+import { getAuth, connectAuthEmulator } from 'firebase/auth'
+import { getStorage, connectStorageEmulator } from 'firebase/storage'
 
 // The values come from the .env file (locally) or Vercel's Environment Variables (when deployed).
 // Vite only puts variables that start with VITE_ into the frontend, using import.meta.env.
@@ -26,3 +26,12 @@ export const auth = getAuth(app)
 
 // storage is used for files (template previews, stickers, saved strips): see studio.js
 export const storage = getStorage(app)
+
+// End-to-end tests (npm run test:e2e) set VITE_USE_EMULATORS=true (see playwright.config.js), so the app talks to
+// local copies of Auth, Firestore and Storage (the "emulators") instead of the real project.
+// The tests can then make accounts and admins freely, and never touch real data.
+if (import.meta.env.VITE_USE_EMULATORS === 'true') {
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true })
+  connectFirestoreEmulator(db, '127.0.0.1', 8080)
+  connectStorageEmulator(storage, '127.0.0.1', 9199)
+}
