@@ -151,9 +151,12 @@ function endDrag(event) {
 // stays where it is while resizing.
 // Until someone drags the top or bottom edge (or a corner), the height follows the width, because every
 // tile keeps its 4:3 shape. After that the height is kept too, and the tiles shrink to fit inside it.
-const MIN_WIDTH = 140  // wide enough for 2 tiles side by side
+// Wide enough for the title bar in one line: grip, people count and the camera, mic and minimise
+// buttons (32px each on phones), and for 2 tiles side by side
+const MIN_WIDTH = 190
 const MIN_HEIGHT = 140 // the title bar and one row of small tiles
-const width = ref(Number(loadSetting('callWidth', '')) || defaultWidth())
+// A width saved before the minimum went up is made wide enough again
+const width = ref(clampWidth(Number(loadSetting('callWidth', '')) || defaultWidth()))
 const height = ref(Number(loadSetting('callHeight', '')) || null) // null = follows the width
 const resizing = ref(false)
 let resizeEdges = '' // which edges are being dragged: 'n', 'se', 'w', ...

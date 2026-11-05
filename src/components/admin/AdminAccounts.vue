@@ -120,10 +120,12 @@ async function pick(uidOrEmail) {
   busy.value = true
   errorMessage.value = ''
   message.value = ''
+  // Cleared first: the card shows as soon as the lookup returns, so a reason typed while the activity
+  // below is still loading must not be wiped afterwards
+  reason.value = ''
   try {
     picked.value = await lookupAccount(uidOrEmail)
     activity.value = await getAccountActivity(picked.value.uid)
-    reason.value = ''
   } catch (error) {
     errorMessage.value = error.message
   }

@@ -28,6 +28,9 @@ const {
     v-if="isSaveModalOpen"
     class="modal fade show d-block save-modal-backdrop"
     tabindex="-1"
+    role="dialog"
+    aria-modal="true"
+    aria-label="Save frame"
     style="background-color: rgba(15, 23, 42, 0.65); backdrop-filter: blur(4px); z-index: 1055;"
     @click.self="!isSavingFrame && !isSaveSuccess ? (isSaveModalOpen = false) : null"
   >

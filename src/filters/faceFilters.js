@@ -13,6 +13,11 @@ import mustacheImage from '../assets/filters/mustache.svg'
 import devilHornsImage from '../assets/filters/devil-horns.svg'
 import haloImage from '../assets/filters/halo.svg'
 import partyHatImage from '../assets/filters/party-hat.svg'
+import heartCrownImage from '../assets/filters/heart-crown.png'
+import realPuppyEarsImage from '../assets/filters/real-puppy-ears.png'
+import realPuppyNoseImage from '../assets/filters/real-puppy-nose.png'
+import chaEunWooImage from '../assets/filters/cha-eun-woo.png'
+import chaEunWoo2Image from '../assets/filters/cha-eun-woo2.png'
 
 // The list of face filters. Each filter is one or more pictures ("parts") stuck onto the face.
 // Adding a filter = adding an entry here, no other code changes.
@@ -26,6 +31,10 @@ import partyHatImage from '../assets/filters/party-hat.svg'
 //   offsetX: move right (+) / left (-), in eye widths, following the head's tilt
 //   offsetY: move down (+) / up (-), in eye widths, following the head's tilt
 //   flip:    true = mirror the picture left-right (optional), e.g. one picture used for both cheeks
+//   upright: true = do not turn with the head's tilt (optional), e.g. a whole person standing beside me
+//   behind:  true = drawn behind me (optional): I am cut out of my camera and drawn on top of it.
+//            Uses the same cut-out as Virtual Friends (useBehindLayer.js). Until the cut-out is
+//            ready, behind parts are not drawn at all (so they never cover my face).
 //
 // Useful landmark numbers:
 //   33 / 263 outer eye corners    10 top of forehead    1 nose tip
@@ -120,6 +129,35 @@ const FACE_FILTERS = [
     name: 'Party hat',
     thumbnail: partyHatImage,
     parts: [{ image: partyHatImage, at: [10], width: 1.0, offsetX: 0, offsetY: -0.85 }],
+  },
+  {
+    id: 'heart-crown',
+    name: 'Floating hearts',
+    thumbnail: heartCrownImage,
+    parts: [{ image: heartCrownImage, at: [10], width: 2.8, offsetX: 0, offsetY: -0.7 }],
+  },
+  {
+    id: 'real-puppy',
+    name: 'Real puppy',
+    thumbnail: realPuppyEarsImage,
+    parts: [
+      { image: realPuppyEarsImage, at: [10], width: 2.7, offsetX: 0, offsetY: -0.3 },
+      { image: realPuppyNoseImage, at: [1], width: 0.8, offsetX: 0, offsetY: 0.05 },
+    ],
+  },
+  {
+    id: 'cha-eun-woo',
+    name: 'Cha Eun Woo',
+    thumbnail: chaEunWooImage,
+    // Standing beside me, a little taller, behind me
+    parts: [{ image: chaEunWooImage, at: [33, 263], width: 4.5, offsetX: 2.6, offsetY: 1.1, upright: true, behind: true }],
+  },
+  {
+    id: 'cha-eun-woo-2',
+    name: 'Cha Eun Woo 2',
+    thumbnail: chaEunWoo2Image,
+    // His face is left of the picture's middle, so the picture is moved a bit further right
+    parts: [{ image: chaEunWoo2Image, at: [33, 263], width: 4.5, offsetX: 3.45, offsetY: 2.05, upright: true, behind: true }],
   },
 ]
 

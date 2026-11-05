@@ -188,7 +188,7 @@ There are three test suites. GitHub runs the rules tests and the end-to-end test
 
 | Command | What it tests | Needs |
 | --- | --- | --- |
-| `npm test` | Components and helper functions, with Vitest (strip export rules, the video editor, the share page, the stage bar, room cleanup rules...) | nothing |
+| `npm test` | Components and helper functions, with Vitest (strip export rules, the video editor, the share page, the stage bar, room cleanup rules, the camera list, rooms to rejoin...). Every `tests/*.spec.js` file is run, so a new one is picked up by itself | nothing |
 | `npm run test:rules` | The Firestore and Storage security rules, the admin API and the cleanup job: what each kind of user may and may not read or write | Java, Firebase CLI |
 | `npm run test:e2e` | The whole app in a real browser, with Playwright | Java, Firebase CLI |
 
@@ -207,7 +207,7 @@ npx playwright install chromium
 **Run the tests.** You do **not** need to start anything yourself: [`playwright.config.js`](playwright.config.js) starts the emulators, and a copy of the app on port **5174** that talks to them (so your normal `npm run dev` on 5173 is never used). No test accounts to make either: each test makes its own accounts, rooms and marketplace items.
 
 ```bash
-npm run test:e2e                        # the full suite (about 2 minutes)
+npm run test:e2e                        # the full suite (about 3 minutes)
 npx playwright test e2e/admin.spec.js   # one file
 npx playwright test --ui                # interactively, in Playwright's UI mode (great for learning)
 npx playwright show-report              # the HTML report of the last run, with a trace of each failed test
@@ -223,14 +223,16 @@ npx playwright show-report              # the HTML report of the last run, with 
 | `e2e/marketplace.spec.js` | Browsing and searching, private and hidden items, saving, reporting, "Use frame" |
 | `e2e/admin.spec.js` | The admin page: reports, hiding items, banning an account, closing a room |
 | `e2e/createRoom.spec.js` | Creating a room |
-| `e2e/room.spec.js` | Two people in a room (join by code, shared photos, following the host, closing), leaving, and a strip from Shoot to its public share page |
+| `e2e/room.spec.js` | Two people in a room (join by code, shared photos, following the host, closing), leaving and going back in from the home page, and a strip from Shoot to its public share page |
 | `e2e/music.spec.js` | The music mixer: uploading a song, the preview, and moving the chosen part |
-| `e2e/makers.spec.js` | The Frame Editor and the Sticker Maker saving to My Studio |
+| `e2e/makers.spec.js` | The Frame Editor and the Sticker Maker saving to My Studio (naming it, categories, guests asked to log in) |
 | `e2e/support/fixtures.js` | Shared helpers (`createAccount`, `logIn`, `seedTemplate`, `seedReport`, `createRoom`, `makeStrip`...) reused across spec files |
 
 `support/fixtures.js` is worth reading first, as it shows the pattern the rest of the suite follows: keep common flows (making an account, logging in, taking 4 photos) in one place and call them from each test, instead of repeating the same clicks everywhere. It sets up data straight in the emulators with the Firebase Admin SDK, and answers the `/api/*` functions with "not available" inside the browser, before they reach the test server (which would run them with the real keys from `.env`), unless a test answers one itself. Import `test` and `expect` from it, not from `@playwright/test`.
 
-The emulators use the real security rules, copied by [`e2e/emulator/prepare.mjs`](e2e/emulator/prepare.mjs) with one change: links to our files may also start with the Storage emulator's address.
+The emulators use the real security rules, copied by [`e2e/emulator/prepare.mjs`](e2e/emulator/prepare.mjs) with one change: links to our files may also start with the Storage emulator's address. The copy is made again before every run (Playwright's `globalSetup`), so emulators still running from an earlier run pick up today's rules too.
+
+The tests skip the first-time tips (Pick, Decorate, and the makers' "How it works" tours) by marking them as seen in `fixtures.js`. If you add tips to a page, add their `localStorage` key there, or they will sit on top of the buttons the tests press.
 
 ## 8. Deploy to Vercel
 
@@ -265,6 +267,7 @@ src/
 ├── marketplace.js        # Marketplace: browse, search, save, report
 ├── admin.js              # Moderator actions (calls /api/admin for accounts)
 ├── roomCleanup.js        # The room cleanup rules (shared with api/cleanup.js)
+├── recentRooms.js        # Rooms this device was in lately, for "Go back into room ...?" on the home page
 ├── stripData.js          # Strip layouts, frame styles, filters, safeStickers
 ├── shares.js             # A finished strip with a link and QR code
 ├── exportFile.js, stripRender.js, ffmpeg.js, mixRender.js   # Building the PNG / MP4 and the music mix
@@ -312,10 +315,11 @@ stickerCategories/{id}       { ownerId, name, type, itemIds, createdAt, updatedA
    - **Members:** each person has a document in `members`, which every device listens to, so the list updates live.
    - **Heartbeat:** every 15 seconds each device updates its `lastSeen`. A member not seen for 45 seconds (closed the tab) is no longer shown or counted.
    - **Room limit:** at most 6 people at once (`isRoomFull` in [`room.js`](src/room.js)). Someone already in the room (refreshing) is always let back in.
-3. **Video call:** each device gets a token from `/api/token`, joins that Agora channel and publishes its camera. Everyone starts **muted**: the microphone only opens on "Unmute". The call window floats over every room page; drag it anywhere, or minimise it.
+   - **Going back in:** each device remembers the rooms it was in during the last day ([`recentRooms.js`](src/recentRooms.js), in `localStorage`). The home page checks which are still open and shows "Go back into room 4821?" with **Rejoin** (the same checks as typing the code) and **Not now** (forgets it). Closed or deleted rooms are forgotten.
+3. **Video call:** each device gets a token from `/api/token`, joins that Agora channel and publishes its camera. Everyone starts **muted**: the microphone only opens on "Unmute". The camera can be turned off too: the camera light goes out and the others see your name instead. The call window floats over every room page; drag it anywhere, or minimise it.
 4. **Countdown and capture:** see [Concepts to look at](#concepts-to-look-at). Each device draws its camera frame on a canvas and saves a small JPEG to `photos` with the shot number. A white flash covers the moment, so every screen is lit when every device takes its photo (the `FLASH_*` settings in `ShootView.vue`).
 5. **Shared gallery:** every device listens to `photos`, grouped by shot.
-6. **Switch camera:** with more than one camera, a button cycles through them. It swaps the new camera into the track already being sent (`replaceTrack`), so others never see you leave and rejoin.
+6. **Switch camera:** with more than one camera, a button cycles through them. Phones list every lens (ultra wide, telephoto...) as a camera, so only the widest front and widest back one are kept (`onePerSide` in `useVideoCall.js`); webcams are all kept. It swaps the new camera into the track already being sent (`replaceTrack`), so others never see you leave and rejoin.
 7. **The strip, together:** everything about the strip is saved in the room document, so everyone sees the same one. **Pick** saves the layout, the frame and which photo is in which slot (each slot on its own, `'stripSlots.2'`, so two people changing different slots don't overwrite each other). **Decorate** saves each photo's filter and the stickers. **Video**, **Music** and **Export** work the same way, and **Share** builds the file on one device and gives everyone its link and QR code.
 8. **Close room:** the host (or anyone, if the host has left) sets `closed: true`; every device ends the call and goes home, and the room can't be joined again. This stops Agora minutes being used by forgotten tabs.
 9. **Layout:** the camera page is a Bootstrap `row`, exactly one screen tall (`100dvh`). Phones get one column; tablets and laptops put the camera beside the call and gallery; `xl` screens use three columns.
@@ -440,6 +444,7 @@ A short version for markers. The details are in the comments of [`firestore.rule
 
 - `package.json` has `"overrides": { "jwks-rsa": { "jose": "^5.10.0" } }`. **Don't remove it.** `firebase-admin` uses `jwks-rsa`, which loads `jose` with `require()`, but `jose` 6 only works with `import`, and Vercel's server can't `require()` it (the API crashes with `ERR_REQUIRE_ESM`). See [Use of AI](#use-of-ai).
 - The `localApi` plugin and the `ssr.optimizeDeps` setting in [`vite.config.js`](vite.config.js) are for `npm run dev` only and don't change the build. Keep `noDiscovery: true`: without it, the first call to `/api/` makes Vite pre-bundle `firebase-admin` and reload the page (in a room, the call drops).
+- Vitest only runs `tests/**/*.spec.js` (`test.include` in `vite.config.js`): `tests/*.test.js` are the rules tests and `e2e/` is Playwright. In tests only, `<img src="/images/...">` is left as a plain URL (`transformAssetUrls`), otherwise a component with a picture from `public/` fails to load in Vitest.
 - `.vue` files are ordered `<script setup>`, `<template>`, `<style scoped>`. Pages wrapped in `<div class="app-page">` get the shared look from [`src/styles/pages.css`](src/styles/pages.css).
 
 

@@ -70,6 +70,10 @@ function mountPage() {
 // what the user sees: the button
 const shareButton = (page) => page.findAll('button').find((b) => b.text().includes('Share and download') || b.text() === 'Opening...')
 
+// Wait until the button can be pressed (the sticker check has finished). One flushPromises() is usually enough,
+// but not always when the whole test suite runs at once and the computer is busy.
+const buttonReady = (page) => vi.waitFor(() => expect(shareButton(page).attributes('disabled')).toBeUndefined())
+
 beforeEach(() => {
   mocks.updateDoc.mockReset()
   mocks.updateDoc.mockImplementation(async (ref, changes) => applyChanges(changes))
@@ -184,9 +188,9 @@ describe('Component test: Export page, Share and download', () => {
     const page = mountPage()
     await flushPromises()
     await page.find('input[type="text"]').setValue('Our strip')
+    await buttonReady(page)
     await shareButton(page).trigger('click')
-    await flushPromises()
-    expect(mocks.txUpdate).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(mocks.txUpdate).toHaveBeenCalledTimes(1))
     const [ref, changes] = mocks.txUpdate.mock.calls[0]
     expect(ref).toBe('room-ref')
     expect(changes.stage).toBe('share')
@@ -199,10 +203,9 @@ describe('Component test: Export page, Share and download', () => {
   it('Test5: if someone else pressed it first, the room is not changed again (we just follow them)', async () => {
     setRoom({ extra: { stage: 'share' } })
     const page = mountPage()
-    await flushPromises()
+    await buttonReady(page)
     await shareButton(page).trigger('click')
-    await flushPromises()
-    expect(mocks.runTransaction).toHaveBeenCalledTimes(1)
+    await vi.waitFor(() => expect(mocks.runTransaction).toHaveBeenCalledTimes(1))
     expect(mocks.txUpdate).not.toHaveBeenCalled()
   })
 })
@@ -226,9 +229,9 @@ describe('Integration test: Export page + export rules', () => {
   it.each(TABLE)('Test: video %s, music %s, moving sticker %s', async (video, music, gifSticker, expected) => {
     setRoom({ video: video, music: music, gifSticker: gifSticker })
     const page = mountPage()
-    await flushPromises()
+    await buttonReady(page)
     await shareButton(page).trigger('click')
-    await flushPromises()
+    await vi.waitFor(() => expect(mocks.txUpdate).toHaveBeenCalled())
     expect(mocks.txUpdate.mock.calls[0][1].exportJob.format).toBe(expected)
   })
 
