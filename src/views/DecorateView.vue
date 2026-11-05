@@ -9,7 +9,7 @@ import { saveStrip } from '../studio.js'
 import { resolveEditedVideos, getClipUrl } from '../clips.js'
 import { loadDefaultStickers, loadMyStickers, liveStickerPng, textStickerPng, DEFAULT_SECTIONS } from '../stickerTray.js'
 import { FONT_GROUPS_READY, loadArtFonts } from '../stickerArt.js'
-import { LAYOUTS, FRAME_STYLES, FILTERS, filterCss, saveField, saveFields, cropOf, cropSource } from '../stripData.js'
+import { LAYOUTS, FRAME_STYLES, FILTERS, filterCss, saveField, saveFields, cropOf, cropSource, safeStickers } from '../stripData.js'
 import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
 import LiveStickerPicker from '../components/LiveStickerPicker.vue'
@@ -68,7 +68,7 @@ const frameStyle = computed(() => {
 const slotPhotos = computed(() => room.value.stripSlots || {})
 const edits = computed(() => room.value.stripEdits || {})
 const crops = computed(() => room.value.stripCrops || {}) // where each photo sits in its slot (set on the Pick page)
-const stickers = computed(() => room.value.stripStickers || [])
+const stickers = computed(() => safeStickers(room.value.stripStickers))
 const editedVideos = computed(() => resolveEditedVideos(room.value.editedVideos, clips.value)) // the videos made on the Video page
 
 // True if any slot holds a video (a clip, or an edited video). A strip with a video cannot be saved as a

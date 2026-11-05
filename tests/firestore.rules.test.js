@@ -98,10 +98,9 @@ test('a user cannot create a room pretending someone else is the host', async ()
   await assertFails(setDoc(doc(dbAs('stranger'), 'rooms/5555'), newRoom('host')))
 })
 
-// TODO: when the 'camera' option is removed from the room create rule, change assertSucceeds to assertFails here
-test('new rooms start at shoot (old code still making rooms at "camera" is allowed for now)', async () => {
+test('new rooms start at shoot (the old "camera" stage is gone)', async () => {
   await assertSucceeds(setDoc(doc(dbAs('host'), 'rooms/5555'), { ...newRoom('host'), stage: 'shoot' }))
-  await assertSucceeds(setDoc(doc(dbAs('host'), 'rooms/5556'), { ...newRoom('host'), stage: 'camera' }))
+  await assertFails(setDoc(doc(dbAs('host'), 'rooms/5556'), { ...newRoom('host'), stage: 'camera' }))
 })
 
 test('a room code must be 4 digits, and a new room must start empty', async () => {
@@ -150,26 +149,203 @@ test('people who are not in the room cannot change it', async () => {
   await assertFails(updateDoc(doc(dbAs('stranger'), 'rooms/1234'), { closed: true }))
 })
 
-// DEV: room fields are open to members while teammates build their features (see devRoomChange in firestore.rules)
-test('members can change other room fields (DEV), but not the host, creation time, shutter counter or closed', async () => {
+// ---------- What members may change in a room ----------
+
+test('members can move the room to another step, but only to a real step', async () => {
   await seedRoom()
   const db = dbAs('guest')
-  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { stage: 'decorate' }))
-  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { stage: 'pick', furthestStage: 'decorate' }))
-  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { 'stripSlots.9': 'photoA', stripLayoutId: 'film-3-cut' }))
-  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { stripStickers: [{ id: 1, src: 'data:image/svg+xml,x' }] }))
-  await assertFails(updateDoc(doc(db, 'rooms/1234'), { hostId: 'guest' }))
-  await assertFails(updateDoc(doc(db, 'rooms/1234'), { createdAt: 0 }))
-  await assertFails(updateDoc(doc(db, 'rooms/1234'), { shotNumber: 10 }))
-  await assertFails(updateDoc(doc(dbAs('stranger'), 'rooms/1234'), { stage: 'decorate' }))
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { stage: 'decorate', furthestStage: 'decorate', visitedStages: ['shoot', 'decorate'] }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { stage: 'hacked' }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { stage: 5 }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { furthestStage: 'nowhere' }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { visitedStages: ['shoot', 'nowhere'] }))
+  await assertFails(updateDoc(doc(dbAs('stranger'), 'rooms/1234'), { stage: 'pick' }))
 })
 
-test('DEV: other lists inside a room are open to its members only', async () => {
+test('members cannot change the host, creation time, shutter counter or keep, and cannot add unknown fields', async () => {
   await seedRoom()
-  await assertSucceeds(setDoc(doc(dbAs('guest'), 'rooms/1234/clips/c1'), { anything: true }))
+  const db = dbAs('guest')
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { hostId: 'guest' }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { hostName: 'Hacked' }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { createdAt: 0 }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { shotNumber: 10 }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { keep: true }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { somethingNew: 'x' }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { stage: 'pick', somethingNew: 'x' }))
+})
+
+test('strip slots: photo ids in slots 0 to 11, and nothing else', async () => {
+  await seedRoom()
+  const db = dbAs('guest')
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { 'stripSlots.9': 'photoA', stripLayoutId: 'film-3-cut' }))
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { 'stripSlots.0': null, 'stripEdits.0': null, 'stripCrops.0': null }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { 'stripSlots.12': 'photoA' }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { 'stripSlots.x': 'photoA' }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { 'stripSlots.1': 123 }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { 'stripSlots.1': 'x'.repeat(41) }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { stripSlots: 'not a map' }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { stripLayoutId: 'x'.repeat(61) }))
+})
+
+test('crops and edits are small maps per slot', async () => {
+  await seedRoom()
+  const db = dbAs('guest')
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { 'stripCrops.2': { zoom: 1.5, x: 0, y: 0 } }))
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { 'stripEdits.2': { filter: 'bw', brightness: 10, contrast: 0, saturation: 0 } }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { 'stripEdits.2': 'bw' }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { 'stripEdits.2': { a: 1, b: 2, c: 3, d: 4, e: 5, f: 6, g: 7 } }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { 'stripCrops.13': { zoom: 1 } }))
+})
+
+function templateFrame(changes = {}) {
+  return {
+    id: 't1', name: 'My frame', aspect: 0.3, slots: [{ x: 6, y: 3, w: 88, h: 20 }], shape: 'rounded',
+    background: '#FFFFFF', border: '#1A1A2E', caption: 'Hi', captionColor: '#1A1A2E', thumbnailUrl: null,
+    ...changes,
+  }
+}
+
+test('a template frame in the room: checked fields, and its picture must be a safe link', async () => {
+  await seedRoom()
+  const db = dbAs('guest')
+  const storageLink = 'https://firebasestorage.googleapis.com/v0/b/x/o/templates%2Fa%2Fb%2Fthumbnail.png?alt=media&token=1'
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { stripStyleId: 't1', stripCustomTemplate: templateFrame({ thumbnailUrl: storageLink }) }))
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { stripCustomTemplate: templateFrame({ thumbnailUrl: 'data:image/png;base64,AAAA' }) }))
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { stripStyleId: 'cream', stripCustomTemplate: null }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { stripCustomTemplate: templateFrame({ thumbnailUrl: 'https://evil.example/track.png' }) }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { stripCustomTemplate: templateFrame({ thumbnailUrl: 'data:image/svg+xml;base64,AAAA' }) }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { stripCustomTemplate: templateFrame({ thumbnailUrl: storageLink + '") ; x' }) }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { stripCustomTemplate: templateFrame({ shape: 'star' }) }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { stripCustomTemplate: templateFrame({ slots: [] }) }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { stripCustomTemplate: { ...templateFrame(), extra: 1 } }))
+})
+
+test('only the host can set startTemplateId and virtualFriends', async () => {
+  await seedRoom()
+  await assertSucceeds(updateDoc(doc(dbAs('host'), 'rooms/1234'), { startTemplateId: 't1' }))
+  await assertFails(updateDoc(doc(dbAs('guest'), 'rooms/1234'), { startTemplateId: 't2' }))
+  await assertSucceeds(updateDoc(doc(dbAs('host'), 'rooms/1234'), { virtualFriends: ['a', 'b'] }))
+  await assertFails(updateDoc(doc(dbAs('guest'), 'rooms/1234'), { virtualFriends: ['a'] }))
+  await assertFails(updateDoc(doc(dbAs('host'), 'rooms/1234'), { virtualFriends: 'a' }))
+  await assertFails(updateDoc(doc(dbAs('host'), 'rooms/1234'), { virtualFriends: Array(21).fill('a') }))
+})
+
+test('stickers: a list of at most 40', async () => {
+  await seedRoom()
+  const db = dbAs('guest')
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { stripStickers: [{ id: 1, src: 'data:image/png;base64,AAAA', x: 50, y: 50 }] }))
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { stripStickers: [] }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { stripStickers: 'nope' }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { stripStickers: Array(41).fill({ id: 1 }) }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { stripStickers: [{ id: 2 }], stage: 'pick' }))
+})
+
+test('video timeline and saved edits', async () => {
+  await seedRoom()
+  const db = dbAs('guest')
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { videoTimeline: [{ clipId: 'c1', start: 0, end: 3 }], videoEditing: null }))
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { 'editedVideos.e1': { name: 'Edit 1', timeline: [], createdAt: 1 } }))
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { videoTimeline: [], videoEditing: 'e1', stage: 'video' }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { videoTimeline: 'x' }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { videoTimeline: Array(31).fill({}) }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { videoEditing: 5 }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { editedVideos: 'x' }))
+})
+
+function aTrack(changes = {}) {
+  return { id: '123', name: 'Song', artist_name: 'Band', duration: 120, audio: 'https://prod-1.storage.jamendo.com/x.mp3', waveform: '[1,2,3]', musicinfo: { speed: 'high' }, ...changes }
+}
+
+test('music: the shared mixer is checked, and the saved mix must be this room\'s file', async () => {
+  await seedRoom()
+  const db = dbAs('guest')
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { 'mixer.speedA': 1.2 }))
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { 'mixer.trackA': aTrack(), 'mixer.startA': 0 }))
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { music: { audioPath: 'music/1234/mix.wav', duration: 15 } }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { 'mixer.speedA': 9 }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { 'mixer.volumeA': 'loud' }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { 'mixer.crossfade': 2 }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { 'mixer.extra': 1 }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { 'mixer.trackA': aTrack({ audio: 'javascript:alert(1)' }) }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { 'mixer.trackA': aTrack({ waveform: 'x'.repeat(20001) }) }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { 'mixer.trackA': { ...aTrack(), extra: 1 } }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { music: { audioPath: 'music/9999/mix.wav', duration: 15 } }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { music: { audioPath: 'strips/someone/x.jpg', duration: 15 } }))
+})
+
+test('photo or video mode', async () => {
+  await seedRoom()
+  await assertSucceeds(updateDoc(doc(dbAs('guest'), 'rooms/1234'), { captureMode: 'video' }))
+  await assertFails(updateDoc(doc(dbAs('guest'), 'rooms/1234'), { captureMode: 'x' }))
+})
+
+test('export: format, name and the job are checked', async () => {
+  await seedRoom()
+  const db = dbAs('guest')
+  const job = { status: 'pending', format: 'gif', name: 'Our day', progress: 0, updatedAt: 1 }
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { stage: 'share', furthestStage: 'share', exportFormat: 'gif', exportName: 'Our day', exportJob: job }))
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { 'exportJob.progress': 0.5, 'exportJob.label': 'Working', 'exportJob.updatedAt': 2 }))
+  await assertSucceeds(updateDoc(doc(db, 'rooms/1234'), { 'exportJob.status': 'done', 'exportJob.shareId': 'abc' }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { exportFormat: 'exe' }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { exportName: 'x'.repeat(81) }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { 'exportJob.status': 'hacked' }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { 'exportJob.extra': 1 }))
+  await assertFails(updateDoc(doc(db, 'rooms/1234'), { 'exportJob.progress': 5 }))
+})
+
+test('leaving a room saves lastActive as a number', async () => {
+  await seedRoom()
+  await assertSucceeds(updateDoc(doc(dbAs('guest'), 'rooms/1234'), { lastActive: Date.now() }))
+  await assertFails(updateDoc(doc(dbAs('guest'), 'rooms/1234'), { lastActive: 'now' }))
+})
+
+// ---------- Video clips in a room ----------
+
+function newClip(ownerId, clipId, changes = {}) {
+  return {
+    ownerId: ownerId, name: 'Guest', shotNumber: 1, mime: 'video/webm', mirrored: true, createdAt: Date.now(),
+    path: 'clips/1234/' + ownerId + '/' + clipId + '.webm',
+    ...changes,
+  }
+}
+
+test('clips: members add their own clip, and only members (and admins) can see them', async () => {
+  await seedRoom()
+  await assertSucceeds(setDoc(doc(dbAs('guest'), 'rooms/1234/clips/c1'), newClip('guest', 'c1')))
+  await assertSucceeds(setDoc(doc(dbAs('host'), 'rooms/1234/clips/c2'), newClip('host', 'c2', { mime: 'video/mp4', path: 'clips/1234/host/c2.mp4' })))
   await assertSucceeds(getDoc(doc(dbAs('host'), 'rooms/1234/clips/c1')))
+  await assertSucceeds(getDoc(doc(dbAsAdmin(), 'rooms/1234/clips/c1')))
   await assertFails(getDoc(doc(dbAs('stranger'), 'rooms/1234/clips/c1')))
-  // members and photos keep their own strict rules
+  await assertFails(getDoc(doc(dbSignedOut(), 'rooms/1234/clips/c1')))
+})
+
+test('clips: no posting as someone else, no strange files, no extra fields, no changes', async () => {
+  await seedRoom()
+  const db = dbAs('guest')
+  await assertFails(setDoc(doc(dbAs('stranger'), 'rooms/1234/clips/c1'), newClip('stranger', 'c1')))
+  await assertFails(setDoc(doc(db, 'rooms/1234/clips/c1'), newClip('host', 'c1')))
+  await assertFails(setDoc(doc(db, 'rooms/1234/clips/c1'), newClip('guest', 'c1', { path: 'clips/1234/host/c1.webm' })))
+  await assertFails(setDoc(doc(db, 'rooms/1234/clips/c1'), newClip('guest', 'c1', { path: 'clips/9999/guest/c1.webm' })))
+  await assertFails(setDoc(doc(db, 'rooms/1234/clips/c1'), newClip('guest', 'c1', { path: 'strips/guest/c1.jpg' })))
+  await assertFails(setDoc(doc(db, 'rooms/1234/clips/c1'), newClip('guest', 'c1', { mime: 'text/html' })))
+  await assertFails(setDoc(doc(db, 'rooms/1234/clips/c1'), newClip('guest', 'c1', { extra: 1 })))
+  await assertFails(setDoc(doc(db, 'rooms/1234/clips/c1'), newClip('guest', 'c1', { mirrored: 'yes' })))
+  await seed('rooms/1234/clips/c3', newClip('guest', 'c3'))
+  await assertFails(updateDoc(doc(db, 'rooms/1234/clips/c3'), { name: 'Hacked' }))
+  await assertFails(deleteDoc(doc(db, 'rooms/1234/clips/c3')))
+  await assertSucceeds(deleteDoc(doc(dbAsAdmin(), 'rooms/1234/clips/c3')))
+})
+
+test('clips cannot be added to a closed room', async () => {
+  await seedRoom({ closed: true })
+  await assertFails(setDoc(doc(dbAs('guest'), 'rooms/1234/clips/c1'), newClip('guest', 'c1')))
+})
+
+test('other lists inside a room are blocked', async () => {
+  await seedRoom()
+  await assertFails(setDoc(doc(dbAs('guest'), 'rooms/1234/music/m1'), { anything: true }))
+  await assertFails(getDoc(doc(dbAs('host'), 'rooms/1234/music/m1')))
+  // members keep their own strict rules
   await assertFails(updateDoc(doc(dbAs('guest'), 'rooms/1234/members/host'), { name: 'Hacked' }))
 })
 
@@ -754,14 +930,49 @@ test('a banned account cannot save, report or create items', async () => {
   await assertFails(setDoc(doc(dbAsAccount('bob'), 'stickers/s1'), newSticker('bob', 's1', { ownerName: 'Bob' })))
 })
 
-// DEV: new collections are open to signed-in users while teammates build (delete these tests at lockdown)
-test('DEV: new collections are open to signed-in users, but not to signed-out visitors', async () => {
-  await assertSucceeds(setDoc(doc(dbAsGuest('g1'), 'musicMixes/m1'), { a: 1 }))
-  await assertSucceeds(getDoc(doc(dbAsGuest('g2'), 'musicMixes/m1')))
-  await assertFails(getDoc(doc(dbSignedOut(), 'musicMixes/m1')))
+// ---------- Folders (stickerCategories) ----------
+
+function newFolder(ownerId, changes = {}) {
+  return { ownerId: ownerId, name: 'Cute', type: 'sticker', itemIds: [], createdAt: 1, updatedAt: 1, ...changes }
+}
+
+test('folders: an account makes, renames, fills and deletes its own', async () => {
+  const db = dbAsAccount('alice')
+  await assertSucceeds(setDoc(doc(db, 'stickerCategories/f1'), newFolder('alice')))
+  await assertSucceeds(updateDoc(doc(db, 'stickerCategories/f1'), { name: 'Love', updatedAt: 2 }))
+  await assertSucceeds(updateDoc(doc(db, 'stickerCategories/f1'), { itemIds: ['s1', 's2'], updatedAt: 3 }))
+  await assertSucceeds(getDocs(query(collection(db, 'stickerCategories'), where('ownerId', '==', 'alice'))))
+  await assertSucceeds(deleteDoc(doc(db, 'stickerCategories/f1')))
 })
 
-test('DEV: the open rules do not open the strict collections', async () => {
+test('folders: private to the owner, accounts only, checked fields', async () => {
+  await seed('stickerCategories/f1', newFolder('alice'))
+  await assertFails(getDoc(doc(dbAsAccount('bob'), 'stickerCategories/f1')))
+  await assertFails(getDoc(doc(dbSignedOut(), 'stickerCategories/f1')))
+  await assertFails(updateDoc(doc(dbAsAccount('bob'), 'stickerCategories/f1'), { name: 'Mine', updatedAt: 2 }))
+  await assertFails(deleteDoc(doc(dbAsAccount('bob'), 'stickerCategories/f1')))
+  await assertFails(setDoc(doc(dbAsGuest('g1'), 'stickerCategories/f2'), newFolder('g1')))
+  await assertFails(setDoc(doc(dbAsAccount('bob'), 'stickerCategories/f3'), newFolder('alice')))
+  await assertFails(setDoc(doc(dbAsAccount('bob'), 'stickerCategories/f3'), newFolder('bob', { name: '' })))
+  await assertFails(setDoc(doc(dbAsAccount('bob'), 'stickerCategories/f3'), newFolder('bob', { name: 'x'.repeat(21) })))
+  await assertFails(setDoc(doc(dbAsAccount('bob'), 'stickerCategories/f3'), newFolder('bob', { type: 'video' })))
+  await assertFails(setDoc(doc(dbAsAccount('bob'), 'stickerCategories/f3'), newFolder('bob', { extra: 1 })))
+  await assertFails(updateDoc(doc(dbAsAccount('alice'), 'stickerCategories/f1'), { ownerId: 'bob' }))
+  await assertFails(updateDoc(doc(dbAsAccount('alice'), 'stickerCategories/f1'), { itemIds: 'x', updatedAt: 2 }))
+})
+
+test('folders: a banned account cannot make or change them', async () => {
+  await seed('users/bob', { displayName: 'Bob', createdAt: 1, banned: true })
+  await assertFails(setDoc(doc(dbAsAccount('bob'), 'stickerCategories/f1'), newFolder('bob')))
+})
+
+test('a collection nobody wrote a rule for is blocked, even for signed-in users', async () => {
+  await assertFails(setDoc(doc(dbAsGuest('g1'), 'musicMixes/m1'), { a: 1 }))
+  await assertFails(getDoc(doc(dbAsAccount('alice'), 'musicMixes/m1')))
+  await assertFails(setDoc(doc(dbAsAdmin(), 'musicMixes/m1'), { a: 1 }))
+})
+
+test('the strict collections stay strict', async () => {
   await seed('templates/t1', newTemplate('alice', 't1'))
   await assertFails(getDoc(doc(dbAsAccount('bob'), 'templates/t1')))
   await assertFails(setDoc(doc(dbAsGuest('g1'), 'users/g1'), { anything: true }))

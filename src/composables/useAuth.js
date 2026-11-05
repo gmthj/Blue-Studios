@@ -263,7 +263,9 @@ async function signUp(displayName, email, password) {
 // Log in to an existing account. (Anything done as a guest on this device stays with the guest.)
 async function logIn(email, password) {
   const result = await signInWithEmailAndPassword(auth, email, password)
-  copyUser(result.user)
+  // Read the admin mark now, not later in onAuthStateChanged: the log in page goes on to ?redirect= straight
+  // after this, and router.js only lets admins open /admin.
+  copyUser(result.user, await readAdminMark(result.user))
 }
 
 // Log in or sign up with Google, in a popup window.
@@ -294,7 +296,7 @@ async function logInWithGoogle() {
     }
     await saveProfile(name)
   }
-  copyUser(result.user)
+  copyUser(result.user, await readAdminMark(result.user))
 }
 
 // Log out. startAuth() then signs this device in as a new guest automatically.

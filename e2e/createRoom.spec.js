@@ -1,13 +1,9 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, createRoom } from './support/fixtures.js'
 
 test('should create a room and open the Shoot step', async ({ page }) => {
-  // (1) setup
-  await page.goto('/')
-
-  // (2) actions
-  await page.getByLabel('Your name').fill('Playwright')
-  await page.getByRole('button', { name: 'Create a new room' }).click()
+  // (1) setup + (2) actions: type a name and press "Create a new room" (see createRoom in support/fixtures.js)
+  const code = await createRoom(page)
 
   // (3) assert: the address is /room/ + 4 digits + /shoot
-  await expect(page).toHaveURL(/\/room\/\d{4}\/shoot/)
+  await expect(page).toHaveURL('/room/' + code + '/shoot')
 })

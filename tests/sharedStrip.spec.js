@@ -16,8 +16,9 @@ const mocks = vi.hoisted(() => ({
   routeId: { value: 'abc123' },
 }))
 
-// the QR code picture is drawn on a canvas, which the test browser does not have: a fake that only remembers what it was asked to encode
-vi.mock('qrcode', () => ({ default: { toDataURL: mocks.toDataURL } }))
+// The QR code (with the logo in the middle) is drawn on a canvas, which the test browser does not have:
+// a fake qrWithLogo that only remembers what it was asked to encode
+vi.mock('../src/utils/qrWithLogo.js', () => ({ qrWithLogo: mocks.toDataURL }))
 vi.mock('../src/shares.js', async (importOriginal) => ({ ...(await importOriginal()), getShare: mocks.getShare }))
 // the page reads the id from the address (/s/abc123)
 vi.mock('vue-router', async (importOriginal) => ({

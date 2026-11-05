@@ -3,6 +3,7 @@ import { useRoute, useRouter } from "vue-router"
 
 // Composables & Auth
 import { useSmartGuides } from "./useSmartGuides.js"
+import { cleanSvg } from "../utils/cleanSvg.js"
 import { useCanvasViewport } from "./useCanvasViewport.js"
 import { useAuth, getUid } from "./useAuth.js"
 import { askConfirm } from "./useDialog.js"
@@ -2361,7 +2362,9 @@ function getVectorBarTitle(el) {
 
 function getRenderedSvg(el) {
   if (!el || !el.svgRaw) return ''
-  let svg = el.svgRaw
+  // Cleaned every time it is shown, because a template made by someone else (or saved before this
+  // was added) may still have an unsafe SVG inside it (see utils/cleanSvg.js)
+  let svg = cleanSvg(el.svgRaw)
   if (el.colorMap) {
     for (const [orig, repl] of Object.entries(el.colorMap)) {
       if (!repl || orig === repl) continue
@@ -2557,7 +2560,8 @@ async function processUploadedFiles(files) {
     await new Promise(resolve => {
       if (isSvg) {
         reader.onload = async e => {
-          const svgContent = e.target.result
+          // Cleaned straight away, so a script inside the file is never saved (see utils/cleanSvg.js)
+          const svgContent = cleanSvg(e.target.result)
           const dataUrl = 'data:image/svg+xml;utf8,' + encodeURIComponent(svgContent)
 
           // Deduplicate: check if this SVG is already in userUploads
@@ -2589,7 +2593,14 @@ async function processUploadedFiles(files) {
         reader.readAsText(file)
       } else {
         reader.onload = async e => {
-          const dataUrl = e.target.result
+          // Pictures are saved inside the template file, so a full-size phone photo (4-6 MB) would make
+          // the template huge. Shrink it first: 1600px is plenty for a photostrip.
+          let dataUrl = e.target.result
+          try {
+            dataUrl = await shrinkImageDataUrl(dataUrl, file.type, MAX_UPLOAD_SIDE)
+          } catch (err) {
+            console.error('Could not shrink the picture, keeping it as it is:', err)
+          }
 
           // Deduplicate: check if this raster image is already in userUploads
           const isDuplicate = userUploads.value.some(u =>
@@ -2737,6 +2748,28 @@ async function onCanvasDrop(event) {
 // =============================================================================
 // 18. Saved Frames Storage, Account/Cloud Sync & Editable PNG Export
 // =============================================================================
+
+// Pictures added in the editor are made no wider or taller than this (see processUploadedFiles)
+const MAX_UPLOAD_SIDE = 1600
+
+// Make an uploaded picture (a data: URL) no taller/wider than maxSide pixels.
+// JPGs stay JPG (photos). PNGs become WebP, which keeps see-through parts but is much smaller
+// (browsers that cannot make WebP give back a PNG instead, which still works).
+// A picture that is already small enough is kept exactly as it is.
+async function shrinkImageDataUrl(dataUrl, type, maxSide) {
+  const image = new Image()
+  image.src = dataUrl
+  await image.decode() // wait until the browser has read the picture
+  const scale = Math.min(1, maxSide / Math.max(image.naturalWidth, image.naturalHeight))
+  if (scale === 1) return dataUrl
+  const canvas = document.createElement('canvas')
+  canvas.width = Math.round(image.naturalWidth * scale)
+  canvas.height = Math.round(image.naturalHeight * scale)
+  canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height)
+  return type === 'image/jpeg'
+    ? canvas.toDataURL('image/jpeg', 0.9)
+    : canvas.toDataURL('image/webp', 0.9)
+}
 
 // Make a PNG Blob no taller/wider than maxSide pixels (under 2 MB for Firebase Storage)
 async function shrinkPng(blob, maxSide = 1400) {

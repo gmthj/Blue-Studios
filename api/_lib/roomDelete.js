@@ -16,13 +16,16 @@ export async function deleteRoomEverything(code, room) {
   await deleteRoomFiles(code)
 }
 
-// Delete a room's video clip files in Storage (clips/{code}/..., see clips.js). Deleting the room's
-// documents does not delete them. Skipped when the bucket name is not set (the tests).
+// Delete a room's files in Storage: video clips (clips/{code}/..., see clips.js) and music (music/{code}/...,
+// the saved mix and uploaded songs). Deleting the room's documents does not delete them.
+// Skipped when the bucket name is not set (the tests).
 async function deleteRoomFiles(code) {
   const bucketName = process.env.VITE_FIREBASE_STORAGE_BUCKET
   if (!bucketName) return
   try {
-    await adminStorage().bucket(bucketName).deleteFiles({ prefix: 'clips/' + code + '/' })
+    const bucket = adminStorage().bucket(bucketName)
+    await bucket.deleteFiles({ prefix: 'clips/' + code + '/' })
+    await bucket.deleteFiles({ prefix: 'music/' + code + '/' })
   } catch (error) {
     console.error('Could not delete the files of room ' + code, error) // the room itself is already gone
   }

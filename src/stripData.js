@@ -53,12 +53,12 @@ export const LAYOUTS = [
 // PLACEHOLDER (Joash): "default" = built-in styles, "mine" = frames the user saved in the Template Editor.
 // shape is the slot shape: 'square', 'rounded' or 'circle'
 export const FRAME_STYLES = [
-  { id: 'cream', group: 'default', background: '#FFF8EE', border: '#2F5BEA', shape: 'square', caption: 'Exchange reunion · 16.10.26' },
+  { id: 'cream', group: 'default', background: '#FFF8EE', border: '#2F5BEA', shape: 'square', caption: 'Blue Studios' },
   { id: 'sky', group: 'default', background: '#E8EEFF', border: '#2F5BEA', shape: 'rounded', caption: 'Blue Studios' },
   { id: 'white', group: 'default', background: '#FFFFFF', border: '#1A1A2E', shape: 'square', caption: 'Blue Studios' },
   { id: 'circle', group: 'default', background: '#F1F1F4', border: '#9AA0B4', shape: 'circle', caption: 'Blue Studios' },
-  { id: 'night', group: 'default', background: '#1A1A2E', border: '#F2C94C', shape: 'rounded', caption: 'Film night' },
-  { id: 'mine-sunny', group: 'mine', background: '#FFE8A3', border: '#E0A100', shape: 'rounded', caption: 'Our day out' },
+  { id: 'night', group: 'default', background: '#1A1A2E', border: '#F2C94C', shape: 'rounded', caption: 'Blue Studios' },
+  { id: 'mine-sunny', group: 'mine', background: '#FFE8A3', border: '#E0A100', shape: 'rounded', caption: 'Blue Studios' },
 ]
 
 // ---------- STICKER TRAY (Decorate page) ----------
@@ -114,7 +114,16 @@ export function roomFrameStyle(room) {
 const TRUSTED_STICKER_SOURCES = ['https://firebasestorage.googleapis.com/', 'data:image/', 'https://media.giphy.com/']
 
 export function isTrustedStickerSrc(src) {
-  return TRUSTED_STICKER_SOURCES.some((prefix) => src.startsWith(prefix))
+  return typeof src === 'string' && TRUSTED_STICKER_SOURCES.some((prefix) => src.startsWith(prefix))
+}
+
+// The room's stickers, without any whose picture is not from a trusted place.
+// The security rules cannot look inside the list, so a member could save a sticker pointing at another
+// website (which would show on every device and tell that site who is looking). Use this wherever the
+// stickers are read from the room, so only trusted pictures are ever shown.
+export function safeStickers(list) {
+  if (!Array.isArray(list)) return []
+  return list.filter((sticker) => sticker && isTrustedStickerSrc(sticker.src))
 }
 
 // ---------- STICKER TRAY ----------

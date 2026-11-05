@@ -6,7 +6,7 @@ import { runTransaction, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { useRoom, stageIndex } from '../composables/useRoom.js'
 import { resolveEditedVideos } from '../clips.js'
-import { roomLayout, roomFrameStyle } from '../stripData.js'
+import { roomLayout, roomFrameStyle, safeStickers } from '../stripData.js'
 import { FORMATS, exportOptions, stripContents, hasGifSticker } from '../exportRules.js'
 import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
@@ -30,7 +30,7 @@ const slotPhotos = computed(() => room.value.stripSlots || {})
 const editedVideos = computed(() => resolveEditedVideos(room.value.editedVideos, clips.value))
 const edits = computed(() => room.value.stripEdits || {})
 const crops = computed(() => room.value.stripCrops || {}) // where each photo sits in its slot (Pick page)
-const stickers = computed(() => room.value.stripStickers || [])
+const stickers = computed(() => safeStickers(room.value.stripStickers))
 
 // The photos as { id: photo }, so a slot can find its photo quickly
 const photosById = computed(() => {
