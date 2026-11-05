@@ -81,6 +81,13 @@ async function copyLink() {
   background: var(--soft);
 }
 
+/* A picture can be see-through in its corners (a template's rounded outline): nothing is put behind it, so the white
+   card shows there. (A video cannot be see-through: its corners are white already, so the card hides them too.) */
+img.result {
+  border-radius: 0;
+  background: transparent;
+}
+
 /* Download / Copy link: the icon next to the words */
 .icon-btn-text {
   display: inline-flex;
