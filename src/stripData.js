@@ -186,11 +186,16 @@ export function cropOf(crops, index) {
 //   cropZoomCss goes on a box around it: scale() zooms in around that same point, so the slot is always filled
 // The zoom is on a separate box because a selfie video already uses "transform" to flip itself like a mirror.
 export function cropPositionCss(crop) {
-  return { objectPosition: crop.x + '% ' + crop.y + '%' }
+  const x = Number.isFinite(Number(crop && crop.x)) ? Number(crop.x) : 50
+  const y = Number.isFinite(Number(crop && crop.y)) ? Number(crop.y) : 50
+  return { objectPosition: x + '% ' + y + '%' }
 }
 
 export function cropZoomCss(crop) {
-  return { transform: 'scale(' + crop.zoom + ')', transformOrigin: crop.x + '% ' + crop.y + '%' }
+  const zoom = Number.isFinite(Number(crop && crop.zoom)) ? Number(crop.zoom) : 1
+  const x = Number.isFinite(Number(crop && crop.x)) ? Number(crop.x) : 50
+  const y = Number.isFinite(Number(crop && crop.y)) ? Number(crop.y) : 50
+  return { transform: 'scale(' + zoom + ')', transformOrigin: x + '% ' + y + '%' }
 }
 
 // The same crop for a <canvas>: which part of the photo or video frame (in its own pixels) to draw in a w x h slot.

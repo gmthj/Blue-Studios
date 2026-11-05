@@ -28,9 +28,15 @@ service firebase.storage {
       return signedIn() && request.auth.token.get('admin', false) == true;
     }
 
-    // Only the owner (an account) can upload into their own folder
+    // Admins can ban an account (users/{uid}.banned = true). Banned accounts cannot upload or change files.
+    function notBanned() {
+      let profile = /databases/(default)/documents/users/$(request.auth.uid);
+      return !firestore.exists(profile) || firestore.get(profile).data.get('banned', false) != true;
+    }
+
+    // Only the owner (an account that is not banned) can upload into their own folder
     function isOwner(uid) {
-      return isAccount() && request.auth.uid == uid;
+      return isAccount() && request.auth.uid == uid && notBanned();
     }
 
     // Is the Firestore item (templates/{id} or stickers/{id}) public and not hidden by an admin?
@@ -59,8 +65,9 @@ service firebase.storage {
         (fileName == 'thumbnail.png' && isImageUnder(2))
         || (fileName in ['card.webp', 'card.png'] && isImageUnder(1))
         || (fileName == 'project.json'
-            // No size limit: pictures uploaded in the template editor are saved inside this file
+            // Up to 50 MB: pictures uploaded in the template editor are saved inside this file
             // (as data: URLs), so a frame with photos can be big. Only the owner can upload, and only JSON.
+            && request.resource.size < 50 * 1024 * 1024
             && request.resource.contentType == 'application/json'));
 
       allow delete: if isOwner(uid) || isAdmin();

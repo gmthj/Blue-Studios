@@ -8,6 +8,7 @@
 // ?dryRun=1 only reports what would happen and changes nothing. Run it first after a change to the rules.
 // Every automatic close or delete is written to the admin log with adminId 'system'.
 
+import crypto from 'node:crypto'
 import { adminDb } from './_lib/firebaseAdmin.js'
 import { deleteRoomEverything } from './_lib/roomDelete.js'
 import { cleanupStatus, RULE_NAMES } from '../src/roomCleanup.js'
@@ -25,7 +26,9 @@ export default async function handler(req, res) {
   if (!secret) {
     return res.status(500).json({ error: 'CRON_SECRET is not set' })
   }
-  if ((req.headers.authorization || '') !== 'Bearer ' + secret) {
+  const expected = Buffer.from('Bearer ' + secret)
+  const actual = Buffer.from(String((req.headers && req.headers.authorization) || ''))
+  if (expected.length !== actual.length || !crypto.timingSafeEqual(expected, actual)) {
     return res.status(401).json({ error: 'Not allowed' })
   }
 

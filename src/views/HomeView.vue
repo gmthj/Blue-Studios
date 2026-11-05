@@ -231,9 +231,16 @@ async function createRoom() {
   try {
     // Keep picking a random code from 0000 to 9999 until we find one that is not already used.
     // padStart(4, '0') adds zeros in front, e.g. 42 -> '0042'
+    // Cap at 20 tries so the browser never freezes if all room codes are busy.
     let code = ''
     let roomSnap = null
+    let tries = 0
     do {
+      if (++tries > 20) {
+        errorMessage.value = 'All rooms are busy right now. Please try again in a moment.'
+        loading.value = false
+        return
+      }
       code = String(Math.floor(Math.random() * 10000)).padStart(4, '0')
       roomSnap = await getDoc(doc(db, 'rooms', code))
     } while (roomSnap.exists())

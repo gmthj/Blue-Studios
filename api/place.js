@@ -170,9 +170,28 @@ async function search(query, near) {
   return ordered.filter((result) => !seen.has(result.place_id) && seen.add(result.place_id))
 }
 
+// Per-IP rate limit in memory so automated scripts cannot get the server blocked by Nominatim
+const IP_WINDOW_MS = 60 * 1000
+const MAX_PER_IP = 20
+const ipHits = new Map()
+
+function isIpRateLimited(req) {
+  const ip = String((req.headers && (req.headers['x-forwarded-for'] || req.headers['x-real-ip'])) || 'local').split(',')[0].trim()
+  const now = Date.now()
+  if (ipHits.size > 1000) ipHits.clear()
+  const recent = (ipHits.get(ip) || []).filter((t) => now - t < IP_WINDOW_MS)
+  if (recent.length >= MAX_PER_IP) return true
+  recent.push(now)
+  ipHits.set(ip, recent)
+  return false
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' })
+  }
+  if (isIpRateLimited(req)) {
+    return res.status(429).json({ error: 'Too many location requests. Please wait a moment.' })
   }
 
   const query = String(req.query.q || '').trim()

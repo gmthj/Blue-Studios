@@ -51,8 +51,16 @@ export async function createShare({ id, title, format, file, roomCode }) {
   return { id: id, ...data }
 }
 
-// Open a share by its id. Gives back null if there is none.
+// Only trust download links that come from Firebase Storage (stops fake javascript: or outside links)
+export function isSafeShareUrl(url) {
+  return typeof url === 'string' && url.startsWith('https://firebasestorage.googleapis.com/')
+}
+
+// Open a share by its id. Gives back null if there is none (or if its link is not a valid Storage link).
 export async function getShare(id) {
   const snap = await getDoc(doc(db, 'shares', id))
-  return snap.exists() ? { id: snap.id, ...snap.data() } : null
+  if (!snap.exists()) return null
+  const data = snap.data()
+  if (!isSafeShareUrl(data.fileUrl)) return null
+  return { id: snap.id, ...data }
 }

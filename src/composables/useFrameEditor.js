@@ -2381,20 +2381,23 @@ function getVectorBarTitle(el) {
   return 'Colors'
 }
 
+const SAFE_SVG_COLOR = /^[#a-zA-Z0-9(),.% -]{1,64}$/
+
 function getRenderedSvg(el) {
   if (!el || !el.svgRaw) return ''
   // Cleaned every time it is shown, because a template made by someone else (or saved before this
   // was added) may still have an unsafe SVG inside it (see utils/cleanSvg.js)
   let svg = cleanSvg(el.svgRaw)
-  if (el.colorMap) {
+  if (el.colorMap && typeof el.colorMap === 'object') {
     for (const [orig, repl] of Object.entries(el.colorMap)) {
-      if (!repl || orig === repl) continue
+      if (typeof orig !== 'string' || typeof repl !== 'string' || !repl || orig === repl) continue
+      if (!SAFE_SVG_COLOR.test(orig) || !SAFE_SVG_COLOR.test(repl)) continue
       const escaped = orig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
       const reg = new RegExp(escaped, 'gi')
       svg = svg.replace(reg, repl)
     }
   }
-  return svg
+  return cleanSvg(svg)
 }
 
 function getShapePathD(shapeType) {

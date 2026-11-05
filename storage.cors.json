@@ -1,6 +1,10 @@
 [
   {
-    "origin": ["*"],
+    "origin": [
+      "https://blue-studios-mu.vercel.app",
+      "http://localhost:5173",
+      "http://localhost:4173"
+    ],
     "method": ["GET", "HEAD"],
     "responseHeader": ["Content-Type", "Content-Length"],
     "maxAgeSeconds": 3600

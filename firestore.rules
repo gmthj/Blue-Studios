@@ -266,6 +266,12 @@ service cloud.firestore {
               || value.matches('data:image/(png|jpeg|webp);base64,[A-Za-z0-9+/=]*')));
       }
 
+      function isSafeCssValue(value) {
+        return value is string && value.size() <= 500
+          && !value.matches('(?i).*url[ ]*[(].*')
+          && !value.matches('.*[;{}<>\\\\].*');
+      }
+
       // The frame chosen from a template (the same fields as templateFrameFields in src/studio.js)
       function isCustomTemplate(t) {
         return t == null || (t is map
@@ -275,10 +281,10 @@ service cloud.firestore {
           && t.aspect is number && t.aspect > 0 && t.aspect < 10
           && t.slots is list && t.slots.size() >= 1 && t.slots.size() <= 12
           && t.shape in ['square', 'rounded', 'circle']
-          && t.background is string && t.background.size() <= 500
-          && t.border is string && t.border.size() <= 500
+          && isSafeCssValue(t.background)
+          && isSafeCssValue(t.border)
           && t.caption is string && t.caption.size() <= 200
-          && t.captionColor is string && t.captionColor.size() <= 500
+          && isSafeCssValue(t.captionColor)
           && isFramePicture(t.get('thumbnailUrl', null)));
       }
 
@@ -290,7 +296,7 @@ service cloud.firestore {
           && t.name is string && t.name.size() <= 200
           && t.artist_name is string && t.artist_name.size() <= 200
           && t.duration is number
-          && t.audio is string && t.audio.size() <= 1000 && t.audio.matches('https://.*')
+          && t.audio is string && t.audio.size() <= 1000 && t.audio.matches('https://(firebasestorage[.]googleapis[.]com|[A-Za-z0-9.-]*jamendo[.]com|[A-Za-z0-9.-]*archive[.]org)/.*')
           && t.waveform is string && t.waveform.size() <= 20000
           && t.musicinfo is map && t.musicinfo.size() <= 3;
       }
@@ -715,6 +721,8 @@ service cloud.firestore {
         && request.resource.data.format in ['png', 'gif', 'mp4']
         && request.resource.data.filePath == 'shares/' + request.auth.uid + '/' + shareId + '.' + request.resource.data.format
         && request.resource.data.fileUrl is string
+        && request.resource.data.fileUrl.size() <= 1000
+        && request.resource.data.fileUrl.matches('https://firebasestorage[.]googleapis[.]com/v0/b/[^/?]+/o/shares%2F' + request.auth.uid + '%2F' + shareId + '[.]' + request.resource.data.format + '[?].*')
         && request.resource.data.size is int
         && request.resource.data.roomCode is string
         && request.resource.data.createdAt is int;

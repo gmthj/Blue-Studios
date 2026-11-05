@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { newShareId, shareLink } from '../src/shares.js'
+import { newShareId, shareLink, isSafeShareUrl } from '../src/shares.js'
 
 // Unit tests: the share link helpers used by the Share page
 
@@ -32,5 +32,14 @@ describe('TestSuite: shareLink', () => {
     const link = shareLink('abc123')
     expect(link.endsWith('/s/abc123')).toBe(true)
     expect(link.startsWith('http')).toBe(true)
+  })
+})
+
+describe('TestSuite: isSafeShareUrl', () => {
+  it('Test1: allows Firebase Storage links and blocks javascript: or external links', () => {
+    expect(isSafeShareUrl('https://firebasestorage.googleapis.com/v0/b/demo/o/shares%2Fu1%2Fs1.mp4?alt=media')).toBe(true)
+    expect(isSafeShareUrl('javascript:alert(1)')).toBe(false)
+    expect(isSafeShareUrl('https://evil.example/file.mp4')).toBe(false)
+    expect(isSafeShareUrl(null)).toBe(false)
   })
 })

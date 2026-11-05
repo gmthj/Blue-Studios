@@ -7,7 +7,22 @@
 // money) is never copied into the JavaScript that every visitor downloads.
 // Same pattern as api/token.js: check who is calling, then do the secret work.
 
-import { getCaller } from './_lib/firebaseAdmin.js'
+import { getCaller, adminDb } from './_lib/firebaseAdmin.js'
+
+// Per-user cooldown window in memory so one account cannot rapidly drain remove.bg credits
+const RATE_WINDOW_MS = 10 * 60 * 1000
+const MAX_REQUESTS_PER_WINDOW = 20
+const userHits = new Map()
+
+function isRateLimited(uid) {
+  const now = Date.now()
+  if (userHits.size > 500) userHits.clear()
+  const recent = (userHits.get(uid) || []).filter((t) => now - t < RATE_WINDOW_MS)
+  if (recent.length >= MAX_REQUESTS_PER_WINDOW) return true
+  recent.push(now)
+  userHits.set(uid, recent)
+  return false
+}
 
 export default async function handler(req, res) {
   // Only POST: this function spends our remove.bg credits, so nothing else may reach it.
@@ -27,6 +42,16 @@ export default async function handler(req, res) {
   const caller = await getCaller(req)
   if (caller === null || caller.firebase.sign_in_provider === 'anonymous') {
     return res.status(401).json({ error: 'Log in to remove backgrounds' })
+  }
+
+  // Banned accounts cannot spend remove.bg credits
+  const profileSnap = await adminDb().doc('users/' + caller.uid).get()
+  if (profileSnap.exists && profileSnap.data().banned === true) {
+    return res.status(403).json({ error: 'Your account has been suspended' })
+  }
+
+  if (isRateLimited(caller.uid)) {
+    return res.status(429).json({ error: 'Too many background removals. Please wait a few minutes.' })
   }
 
   // Check the input before spending a credit: base64 text only, and small enough for Vercel
