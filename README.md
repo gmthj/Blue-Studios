@@ -27,11 +27,18 @@ Don't want to set up your own Firebase project? Try the deployed app:
 
 **🔗 [blue-studios-mu.vercel.app](https://blue-studios-mu.vercel.app)**
 
-- **No account needed for a room.** Type your name and press **Create a new room**. Open the site on a second device (or scan the QR code with your phone), type the 4-digit code and press **Join**. Press the round shutter button: the countdown runs on every device.
-- Click **Sign up** to make a free account and try **My Studio**, the **Marketplace**, the **Frame Editor** and the **Sticker Maker**.
-- The **Admin** page needs an account with the admin mark (see [step 6](#becoming-an-admin-optional)).
+Two demo accounts are available:
 
-This is a shared demo: please don't enter any real personal information, and remember that the photos you take are seen by everyone in the room.
+| Role  | Email | Password |
+|-------|-------|----------|
+| User  | `blue.studios.cc+test1@gmail.com` | `ii&ehV47GH3WP&S#XOi!` |
+
+- Log in with the **user** account to try **My Studio**, the **Marketplace**, the **Frame Editor** and the **Sticker Maker**.
+- Log in with the **admin** account to explore the **Admin** page (reports, items, accounts, rooms, the moderator log).
+- **No account needed for a room.** Type your name and press **Create a new room**. Open the site on a second device (or scan the QR code with your phone), type the 4-digit code and press **Join**. Press the round shutter button: the countdown runs on every device.
+- Alternatively, click **Sign up** to make your own free account.
+
+This is a shared demo: please don't enter any real personal information, expect other people to be using the same demo accounts, and remember that the photos you take are seen by everyone in the room.
 
 ## Prerequisites
 
