@@ -181,7 +181,7 @@ function unban() {
         Joined {{ formatTime(picked.createdAt) }}<template v-if="picked.lastLogin"> &middot; last login {{ formatTime(picked.lastLogin) }}</template>
       </p>
       <p v-if="activity" class="small mb-3">
-        {{ activity.templates }} template(s) &middot; {{ activity.stickers }} sticker(s) &middot; {{ activity.strips }} saved strip(s)
+        {{ activity.templates }} frame(s) &middot; {{ activity.stickers }} sticker(s) &middot; {{ activity.strips }} saved strip(s)
         &middot; reported {{ activity.reportsAgainst }} time(s) &middot; filed {{ activity.reportsFiled }} report(s)
         <button v-if="activity.templates + activity.stickers > 0" class="btn btn-link btn-sm p-0 ms-1 align-baseline" @click="emit('open-tab', 'items', { owner: picked.uid })">See their items</button>
       </p>

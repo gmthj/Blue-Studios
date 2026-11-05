@@ -47,7 +47,7 @@ test('a guest opening an item is asked to log in to save it', async ({ page }) =
   await page.goto('/marketplace?type=templates&item=templates:' + template.id)
   const dialog = page.getByRole('dialog', { name: template.name })
   await expect(dialog).toBeVisible()
-  await expect(dialog.getByRole('link', { name: 'Use template' })).toBeVisible()
+  await expect(dialog.getByRole('link', { name: 'Use frame' })).toBeVisible()
   await expect(dialog.getByRole('link', { name: 'Log in to save' })).toBeVisible()
   await expect(dialog.getByRole('button', { name: 'Report' })).toHaveCount(0)
 
@@ -110,11 +110,11 @@ test('makers see their own item as theirs, with no Save or Report', async ({ pag
   await expect(dialog.getByRole('button', { name: 'Report' })).toHaveCount(0)
 })
 
-test('"Use template" starts a room with that frame', async ({ page }) => {
+test('"Use frame" starts a room with that frame', async ({ page }) => {
   const template = await seedTemplate(maker)
 
   await page.goto('/marketplace?type=templates&item=templates:' + template.id)
-  await page.getByRole('dialog', { name: template.name }).getByRole('link', { name: 'Use template' }).click()
+  await page.getByRole('dialog', { name: template.name }).getByRole('link', { name: 'Use frame' }).click()
 
   await expect(page).toHaveURL('/?template=' + template.id)
   await expect(page.getByText('Your room will use')).toBeVisible()

@@ -83,7 +83,7 @@ function choose() {
 
 <style scoped>
 /* Every tile is the same card, whatever the size of the frame picture: at most 72px wide,
-   smaller only if the panel is narrow (the grid in StripView.vue sets the columns) */
+   smaller only if the panel is narrow (the grid in PickView.vue sets the columns) */
 .frame-tile-wrap {
   width: 100%;
   max-width: 72px;

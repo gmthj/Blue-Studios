@@ -141,7 +141,7 @@ watch(activeTextElement, (newEl) => {
             <span class="fw-bold fs-6 text-dark text-capitalize">
               {{
                 activeTool === 'elements' ? 'Elements' :
-                activeTool === 'templates' ? 'Templates Presets' :
+                activeTool === 'templates' ? 'Template Presets' :
                 activeTool === 'text' ? 'Text & Typography' :
                 activeTool === 'uploads' ? 'Upload Media' :
                 activeTool === 'background' ? 'Background Styles' :

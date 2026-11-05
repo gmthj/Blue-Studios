@@ -60,7 +60,7 @@ const {
           </div>
           <h5 class="fw-bold text-success mb-1">Saved Successfully!</h5>
           <p class="text-muted small mb-3">
-            <strong>"{{ templateName || 'Untitled frame' }}"</strong> is now saved to your My Studio templates.
+            <strong>"{{ templateName || 'Untitled frame' }}"</strong> is now saved to your frames in My Studio.
           </p>
           <div class="d-inline-flex align-items-center gap-2 px-3 py-1 bg-light rounded-pill border small text-secondary">
             <span class="spinner-grow spinner-grow-sm text-success" role="status" style="width: 8px; height: 8px;"></span>
@@ -97,7 +97,7 @@ const {
                 <line x1="12" y1="16" x2="12" y2="12" />
                 <line x1="12" y1="8" x2="12.01" y2="8" />
               </svg>
-              <span>This template belongs to another creator. Saving will save a <strong>new copy</strong> to your My Studio.</span>
+              <span>This frame belongs to another creator. Saving will save a <strong>new copy</strong> to your My Studio.</span>
             </div>
 
             <!-- Frame Title Field -->
@@ -109,7 +109,7 @@ const {
                 type="text"
                 maxlength="40"
                 class="form-control"
-                placeholder="e.g. my-templates-1"
+                placeholder="e.g. my-frame-1"
                 required
                 autofocus
               />

@@ -176,7 +176,7 @@ async function logOutAndGoHome() {
   -webkit-backdrop-filter: blur(12px);
 }
 
-/* 56px tall, the same as the old Bootstrap navbar (RoomView.vue counts on that for the camera's height) */
+/* 56px tall, the same as the old Bootstrap navbar (ShootView.vue counts on that for the camera's height) */
 .nav-inner {
   display: flex;
   align-items: center;

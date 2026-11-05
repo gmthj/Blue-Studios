@@ -29,7 +29,7 @@ const cards = computed(() => {
     { label: 'Open reports', icon: 'shield', value: s.openReports, detail: s.openReports > 0 ? 'waiting for a moderator' : 'all handled', tab: 'reports', warn: s.openReports > 0 },
     { label: 'Accounts', icon: 'users', value: s.accounts, detail: s.banned + ' banned', tab: 'accounts' },
     { label: 'Open rooms', icon: 'camera', value: s.openRooms, detail: s.rooms + ' rooms made in total', tab: 'rooms' },
-    { label: 'Templates', icon: 'layout', value: s.templates, detail: s.publicTemplates + ' public · ' + s.hiddenTemplates + ' hidden', tab: 'items', extra: { type: 'templates' } },
+    { label: 'Frames', icon: 'layout', value: s.templates, detail: s.publicTemplates + ' public · ' + s.hiddenTemplates + ' hidden', tab: 'items', extra: { type: 'templates' } },
     { label: 'Stickers', icon: 'sparkle', value: s.stickers, detail: s.publicStickers + ' public · ' + s.hiddenStickers + ' hidden', tab: 'items', extra: { type: 'stickers' } },
     { label: 'Saved strips', icon: 'film', value: s.strips, detail: 'in people\'s studios' },
   ]

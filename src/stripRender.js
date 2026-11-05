@@ -131,7 +131,7 @@ export async function createScene({ layout, frameStyle, photosById, slotPhotos, 
     const photo = photosById[id]
     photos.push(photo ? await loadImage(photo.image) : null)
 
-    // A slot holds the id of a photo, a clip, or a saved edit (see StripView.vue)
+    // A slot holds the id of a photo, a clip, or a saved edit (see PickView.vue)
     const edit = editedVideos[id]
     const clip = clips.find((c) => c.id === id)
     if (edit && edit.entries.length > 0) {

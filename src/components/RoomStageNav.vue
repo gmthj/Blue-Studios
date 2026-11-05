@@ -7,7 +7,7 @@ import AppIcon from './AppIcon.vue'
 // Back is on the left, the main way forward on the right, and shortcuts that jump over steps (quick export,
 // edit video...) are the small links between them. The pages' own Next / Back buttons are gone.
 // Shown once by RoomLayout.vue. It leaves room for itself: RoomLayout.vue pads the page by its height
-// (the CSS variable --stage-nav-h, set below) and RoomView.vue takes it off the camera page's height.
+// (the CSS variable --stage-nav-h, set below) and ShootView.vue takes it off the camera page's height.
 //
 // Per step (kind: back = left, skip = a link in the middle, next = the blue button on the right):
 //   Shoot    > Make photostrip

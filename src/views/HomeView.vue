@@ -202,7 +202,7 @@ const FEATURES = [
   {
     icon: 'music',
     title: 'Stickers, video and music',
-    text: 'Make stickers, cut a video strip, mix a track, and share templates in the marketplace.',
+    text: 'Make stickers, cut a video strip, mix a track, and share frames in the marketplace.',
     link: '/marketplace',
   },
 ]
@@ -421,12 +421,12 @@ async function joinRoom() {
                 <p class="start-template-label">Your room will use</p>
                 <p class="start-template-name text-truncate" :title="startTemplate.name">{{ startTemplate.name }}</p>
               </div>
-              <button type="button" class="start-template-remove" aria-label="Don't use this template" @click="dropStartTemplate">
+              <button type="button" class="start-template-remove" aria-label="Don't use this frame" @click="dropStartTemplate">
                 <AppIcon name="close" :size="16" />
               </button>
             </div>
             <p v-else-if="startTemplateMissing" class="start-template-missing">
-              That template isn't available any more, so the room will start with the default frame.
+              That frame isn't available any more, so the room will start with the default frame.
             </p>
 
             <!-- Code typed: Create steps back to a small outline button, so Join is clearly the one to press -->

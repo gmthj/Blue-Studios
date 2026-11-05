@@ -323,7 +323,7 @@ export async function templateFrameFields(template) {
       stripLayoutId: project?.stripLayoutId || project?.activeLayout || 'custom',
       stripCustomTemplate: {
         id: template.id,
-        name: template.name || project?.templateName || 'Custom Template',
+        name: template.name || project?.templateName || 'Custom Frame',
         aspect: project?.aspect || (3 / 10),
         slots: slots,
         shape: (project?.slotShape || project?.shape || 'square').toLowerCase(),

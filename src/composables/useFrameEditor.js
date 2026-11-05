@@ -141,7 +141,7 @@ const getInitialTemplateQuery = () => {
 const initialTemplateParam = getInitialTemplateQuery()
 const isWorkspaceLoading = ref(Boolean(initialTemplateParam || route?.query?.template))
 const workspaceLoadingMessage = ref(
-  (initialTemplateParam || route?.query?.template) ? 'Loading saved template...' : ''
+  (initialTemplateParam || route?.query?.template) ? 'Loading saved frame...' : ''
 )
 
 const isOwner = computed(() => {
@@ -203,7 +203,7 @@ const {
 
 
 // --- Editor Navigation & Toolbar State ---
-const templateName = ref('my-templates-1')
+const templateName = ref('my-frame-1')
 const activeLayout = ref('retro-4-cut') // 'retro-4-cut' | 'polaroid-2x2' | 'film-3-cut'
 const slotShape = ref('Rounded') // 'Square' | 'Rounded' | 'Circle'
 const isMobileInitial = typeof window !== 'undefined' && window.innerWidth < 992
@@ -2757,7 +2757,7 @@ async function onCanvasDrop(event) {
       if (project && (project.canvasElements || project.templateName || project.slotCount)) {
         applySnapshot(project)
         currentSavedFrameId.value = project.id || `frame_${Date.now()}`
-        notify(`Loaded template "${project.templateName || 'Template'}" from file!`)
+        notify(`Loaded frame "${project.templateName || 'Frame'}" from file!`)
         return
       }
     }
@@ -2839,7 +2839,7 @@ function getNextDefaultTemplateName() {
 
   for (const item of sources) {
     const name = (item.name || item.templateName || '').trim()
-    const match = name.match(/^my-templates-(\d+)$/i) || name.match(/^my-template-(\d+)$/i)
+    const match = name.match(/^my-frames?-(\d+)$/i) || name.match(/^my-templates?-(\d+)$/i)
     if (match) {
       const num = parseInt(match[1], 10)
       if (!isNaN(num) && num > highestNum) {
@@ -2848,7 +2848,7 @@ function getNextDefaultTemplateName() {
     }
   }
 
-  return `my-templates-${highestNum + 1}`
+  return `my-frame-${highestNum + 1}`
 }
 
 function saveFrame() {
@@ -3027,7 +3027,7 @@ const allUserTemplates = computed(() => {
     list.push({
       id: t.id,
       cloudId: t.id,
-      name: t.name || 'Untitled Template',
+      name: t.name || 'Untitled Frame',
       slotCount: t.slotCount || 4,
       updatedAt: t.updatedAt || t.createdAt || Date.now(),
       cardUrl: t.cardUrl || null,
@@ -3154,7 +3154,7 @@ async function confirmSwitchWithoutSaving() {
 async function loadTemplateWorkspace(targetTemplate) {
   if (!targetTemplate) return
   isWorkspaceLoading.value = true
-  workspaceLoadingMessage.value = `Loading "${targetTemplate.name || 'template'}"...`
+  workspaceLoadingMessage.value = `Loading "${targetTemplate.name || 'frame'}"...`
   try {
     notify(`Loading "${targetTemplate.name}"...`)
     let project = targetTemplate.projectData
@@ -3203,11 +3203,11 @@ async function loadTemplateWorkspace(targetTemplate) {
       pendingSwitchTemplate.value = null
       notify(`Loaded "${targetTemplate.name}"!`)
     } else {
-      notify('Could not load template data.')
+      notify('Could not load frame data.')
     }
   } catch (err) {
     console.error('Error switching to template workspace:', err)
-    notify('Failed to load template')
+    notify('Failed to load frame')
   } finally {
     isWorkspaceLoading.value = false
   }
@@ -3215,10 +3215,10 @@ async function loadTemplateWorkspace(targetTemplate) {
 
 async function deleteUserTemplate(template) {
   if (!template) return false
-  const name = template.name || 'this template'
+  const name = template.name || 'this frame'
   const sure = await askConfirm({
     title: `Delete "${name}"?`,
-    message: 'This cannot be undone. This template will be permanently removed.',
+    message: 'This cannot be undone. This frame will be permanently removed.',
     confirmLabel: 'Delete',
     danger: true,
     icon: 'trash'
@@ -3275,7 +3275,7 @@ async function deleteUserTemplate(template) {
     return true
   } catch (err) {
     console.error('Failed to delete template:', err)
-    notify('Could not delete template')
+    notify('Could not delete frame')
     return false
   }
 }
@@ -3302,7 +3302,7 @@ async function startNewBlankFrame() {
 function openSavedFrame(frameRecord) {
   if (!frameRecord || !frameRecord.projectData) return
   isWorkspaceLoading.value = true
-  workspaceLoadingMessage.value = `Opening "${frameRecord.name || 'template'}"...`
+  workspaceLoadingMessage.value = `Opening "${frameRecord.name || 'frame'}"...`
   try {
     applySnapshot(frameRecord.projectData)
     currentSavedFrameId.value = frameRecord.id
@@ -3319,7 +3319,7 @@ function openSavedFrame(frameRecord) {
         isWorkspaceLoading.value = false
       }, 100)
     })
-    notify(`Loaded "${frameRecord.name || 'Template'}"!`)
+    notify(`Loaded "${frameRecord.name || 'Frame'}"!`)
   } catch (err) {
     console.error('Failed to open saved frame:', err)
     isWorkspaceLoading.value = false
@@ -3329,7 +3329,7 @@ function openSavedFrame(frameRecord) {
 async function loadTemplateFromQuery(templateId) {
   if (!templateId) return
   isWorkspaceLoading.value = true
-  workspaceLoadingMessage.value = 'Loading saved template...'
+  workspaceLoadingMessage.value = 'Loading saved frame...'
   try {
     let projectData = null
     let template = null
@@ -3372,13 +3372,13 @@ async function loadTemplateFromQuery(templateId) {
       await nextTick()
       triggerFitToScreen()
       await new Promise((r) => setTimeout(r, 120))
-      notify(`Loaded template "${template?.name || templateName.value}"!`)
+      notify(`Loaded frame "${template?.name || templateName.value}"!`)
     } else {
-      notify('Template not found or private.')
+      notify('Frame not found or private.')
     }
   } catch (err) {
     console.error('Error loading template from cloud:', err)
-    notify('Could not load template from cloud.')
+    notify('Could not load frame from the cloud.')
   } finally {
     isWorkspaceLoading.value = false
   }
@@ -3391,7 +3391,7 @@ async function deleteFrame(id) {
     if (currentSavedFrameId.value === id) {
       currentSavedFrameId.value = null
     }
-    notify('Template removed from saved folder')
+    notify('Frame removed from saved folder')
   } catch (err) {
     console.error('Failed to delete frame:', err)
     notify('Could not delete frame')
@@ -3401,8 +3401,8 @@ async function deleteFrame(id) {
 async function confirmDeleteFrame(frame) {
   if (!frame) return
   const sure = await askConfirm({
-    title: `Delete "${frame.name || 'this template'}"?`,
-    message: 'This will remove the template from your saved browser frames.',
+    title: `Delete "${frame.name || 'this frame'}"?`,
+    message: 'This will remove the frame from your saved browser frames.',
     confirmLabel: 'Delete',
     danger: true,
     icon: 'trash'
@@ -3899,7 +3899,7 @@ onMounted(async () => {
 
   if (templateToLoad) {
     isWorkspaceLoading.value = true
-    workspaceLoadingMessage.value = 'Loading saved template...'
+    workspaceLoadingMessage.value = 'Loading saved frame...'
 
     // Prioritize loading the target template, running uploads & saved frames loads in parallel
     await Promise.all([
@@ -3934,7 +3934,7 @@ onMounted(async () => {
 
     // If opening fresh without a loaded template, ensure frame title reflects the next sequence
     if (!cloudId.value && !currentSavedFrameId.value) {
-      if (!templateName.value || templateName.value === 'Retro 4-cut' || templateName.value === 'my-templates-1') {
+      if (!templateName.value || templateName.value === 'Retro 4-cut' || templateName.value === 'my-templates-1' || templateName.value === 'my-frame-1') {
         templateName.value = getNextDefaultTemplateName()
       }
     }

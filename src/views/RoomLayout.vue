@@ -19,7 +19,7 @@ import RoomStageNav from '../components/RoomStageNav.vue'
 import MessagePage from '../components/MessagePage.vue'
 
 // The parent page for everything inside a room (/room/:code/shoot, /room/:code/pick, /room/:code/video, /decorate, /music, /export).
-// It joins the room and starts the video call ONCE. The child pages (RoomView, StripView)
+// It joins the room and starts the video call ONCE. The child pages (ShootView, PickView)
 // are shown in <router-view>, so moving between them does not drop the call.
 // New room features can be added as more child pages in router.js.
 
@@ -87,7 +87,7 @@ async function applyStartTemplate(roomData) {
     const template = await getItem('templates', startTemplateId)
     if (!template) {
       showNotice({
-        title: "That template isn't available",
+        title: "That frame isn't available",
         message: 'It may have been made private or removed, so the room starts with the default frame.',
         icon: 'layout',
       })
@@ -99,7 +99,7 @@ async function applyStartTemplate(roomData) {
   } catch (error) {
     console.error(error)
     showNotice({
-      title: "Couldn't load the template",
+      title: "Couldn't load the frame",
       message: 'The room starts with the default frame. You can still choose a frame on the Pick page.',
       icon: 'layout',
     })
@@ -220,7 +220,7 @@ watch(activeMembers, (members) => {
   </MessagePage>
 
   <template v-else>
-    <!-- The child page: RoomView (camera), StripView (photostrip) or DecorateView.
+    <!-- The child page: ShootView (camera), PickView (photostrip) or DecorateView.
          Moving to another step: the old page fades out, the new one drops in from above.
          Not in syllabus: v-slot="{ Component }" gives us the page, <component :is> shows it.
          The <div> is there because <Transition> can only animate ONE element, and most step pages
@@ -247,7 +247,7 @@ watch(activeMembers, (members) => {
 <style scoped>
 /* Room at the bottom of every page as tall as the docked Back / Next bar (RoomStageNav.vue sets its height as
    --stage-nav-h), so the bar never covers the end of the page. The camera page is exactly one screen tall:
-   RoomView.vue takes the same height off it. */
+   ShootView.vue takes the same height off it. */
 .room-stage-body {
   padding-bottom: var(--stage-nav-h, 56px);
 }

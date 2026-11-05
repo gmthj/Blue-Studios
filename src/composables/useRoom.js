@@ -47,8 +47,8 @@ function roomRef() {
 // room.furthestStage is the furthest stage the room has reached, so the stage bar knows which
 // steps people can jump back (and forward again) to. room.visitedStages lists the steps it has really been on. RoomLayout.vue keeps it up to date.
 export const ROOM_STAGES = [
-  { id: 'shoot', label: 'Shoot', hasPage: true },       // /room/4821/shoot    (RoomView)
-  { id: 'pick', label: 'Pick', hasPage: true },         // /room/4821/pick     (StripView)
+  { id: 'shoot', label: 'Shoot', hasPage: true },       // /room/4821/shoot    (ShootView)
+  { id: 'pick', label: 'Pick', hasPage: true },         // /room/4821/pick     (PickView)
   { id: 'video', label: 'Video', hasPage: true },       // /room/4821/video    (VideoView)
   { id: 'decorate', label: 'Decorate', hasPage: true }, // /room/4821/decorate (DecorateView)
   { id: 'music', label: 'Music', hasPage: true },       // /room/4821/music    (MusicView)
@@ -107,7 +107,7 @@ let clipsLoaded = false
 
 // Can the room move to this stage? Says which slots are empty if not.
 // Goes up by one every time a move is refused because a frame is empty, so the Pick page can make the
-// empty frames flash (StripView.vue watches it)
+// empty frames flash (PickView.vue watches it)
 const fullStripBlocked = ref(0)
 
 async function checkFullStrip(stageId) {

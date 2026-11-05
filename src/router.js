@@ -3,8 +3,8 @@ import { playSound } from './sounds.js'
 import HomeView from './views/HomeView.vue'
 import LoginView from './views/LoginView.vue'
 import RoomLayout from './views/RoomLayout.vue'
-import RoomView from './views/RoomView.vue'
-import StripView from './views/StripView.vue'
+import ShootView from './views/ShootView.vue'
+import PickView from './views/PickView.vue'
 import MusicView from './views/MusicView.vue'
 import FrameEditorView from './views/FrameEditorView.vue'
 import DecorateView from './views/DecorateView.vue'
@@ -47,8 +47,8 @@ const routes = [
     children: [
       // /room/4821 on its own: start at shoot (RoomLayout then moves to the room's current stage)
       { path: '', redirect: (to) => '/room/' + to.params.code + '/shoot' },
-      { path: 'shoot', component: RoomView },        // /room/4821/shoot    (camera)
-      { path: 'pick', component: StripView },        // /room/4821/pick     (choose photos for the strip)
+      { path: 'shoot', component: ShootView },       // /room/4821/shoot    (camera)
+      { path: 'pick', component: PickView },         // /room/4821/pick     (choose photos for the strip)
       { path: 'video', component: VideoView },       // /room/4821/video    (edit the clips into one video)
       { path: 'decorate', component: DecorateView }, // /room/4821/decorate (filters and stickers)
       { path: 'music', component: MusicView },       // /room/4821/music    (music mixer)

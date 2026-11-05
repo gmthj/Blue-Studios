@@ -95,7 +95,7 @@ async function upload(path, data, contentType) {
 }
 
 // A plain 4-cut frame, in the shape the frame editor saves (projectData in useFrameEditor.js),
-// so "Use template" and "Open in Frame Editor" can load it
+// so "Use frame" and "Open in Frame Editor" can load it
 function templateProject(name) {
   const slots = [
     { x: 6, y: 3, w: 88, h: 20 },
