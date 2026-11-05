@@ -10,7 +10,7 @@ import { getClipUrl, CLIP_SECONDS } from './clips.js'
 // Used by the Export page (see ExportView.vue).
 //
 // A "scene" holds everything already downloaded (photos, stickers, videos), so any moment can be drawn quickly:
-//   const scene = await createScene({ layout, frameStyle, photosById, slotPhotos, edits, crops, stickers, clips, editedVideos })
+//   const scene = await createScene({ layout, frameStyle, photosById, slotPhotos, edits, crops, stickers, clips, editedVideos, cornerColor })
 //   scene.tick(t)                  // start / pause the videos so they match the time t (seconds)
 //   scene.draw(ctx, W, H, t)       // draw the strip as it looks t seconds in
 //   scene.stop()                   // pause everything
@@ -82,6 +82,17 @@ function drawCover(ctx, source, sourceWidth, sourceHeight, x, y, w, h, mirrored,
   ctx.restore()
 }
 
+// Draw a picture so it fills the whole canvas, cropped in the middle if its shape is different, never stretched.
+// The same as the screen does for a template's picture (background: url(...) center / cover).
+function drawCoverFull(ctx, picture, W, H) {
+  const pictureWidth = picture.naturalWidth || picture.width
+  const pictureHeight = picture.naturalHeight || picture.height
+  const scale = Math.max(W / pictureWidth, H / pictureHeight)
+  const cropWidth = W / scale // how much of the picture fits
+  const cropHeight = H / scale
+  ctx.drawImage(picture, (pictureWidth - cropWidth) / 2, (pictureHeight - cropHeight) / 2, cropWidth, cropHeight, 0, 0, W, H)
+}
+
 // Make the slot's shape the only area that can be drawn on (the same shapes as PhotoStrip.vue)
 function clipToSlot(ctx, shape, x, y, w, h, W) {
   ctx.beginPath()
@@ -119,7 +130,9 @@ async function buildTrack(entries) {
   return { segments: segments, length: offset }
 }
 
-export async function createScene({ layout, frameStyle, photosById, slotPhotos, edits, crops, stickers, clips, editedVideos }) {
+// cornerColor: what shows where a template's picture is see-through (outside its rounded outline, in the corners).
+//   null: nothing, so it stays see-through (a PNG can be). A colour: that colour (a video cannot be see-through, so it is white).
+export async function createScene({ layout, frameStyle, photosById, slotPhotos, edits, crops, stickers, clips, editedVideos, cornerColor = '#FFFFFF' }) {
   const slots = layout.slots
 
   // Download everything first, so drawing a frame is instant
@@ -241,9 +254,18 @@ export async function createScene({ layout, frameStyle, photosById, slotPhotos, 
   // Draw the strip as it looks t seconds in
   function draw(ctx, W, H, t) {
     ctx.clearRect(0, 0, W, H)
-    ctx.fillStyle = frameStyle.background
-    ctx.fillRect(0, 0, W, H)
-    if (frameArt) ctx.drawImage(frameArt, 0, 0, W, H)
+    if (frameArt) {
+      // A template is a picture with its own outline, so nothing is painted in its colour under it: that colour would
+      // show as square corners outside the rounded outline (on screen there is none either, see PhotoStrip.vue).
+      if (cornerColor) {
+        ctx.fillStyle = cornerColor
+        ctx.fillRect(0, 0, W, H)
+      }
+      drawCoverFull(ctx, frameArt, W, H)
+    } else {
+      ctx.fillStyle = frameStyle.background // a plain frame: its colour, or a template whose picture could not be loaded
+      ctx.fillRect(0, 0, W, H)
+    }
 
     for (let i = 0; i < slots.length; i++) {
       const s = slots[i]
@@ -296,11 +318,14 @@ export async function createScene({ layout, frameStyle, photosById, slotPhotos, 
       ctx.restore()
     }
 
-    // The frame's border (PhotoStrip draws a 4px border on a strip about 300px wide)
-    const borderWidth = (W * 4) / 300
-    ctx.strokeStyle = frameStyle.border
-    ctx.lineWidth = borderWidth
-    ctx.strokeRect(borderWidth / 2, borderWidth / 2, W - borderWidth, H - borderWidth)
+    // The frame's border (PhotoStrip draws a 4px border on a strip about 300px wide). A template picture has its own
+    // outline, so the screen draws no border on it (.strip.templated), and neither does the export.
+    if (!frameStyle.thumbnailUrl) {
+      const borderWidth = (W * 4) / 300
+      ctx.strokeStyle = frameStyle.border
+      ctx.lineWidth = borderWidth
+      ctx.strokeRect(borderWidth / 2, borderWidth / 2, W - borderWidth, H - borderWidth)
+    }
 
     // Caption (a template with artwork has its own, so the screen shows none)
     if (frameStyle.caption && !frameStyle.thumbnailUrl) {

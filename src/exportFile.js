@@ -30,7 +30,8 @@ export async function buildExportFile({ format, strip, audioPath, onStatus, prog
 
   onStatus('Getting your strip ready...')
   progress.creep('ready') // downloading everything has no way to say how far it is
-  const scene = await createScene(strip)
+  // A PNG keeps a template's see-through corners. A video cannot be see-through, so its corners are white.
+  const scene = await createScene({ ...strip, cornerColor: format === 'png' ? null : '#FFFFFF' })
   progress.report('ready', 1)
 
   let blob = null

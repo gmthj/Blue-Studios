@@ -180,6 +180,19 @@ describe('Integration test: a PNG on the same bar, and the formats that are refu
     bar.stop()
   })
 
+  it('Test1b: a PNG keeps a template\'s see-through corners, and a video gets white ones', async () => {
+    const { bar } = makeBar('png', false)
+    await buildExportFile({ format: 'png', strip, onStatus: () => {}, progress: bar, isCancelled: noCancel })
+    bar.stop()
+    expect(mocks.createScene.mock.calls[0][0].cornerColor).toBeNull()
+
+    mocks.createScene.mockClear()
+    const video = makeBar('mp4', false)
+    await buildExportFile({ format: 'mp4', strip, onStatus: () => {}, progress: video.bar, isCancelled: noCancel })
+    video.bar.stop()
+    expect(mocks.createScene.mock.calls[0][0].cornerColor).toBe('#FFFFFF')
+  })
+
   it('Test2b: an unknown format is refused', async () => {
     const { bar } = makeBar('png', false)
     await expect(buildExportFile({ format: 'avi', strip, onStatus: () => {}, progress: bar, isCancelled: noCancel })).rejects.toThrow('Unknown format')
