@@ -1,4 +1,5 @@
 import { LAYOUTS } from '../stripData.js'
+import { SVG_TEMPLATES, STICKERS, SHAPES, TAPES, EMOJI } from '../stickerArt.js'
 export { LAYOUTS }
 
 /**
@@ -11,99 +12,8 @@ export { LAYOUTS }
 // =============================================================================
 // 1. SVG Vector Templates for Dynamic Recoloring
 // =============================================================================
-export const SVG_TEMPLATES = {
-  daisy: `<svg width="100%" height="100%" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <g>
-      <circle cx="50" cy="22" r="14" fill="#F472B6"/>
-      <circle cx="50" cy="78" r="14" fill="#F472B6"/>
-      <circle cx="22" cy="50" r="14" fill="#F472B6"/>
-      <circle cx="78" cy="50" r="14" fill="#F472B6"/>
-      <circle cx="30" cy="30" r="14" fill="#F472B6"/>
-      <circle cx="70" cy="30" r="14" fill="#F472B6"/>
-      <circle cx="30" cy="70" r="14" fill="#F472B6"/>
-      <circle cx="70" cy="70" r="14" fill="#F472B6"/>
-      <circle cx="50" cy="50" r="18" fill="#FACC15"/>
-      <circle cx="45" cy="45" r="4" fill="#FFFFFF" fill-opacity="0.85"/>
-    </g>
-  </svg>`,
-  sparkleStar: `<svg width="100%" height="100%" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M50 0 C50 35 65 50 100 50 C65 50 50 65 50 100 C50 65 35 50 0 50 C35 50 50 35 50 0 Z" fill="#38BDF8"/>
-    <path d="M50 20 C50 40 60 50 80 50 C60 50 50 60 50 80 C50 60 40 50 20 50 C40 50 50 40 50 20 Z" fill="#818CF8"/>
-    <circle cx="50" cy="50" r="8" fill="#FFFFFF"/>
-  </svg>`,
-  ribbonBow: `<svg width="100%" height="100%" viewBox="0 0 100 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M50 40 C35 20 10 15 10 35 C10 55 35 50 50 40 Z" fill="#F472B6"/>
-    <path d="M50 40 C65 20 90 15 90 35 C90 55 65 50 50 40 Z" fill="#F472B6"/>
-    <path d="M40 42 L25 75 L38 72 L45 52 Z" fill="#DB2777"/>
-    <path d="M60 42 L75 75 L62 72 L55 52 Z" fill="#DB2777"/>
-    <ellipse cx="50" cy="40" rx="10" ry="12" fill="#BE185D"/>
-    <circle cx="48" cy="37" r="3" fill="#FFFFFF" fill-opacity="0.8"/>
-  </svg>`,
-  cherries: `<svg width="100%" height="100%" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M35 55 C40 30 55 15 65 10 C62 25 70 40 75 60" stroke="#15803D" stroke-width="5" stroke-linecap="round" fill="none"/>
-    <path d="M65 10 C75 12 85 8 90 2 C88 15 78 18 65 10 Z" fill="#22C55E"/>
-    <circle cx="32" cy="68" r="20" fill="#E11D48"/>
-    <circle cx="75" cy="72" r="20" fill="#E11D48"/>
-    <circle cx="26" cy="62" r="5" fill="#FDA4AF"/>
-    <circle cx="69" cy="66" r="5" fill="#FDA4AF"/>
-  </svg>`,
-  smiley: `<svg width="100%" height="100%" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="50" cy="50" r="46" fill="#FDE047" stroke="#0F172A" stroke-width="4"/>
-    <ellipse cx="36" cy="42" rx="4" ry="7" fill="#0F172A"/>
-    <ellipse cx="64" cy="42" rx="4" ry="7" fill="#0F172A"/>
-    <circle cx="30" cy="52" r="5" fill="#F472B6" fill-opacity="0.7"/>
-    <circle cx="70" cy="52" r="5" fill="#F472B6" fill-opacity="0.7"/>
-    <path d="M35 58 C40 70 60 70 65 58" stroke="#0F172A" stroke-width="4" stroke-linecap="round" fill="none"/>
-  </svg>`,
-  butterfly: `<svg width="100%" height="100%" viewBox="0 0 100 90" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M50 45 C35 15 10 20 8 45 C6 60 25 70 50 50 Z" fill="#A78BFA"/>
-    <path d="M50 45 C65 15 90 20 92 45 C94 60 75 70 50 50 Z" fill="#A78BFA"/>
-    <path d="M50 50 C38 55 25 75 35 85 C45 92 50 70 50 50 Z" fill="#F472B6"/>
-    <path d="M50 50 C62 55 75 75 65 85 C55 92 50 70 50 50 Z" fill="#F472B6"/>
-    <ellipse cx="50" cy="48" rx="4" ry="24" fill="#1E293B"/>
-    <path d="M48 26 C45 18 38 15 35 16" stroke="#1E293B" stroke-width="2" stroke-linecap="round" fill="none"/>
-    <path d="M52 26 C55 18 62 15 65 16" stroke="#1E293B" stroke-width="2" stroke-linecap="round" fill="none"/>
-  </svg>`,
-  retroCamera: `<svg width="100%" height="100%" viewBox="0 0 100 80" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect x="10" y="20" width="80" height="52" rx="10" fill="#334155"/>
-    <rect x="10" y="32" width="80" height="28" fill="#F8FAFC"/>
-    <rect x="25" y="12" width="22" height="10" rx="3" fill="#64748B"/>
-    <circle cx="75" cy="16" r="5" fill="#EF4444"/>
-    <circle cx="50" cy="46" r="18" fill="#1E293B"/>
-    <circle cx="50" cy="46" r="13" fill="#38BDF8"/>
-    <circle cx="46" cy="42" r="4" fill="#FFFFFF"/>
-  </svg>`,
-  polaroidFrame: `<svg width="100%" height="100%" viewBox="0 0 100 120" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <rect x="5" y="5" width="90" height="110" rx="4" fill="#FFFFFF" stroke="#CBD5E1" stroke-width="2"/>
-    <rect x="12" y="12" width="76" height="76" rx="2" fill="#1E293B"/>
-    <circle cx="50" cy="103" r="5" fill="#E2E8F0"/>
-  </svg>`,
-  sparkleHeart: `<svg width="100%" height="100%" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M50 86 C22 68 8 50 8 30 C8 16 19 6 33 6 C42 6 47 11 50 17 C53 11 58 6 67 6 C81 6 92 16 92 30 C92 50 78 68 50 86 Z" fill="#F43F5E"/>
-    <path d="M70 24 L73 33 L82 36 L73 39 L70 48 L67 39 L58 36 L67 33 Z" fill="#FFFFFF"/>
-    <circle cx="30" cy="28" r="4" fill="#FDA4AF"/>
-  </svg>`,
-  starburst: `<svg width="100%" height="100%" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <polygon points="50,4 62,35 96,38 70,62 78,96 50,78 22,96 30,62 4,38 38,35" fill="#FACC15"/>
-    <circle cx="50" cy="50" r="14" fill="#F97316"/>
-    <circle cx="47" cy="46" r="4" fill="#FFFFFF"/>
-  </svg>`,
-  cloudCute: `<svg width="100%" height="100%" viewBox="0 0 100 70" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <path d="M25 60 C12 60 2 50 2 38 C2 28 9 20 20 18 C24 8 36 2 48 2 C62 2 73 10 77 22 C88 22 98 30 98 42 C98 52 89 60 78 60 Z" fill="#38BDF8"/>
-    <ellipse cx="38" cy="36" rx="3" ry="5" fill="#0F172A"/>
-    <ellipse cx="62" cy="36" rx="3" ry="5" fill="#0F172A"/>
-    <circle cx="28" cy="42" r="4" fill="#F472B6" fill-opacity="0.8"/>
-    <circle cx="72" cy="42" r="4" fill="#F472B6" fill-opacity="0.8"/>
-    <path d="M46 44 C48 48 52 48 54 44" stroke="#0F172A" stroke-width="2.5" stroke-linecap="round" fill="none"/>
-  </svg>`,
-  vinylRecord: `<svg width="100%" height="100%" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-    <circle cx="50" cy="50" r="48" fill="#18181B"/>
-    <circle cx="50" cy="50" r="38" stroke="#27272A" stroke-width="2" fill="none"/>
-    <circle cx="50" cy="50" r="28" stroke="#3F3F46" stroke-width="1.5" fill="none"/>
-    <circle cx="50" cy="50" r="18" fill="#F43F5E"/>
-    <circle cx="50" cy="50" r="6" fill="#FEFBF6"/>
-  </svg>`
-}
+// The 12 drawings live in stickerArt.js (shared with the Sticker Maker and Decorate)
+export { SVG_TEMPLATES }
 
 // =============================================================================
 // 2. Curated Starter Layout Presets
@@ -359,65 +269,29 @@ export const ELEMENT_TAG_FILTERS = [
   'Frames'
 ]
 
+// The Elements tab, built from stickerArt.js so it matches the Sticker Maker and Decorate:
+// the same stickers, names, search words and washi tape (the tape is the same SVG everywhere).
+const longest = (ratio, size) => (ratio > 1 ? { width: Math.round(size / ratio), height: size } : { width: size, height: Math.round(size * ratio) })
 export const ELEMENT_CATEGORIES = [
   {
-    title: 'Recolorable Vector Elements',
+    title: 'Stickers',
     tag: 'Y2K',
-    items: [
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.daisy, name: 'Daisy Blossom', width: 44, height: 44, tags: ['Y2K', 'Doodles'] },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleStar, name: 'Cyber Sparkle', width: 42, height: 42, tags: ['Y2K', 'Doodles'] },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.ribbonBow, name: 'Ribbon Bow', width: 46, height: 38, tags: ['Y2K', 'Cute Animals'] },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.cherries, name: 'Twin Cherries', width: 42, height: 42, tags: ['Y2K', 'Doodles'] },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.smiley, name: 'Smiley Badge', width: 42, height: 42, tags: ['Y2K', 'Doodles'] },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.butterfly, name: 'Pastel Butterfly', width: 44, height: 40, tags: ['Cute Animals', 'Y2K'] },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.retroCamera, name: 'Vintage Camera', width: 48, height: 40, tags: ['Film & Vintage', 'Doodles'] },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.polaroidFrame, name: 'Mini Frame', width: 40, height: 48, tags: ['Frames', 'Film & Vintage'] },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.sparkleHeart, name: 'Sparkle Heart', width: 44, height: 42, tags: ['Y2K', 'Doodles', 'Cute Animals'] },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.starburst, name: 'Y2K Starburst', width: 44, height: 44, tags: ['Y2K', 'Doodles'] },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.cloudCute, name: 'Fluffy Cloud', width: 48, height: 34, tags: ['Doodles', 'Cute Animals'] },
-      { type: 'sticker', isSvg: true, svgRaw: SVG_TEMPLATES.vinylRecord, name: 'Vinyl Disc', width: 44, height: 44, tags: ['Film & Vintage', 'Y2K'] }
-    ]
+    items: STICKERS.map((art) => ({ type: 'sticker', isSvg: true, svgRaw: art.svg, name: art.name, keywords: art.keywords, tags: art.tags, ...longest(art.ratio, 44) }))
   },
   {
-    title: 'Cute Shapes',
+    title: 'Cute shapes',
     tag: 'Doodles',
-    items: [
-      { type: 'shape', shapeType: 'star', name: 'Golden Star', color: '#FACC15', strokeColor: '#0F172A', strokeWidth: 2, width: 40, height: 40, tags: ['Doodles', 'Y2K'] },
-      { type: 'shape', shapeType: 'heart', name: 'Sweetheart', color: '#F472B6', strokeColor: '#DB2777', strokeWidth: 2, width: 38, height: 38, tags: ['Doodles', 'Cute Animals'] },
-      { type: 'shape', shapeType: 'circle', name: 'Color Dot', color: '#2F5BEA', strokeColor: '#1E40AF', strokeWidth: 2, width: 36, height: 36, tags: ['Doodles'] },
-      { type: 'shape', shapeType: 'diamond', name: 'Gem Diamond', color: '#38BDF8', strokeColor: '#0284C7', strokeWidth: 2, width: 38, height: 38, tags: ['Doodles', 'Y2K'] }
-    ]
+    items: SHAPES.map((art) => ({ type: 'shape', shapeType: art.shape.type, name: art.name, keywords: art.keywords, color: art.shape.color, strokeColor: art.shape.strokeColor, strokeWidth: art.shape.strokeWidth, width: 40, height: 40, tags: art.tags }))
   },
   {
-    title: 'Washi Tapes & Pins',
+    title: 'Washi tape',
     tag: 'Washi & Pins',
-    items: [
-      { type: 'tape', name: 'Yellow Tape', color: 'rgba(253, 224, 71, 0.85)', patternColor: '#FFFFFF', width: 90, height: 20, tags: ['Washi & Pins'] },
-      { type: 'tape', name: 'Pink Tape', color: 'rgba(244, 114, 182, 0.85)', patternColor: '#FFFFFF', width: 90, height: 20, tags: ['Washi & Pins'] },
-      { type: 'tape', name: 'Sky Tape', color: 'rgba(96, 165, 250, 0.85)', patternColor: '#FFFFFF', width: 90, height: 20, tags: ['Washi & Pins'] },
-      { type: 'tape', name: 'Mint Tape', color: 'rgba(52, 211, 153, 0.85)', patternColor: '#FFFFFF', width: 90, height: 20, tags: ['Washi & Pins'] },
-      { type: 'sticker', content: '📌', name: 'Push Pin', fontSize: 24, tags: ['Washi & Pins'] },
-      { type: 'sticker', content: '📎', name: 'Paperclip', fontSize: 24, tags: ['Washi & Pins'] }
-    ]
+    items: TAPES.map((art) => ({ type: 'sticker', isSvg: true, svgRaw: art.svg, name: art.name, keywords: art.keywords, tags: art.tags, width: 90, height: 20 }))
   },
   {
-    title: 'Photobooth Doodles & Emojis',
+    title: 'Emoji',
     tag: 'Doodles',
-    items: [
-      { type: 'sticker', content: '✨', name: 'Sparkles', fontSize: 28, tags: ['Doodles', 'Y2K'] },
-      { type: 'sticker', content: '⭐', name: 'Star', fontSize: 28, tags: ['Doodles', 'Y2K'] },
-      { type: 'sticker', content: '💖', name: 'Heart', fontSize: 28, tags: ['Doodles', 'Cute Animals'] },
-      { type: 'sticker', content: '🎀', name: 'Ribbon', fontSize: 28, tags: ['Cute Animals', 'Y2K'] },
-      { type: 'sticker', content: '📷', name: 'Camera', fontSize: 28, tags: ['Film & Vintage'] },
-      { type: 'sticker', content: '🎞️', name: 'Film Strip', fontSize: 28, tags: ['Film & Vintage'] },
-      { type: 'sticker', content: '🌸', name: 'Cherry Blossom', fontSize: 28, tags: ['Doodles'] },
-      { type: 'sticker', content: '🕶️', name: 'Y2K Shades', fontSize: 28, tags: ['Y2K'] },
-      { type: 'sticker', content: '⚡', name: 'Lightning', fontSize: 28, tags: ['Y2K', 'Doodles'] },
-      { type: 'sticker', content: '🐰', name: 'Cute Bunny', fontSize: 28, tags: ['Cute Animals'] },
-      { type: 'sticker', content: '🐱', name: 'White Kitty', fontSize: 28, tags: ['Cute Animals'] },
-      { type: 'sticker', content: '🧸', name: 'Teddy Bear', fontSize: 28, tags: ['Cute Animals'] },
-      { type: 'sticker', content: '✌️', name: 'Peace Sign', fontSize: 28, tags: ['Y2K'] }
-    ]
+    items: EMOJI.map((art) => ({ type: 'sticker', content: art.content, name: art.name, keywords: art.keywords, fontSize: 28, tags: art.tags }))
   }
 ]
 

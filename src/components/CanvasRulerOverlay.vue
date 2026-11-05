@@ -269,7 +269,7 @@ onBeforeUnmount(() => {
     <div
       class="top-ruler-wrapper"
       title="Click and drag downwards to add a horizontal guide"
-      @mousedown="$emit('startDragGuide', 'horizontal', $event)"
+      @pointerdown="$emit('startDragGuide', 'horizontal', $event)"
     >
       <canvas ref="topRulerCanvas" class="ruler-canvas top-canvas"></canvas>
     </div>
@@ -278,7 +278,7 @@ onBeforeUnmount(() => {
     <div
       class="left-ruler-wrapper"
       title="Click and drag rightwards to add a vertical guide"
-      @mousedown="$emit('startDragGuide', 'vertical', $event)"
+      @pointerdown="$emit('startDragGuide', 'vertical', $event)"
     >
       <canvas ref="leftRulerCanvas" class="ruler-canvas left-canvas"></canvas>
     </div>
@@ -299,7 +299,7 @@ onBeforeUnmount(() => {
       }"
       @mouseenter="hoveredGuideId = g.id"
       @mouseleave="hoveredGuideId = null"
-      @mousedown.stop="$emit('startMoveGuide', g, $event)"
+      @pointerdown.stop="$emit('startMoveGuide', g, $event)"
     >
       <!-- Guide Position Tag -->
       <div class="guide-tag">
@@ -310,7 +310,7 @@ onBeforeUnmount(() => {
           title="Remove guide"
           aria-label="Remove guide"
           @click.stop="$emit('removeGuide', g.id)"
-          @mousedown.stop
+          @pointerdown.stop
         >
           <AppIcon name="close" :size="12" />
         </button>

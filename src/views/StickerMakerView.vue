@@ -14,11 +14,18 @@ import { encodeGif } from '../gif.js'
 // The shared artwork + font library (src/stickerArt.js). One list is used by the Sticker
 // Maker, Joash's Template Editor and Germaine's photostrip tray, so nothing is copied
 // three times and the three pages can never drift apart.
-import { ART, STICKERS, SHAPES, TAPES, EMOJI, FONTS, FONT_GROUPS_READY, loadArtFonts } from '../stickerArt.js'
+import { svgColors, recolorSvgUrl, matchesArt, STICKERS, SHAPES, TAPES, EMOJI, FONTS, FONT_GROUPS_READY, loadArtFonts } from '../stickerArt.js'
 // Background removal goes through our server function, so the remove.bg key stays secret.
 import { removeBackground } from '../removeBackground.js'
 // The design guide says never use window.confirm(): it cannot be styled and some phones block it.
-import { askConfirm } from '../composables/useDialog.js'
+import { askConfirm, askText } from '../composables/useDialog.js'
+// The Frame Editor's rulers and guides, so both editors measure the same way
+import CanvasRulerOverlay from '../components/CanvasRulerOverlay.vue'
+import GuideTips from '../components/GuideTips.vue'
+// "Your uploads", shared with the Frame Editor (kept in this browser)
+import { loadUploads, saveUpload, removeUpload, fileToUpload, UPLOAD_TYPES } from '../uploadsStore.js'
+// The layers of saved stickers, so "My stickers" can open one again to keep editing it
+import { saveStickerProject, loadStickerProject, stickerProjectIds, keepableFrames } from '../stickerProjects.js'
 // The app's shared line icons, so this page matches every other page.
 import AppIcon from '../components/AppIcon.vue'
 
@@ -59,7 +66,7 @@ async function waitForFonts() {
   const wanted = new Set()
   for (const frame of frames.value) {
     for (const layer of frame.layers) {
-      if (layer.type === 'text') wanted.add((layer.weight || 400) + ' 56px ' + fontStack(layer.font))
+      if (layer.type === 'text') wanted.add(textFont(layer, 56))
     }
   }
   try {
@@ -71,16 +78,14 @@ async function waitForFonts() {
 }
 
 // ----
-// Sticker artwork filters
-// WHY: every item in the shared library has tags ('Y2K', 'Doodles'...). Showing them as
-// chips lets you find a sticker without scrolling past all 35.
+// Element search
+// WHY a search box (like the Template Editor's): typing "heart" or "y2k" is quicker than
+// scrolling. It matches the name and the tags ('Y2K', 'Doodles'...) of each item.
 // ----
-const ART_TAGS = ['All', ...new Set(ART.flatMap((item) => item.tags))]
-const activeTag = ref('All')
+const artQuery = ref('')
 
 function byTag(list) {
-  if (activeTag.value === 'All') return list
-  return list.filter((item) => item.tags.includes(activeTag.value))
+  return list.filter((item) => matchesArt(item, artQuery.value)) // name, search words and tags (stickerArt.js)
 }
 
 // One entry per section of the Stickers drawer, so the template is a single loop.
@@ -90,6 +95,43 @@ const artSections = computed(() => [
   { id: 'tapes', title: 'Washi tape', items: byTag(TAPES) },
   { id: 'emoji', title: 'Emoji', items: byTag(EMOJI) },
 ].filter((section) => section.items.length > 0))
+
+// ----
+// Rulers and snapping, like the Template Editor
+// ----
+// Rulers: marks every 100px of the 1000px sticker along the top and the left, and a light grid.
+// Snapping: while you drag, a layer's centre clicks onto the middle of the canvas, the
+// thirds and the centre of the other layers, and a red line shows what it lined up with.
+const showRulers = ref(false)
+// Where the canvas sits in the grey area, for the rulers (the same component as the Frame Editor)
+const rulerView = ref({ scale: 1, panX: 0, panY: 0 })
+const rulerCursor = ref({ screenX: -100, screenY: -100, canvasX: 0, canvasY: 0 })
+// Guides dragged out of the rulers: { id, type: 'horizontal' | 'vertical', pos } in pixels of the 1000px sticker
+const guides = ref([])
+const draggedGuide = ref(null)
+const SNAP_DISTANCE = 1.2 // percent of the canvas: close enough to click into place
+const snapLines = ref({ x: null, y: null }) // the red lines while dragging, in percent
+
+function snapTargets(axis, movingId) {
+  const targets = [50, 100 / 3, 200 / 3]
+  // Your own guides too (stored in pixels of the 1000px sticker, so /10 for percent)
+  for (const guide of guides.value) {
+    if ((axis === 'x') === (guide.type === 'vertical')) targets.push(guide.pos / 10)
+  }
+  for (const layer of layers.value) {
+    if (layer.id !== movingId && layer.type !== 'draw') targets.push(layer[axis])
+  }
+  return targets
+}
+
+function snap(value, axis, movingId) {
+  let best = null
+  for (const target of snapTargets(axis, movingId)) {
+    if (Math.abs(target - value) <= SNAP_DISTANCE && (best === null || Math.abs(target - value) < Math.abs(best - value))) best = target
+  }
+  snapLines.value = { ...snapLines.value, [axis]: best }
+  return best === null ? value : best
+}
 
 // The text bar's alignment button steps through these.
 const ALIGNS = ['left', 'center', 'right']
@@ -165,7 +207,7 @@ const LOCAL_ICONS = {
 
 // icon: an AppIcon name; local: a LOCAL_ICONS name.
 const TOOLS = [
-  { id: 'stickers', label: 'Stickers', local: 'sticker' },
+  { id: 'stickers', label: 'Elements', local: 'sticker' },
   { id: 'text', label: 'Text', local: 'text' },
   { id: 'draw', label: 'Draw', icon: 'pen' },
   { id: 'upload', label: 'Upload', icon: 'upload' },
@@ -278,6 +320,8 @@ async function cutOutBackground(layer) {
 
 // Save to My Studio pop-up
 const showSave = ref(false)
+// The sticker's name: shown in the top bar and filled in when you save (you can change it there too)
+// Empty at the start: the box shows "Untitled" in grey, so it is clear the sticker has no name yet
 const stickerName = ref('')
 const pickedDefaults = ref([])
 const pickedFolders = ref([])
@@ -290,7 +334,7 @@ const editName = ref('')
 
 // Download pop-up
 const dlOpen = ref(false)
-const dlName = ref('my-sticker')
+const dlName = ref('untitled')
 const dlBg = ref('white')        // 'white' | 'clear'
 const dlFormat = ref('photo')    // 'photo' | 'gif'
 const downloading = ref(false)
@@ -477,7 +521,228 @@ function toggleTextStyle(key) {
   if (!layer) return
   snapshot()
   if (key === 'bold') layer.weight = layer.weight >= 600 ? 400 : 700
-  else layer[key] = !layer[key] // 'italic' or 'underline'
+  else layer[key] = !layer[key] // 'italic', 'underline', 'strike' or 'caps'
+}
+
+// The words as they are drawn: ALL CAPS when the aA button is on
+function shownText(layer) {
+  const text = layer.text || ''
+  return layer.caps ? text.toUpperCase() : text
+}
+
+// ----
+// Curved text (an arch), the same idea as the Template Editor's Curve slider
+// ----
+// curve: -100 to 100. 0 is straight, 100 bends the words over half a circle (an arch, ∩),
+// -100 bends them under (a smile, ∪). One line only: curved text does not wrap.
+// The letters are placed one by one along the circle, the same way on screen and in the
+// download, so what you see is what you get.
+let measureCtx = null
+const fontsVersion = ref(0) // goes up when a web font finishes loading, so curves are measured again
+
+function curvedLetters(layer, fontPx) {
+  void fontsVersion.value // re-measure when fonts arrive
+  if (!measureCtx) measureCtx = document.createElement('canvas').getContext('2d')
+  return placeLetters(measureCtx, layer, fontPx)
+}
+
+// ctx: any 2D canvas context (it is only used to measure). Returns each letter's centre
+// (x, y, in pixels, from the middle of the words) and its angle in degrees.
+function placeLetters(ctx, layer, fontPx) {
+  ctx.font = textFont(layer, fontPx)
+  const spacing = ((layer.spacing || 0) / 100) * fontPx
+  const letters = Array.from(shownText(layer).replace(/\n/g, ' '))
+  const widths = letters.map((letter) => ctx.measureText(letter).width + spacing)
+  const total = widths.reduce((sum, width) => sum + width, 0) || 1
+  const sweep = (Math.abs(layer.curve || 0) / 100) * Math.PI // the angle the words cover
+  const radius = total / Math.max(sweep, 0.0001)
+  const up = (layer.curve || 0) > 0
+  // How far the ends drop below (or rise above) the middle: half of it moves the whole arch
+  // up or down, so it stays centred on its spot.
+  const sag = radius * (1 - Math.cos(sweep / 2))
+  let along = 0
+  return letters.map((letter, i) => {
+    const middle = along + widths[i] / 2
+    along += widths[i]
+    const angle = (middle - total / 2) / radius
+    const x = radius * Math.sin(angle)
+    const drop = radius * (1 - Math.cos(angle))
+    return {
+      letter: letter,
+      x: x,
+      y: up ? drop - sag / 2 : sag / 2 - drop,
+      rotate: ((up ? angle : -angle) * 180) / Math.PI,
+    }
+  })
+}
+
+// The CSS / canvas font of a text layer at a size in pixels
+function textFont(layer, fontPx) {
+  return (layer.italic ? 'italic ' : '') + (layer.weight || 400) + ' ' + fontPx + 'px ' + fontStack(layer.font)
+}
+
+// ----
+// Right-click menu (long-press on a phone): the order of the layers, duplicate, lock, delete
+// ----
+// WHY a menu: four Arrange buttons took a whole row of the panel, and you only need them now
+// and then. Right-clicking the thing you want to move is where people look for them.
+const layerMenu = ref(null) // { id, x, y } or null
+// Touch screens get "press and hold" in the hint instead of "right-click"
+const isTouch = typeof window !== 'undefined' && window.matchMedia('(pointer: coarse)').matches
+
+function openLayerMenu(event, layer) {
+  event.preventDefault()
+  selectedId.value = layer.id
+  editingId.value = null
+  const menuWidth = 210
+  const menuHeight = 290
+  layerMenu.value = {
+    id: layer.id,
+    x: Math.max(8, Math.min(event.clientX, window.innerWidth - menuWidth - 8)),
+    y: Math.max(8, Math.min(event.clientY, window.innerHeight - menuHeight - 8)),
+  }
+}
+
+function closeLayerMenu() {
+  layerMenu.value = null
+}
+
+const menuLayer = computed(() => layerMenu.value && layers.value.find((layer) => layer.id === layerMenu.value.id))
+const menuIndex = computed(() => (menuLayer.value ? layers.value.indexOf(menuLayer.value) : -1))
+
+function fromMenu(action) {
+  const layer = menuLayer.value
+  closeLayerMenu()
+  if (layer) action(layer)
+}
+
+// The bar over the canvas for a selected photo or sticker (like the Template Editor's)
+const imageAdjustOpen = ref(false)
+// Photos, stickers and emoji (emoji have no font, so they get this bar, not the text bar)
+const selectedImage = computed(() => {
+  const layer = selectedLayer.value
+  return layer && (layer.type === 'image' || layer.emoji) ? layer : null
+})
+watch(selectedId, () => { imageAdjustOpen.value = false })
+
+// Change the colours of a drawing (stickers, shapes, tape and SVG uploads), like the Frame
+// Editor: each colour of the drawing is a swatch on the bar; pick one to change it.
+const recolorTarget = ref(null) // the drawing's original colour being changed
+const imageColors = computed(() => (selectedImage.value && selectedImage.value.svg ? svgColors(selectedImage.value.svg) : []))
+watch(selectedId, () => { recolorTarget.value = null })
+
+function shownColor(layer, original) {
+  return (layer.colorMap && layer.colorMap[original]) || original
+}
+
+function recolor(original, color) {
+  const layer = selectedImage.value
+  if (!layer || !layer.svg) return
+  snapshot()
+  layer.colorMap = { ...(layer.colorMap || {}), [original]: color }
+  layer.url = recolorSvgUrl(layer.svg, layer.colorMap)
+}
+
+// "#F472B6" from "#F472B6", "#FFF" -> "#FFFFFF", "#FFFF" (with alpha) -> "#FFFFFF", for <input type="color">
+function hexOnly(color) {
+  const c = String(color || '').trim()
+  if (/^#[0-9a-f]{3,4}$/i.test(c)) return '#' + c.slice(1, 4).split('').map((ch) => ch + ch).join('')
+  if (/^#[0-9a-f]{6}/i.test(c)) return c.slice(0, 7)
+  return '#000000'
+}
+
+// A colour typed into its box: only a real colour code is used (#RGB or #RRGGBB)
+function setHexColor(original, input) {
+  let value = input.value.trim()
+  if (value && !value.startsWith('#')) value = '#' + value
+  if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)) recolor(original, value.toUpperCase())
+  else input.value = shownColor(selectedLayer.value, original).toUpperCase() // put the old one back
+}
+
+// Width and height in pixels of the 1000px download. The layer stores its width in percent
+// and its shape as height / width (ratio), so a new height changes the ratio (it stretches).
+function layerPx(layer) {
+  const w = Math.round((layer.width / 100) * DOWNLOAD_SIZE)
+  return { w, h: Math.round(w * layer.ratio) }
+}
+
+function setLayerPx(side, value) {
+  const layer = selectedLayer.value
+  const px = Math.max(10, Math.min(2000, Number(value) || 0))
+  if (!layer || !px) return
+  snapshot()
+  const now = layerPx(layer)
+  if (side === 'w') {
+    layer.width = (px / DOWNLOAD_SIZE) * 100
+    layer.ratio = now.h / px // keep the height, so only the width changes
+  } else {
+    layer.ratio = px / now.w
+  }
+}
+
+function toggleRecolor(original) {
+  imageAdjustOpen.value = false
+  recolorTarget.value = recolorTarget.value === original ? null : original
+}
+
+// Centre the selected layer left to right ('x') or top to bottom ('y')
+function centreLayer(axis) {
+  if (!selectedLayer.value) return
+  snapshot()
+  selectedLayer.value[axis] = 50
+}
+
+function toggleFlip(key) {
+  if (!selectedLayer.value) return
+  snapshot()
+  selectedLayer.value[key] = !selectedLayer.value[key]
+}
+
+// Hide: the layer stays in the list but is not shown, and not in the download
+function toggleHidden(layer) {
+  snapshot()
+  layer.hidden = !layer.hidden
+}
+
+function toggleLock(layer) {
+  snapshot()
+  layer.locked = !layer.locked
+}
+
+// Long-press on a phone opens the same menu (phones have no right-click)
+let pressTimer = null
+function startLongPress(event, layer) {
+  if (event.pointerType !== 'touch' || event.target.closest('.sm-grip-handle, button')) return
+  cancelLongPress()
+  const start = { x: event.clientX, y: event.clientY }
+  pressTimer = setTimeout(() => {
+    pressTimer = null
+    endGesture() // the finger stays down, so the layer must not move under it
+    openLayerMenu({ preventDefault() {}, clientX: start.x, clientY: start.y }, layer)
+  }, 550)
+}
+
+function cancelLongPress() {
+  if (pressTimer) clearTimeout(pressTimer)
+  pressTimer = null
+}
+
+// The text bar's pop-ups (colour, spacing, curve): one at a time, closed when the selection changes
+const textPop = ref(null)
+function toggleTextPop(name) {
+  textPop.value = textPop.value === name ? null : name
+}
+watch(selectedId, () => { textPop.value = null })
+
+// Size on the text bar, in pixels of the 1000px sticker (stored as a percent of the canvas)
+function setTextSize(px) {
+  if (!selectedText.value) return
+  snapshot()
+  selectedText.value.size = clamp((Number(px) || 100) / 10, 3, 40)
+}
+function stepTextSize(step) {
+  if (!selectedText.value) return
+  setTextSize(Math.round(selectedText.value.size * 10) + step * 10)
 }
 
 function cycleAlign() {
@@ -591,6 +856,16 @@ function toggleEditSheet() {
 // "?" on the frame strip shows them again. Remembered per browser (localStorage), so they
 // do not come back every visit; if storage is blocked they just show again, which is fine.
 // ----
+// First-visit tips (and the "?" in the top bar): where everything is, instead of grey text
+const guide = ref(null)
+const EDITOR_TIPS = [
+  { target: '.sm-rail', title: 'Add things', text: 'Elements, text, drawing and your own photos (PNG, JPEG, WebP or SVG) are all here.' },
+  { target: '.sm-canvas', title: 'Your sticker', text: 'Drag to move, pull a corner to resize, use the dot on top to rotate. Tap twice on an empty spot to type.' },
+  { target: '.sm-props', title: 'Settings and layers', text: 'Change what you picked here. Drag a layer by its lines to put it in front or behind. Right-click it (or press and hold) for more.' },
+  { target: '.sm-topbar-center', title: 'Sticker or GIF', text: 'Switch to GIF to make it move. Rulers help you line things up.' },
+  { target: '.sm-topbar-actions', title: 'Keep it', text: 'Download it, or save it to My Studio. My stickers opens one you saved, to keep editing it.' },
+]
+
 const GIF_TIPS = [
   { target: 'add', title: 'Frames', text: 'A GIF is a few pictures shown one after another. Each square here is one picture, called a frame. Tap + to add the next one.' },
   { target: 'duplicate', title: 'Duplicate', text: 'Duplicate copies the frame you are on. Then move or change a little, like a flip book, so it moves smoothly.' },
@@ -654,6 +929,10 @@ function addArt(item) {
   // At the same width it looked far bigger than the stickers next to it.
   const width = item.kind === 'tape' ? 24 : 30
   addImageLayer(item.url, item.name, item.ratio, width, 'sticker')
+  // Keep the drawing itself, so its colours can be changed on the bar
+  const layer = layers.value[layers.value.length - 1]
+  layer.svg = item.svg
+  layer.colorMap = {}
   closeSheetOnPhone()
 }
 
@@ -717,15 +996,64 @@ async function onFileDrop(event) {
   event.preventDefault()
   dragDepth = 0
   dropActive.value = false
-  const file = Array.from(event.dataTransfer.files).find((f) => f.type.startsWith('image/')) || event.dataTransfer.files[0]
-  if (file) await addPhotoFile(file)
+  // Dropped files go into "Your uploads" too, the same as choosing them
+  const files = Array.from(event.dataTransfer.files || [])
+  if (files.length) await uploadFiles(files)
+}
+
+// "Your uploads": every photo or SVG you upload is kept (in this browser, shared with the
+// Frame Editor) and placed on the canvas. Tap one in the list to place it again.
+const myUploads = ref([])
+const uploadBusy = ref(false)
+
+async function refreshUploads() {
+  myUploads.value = await loadUploads()
+}
+
+async function uploadFiles(files) {
+  errorMessage.value = ''
+  uploadBusy.value = true
+  for (const file of files) {
+    try {
+      const upload = await fileToUpload(file)
+      myUploads.value.unshift(upload)
+      await saveUpload(upload)
+      await placeUpload(upload)
+    } catch (error) {
+      errorMessage.value = error.message
+    }
+  }
+  uploadBusy.value = false
 }
 
 async function uploadPhoto(event) {
-  const file = event.target.files[0]
-  if (!file) return
+  const files = Array.from(event.target.files || [])
   event.target.value = '' // so choosing the same file again still fires a change
-  await addPhotoFile(file)
+  if (files.length) await uploadFiles(files)
+}
+
+async function placeUpload(upload) {
+  try {
+    const img = await loadImage(upload.dataUrl)
+    // An SVG without a size has no natural shape, so read it from its viewBox
+    const box = upload.isSvg && /viewBox="[\d.\s-]*?([\d.]+)[\s,]+([\d.]+)"/.exec(upload.svgContent || '')
+    const ratio = box ? Number(box[2]) / Number(box[1]) : (img.naturalHeight / img.naturalWidth || 1)
+    const fit = ratio <= 1 ? 80 : 80 / ratio
+    addImageLayer(upload.dataUrl, upload.name, ratio, upload.isSvg ? Math.min(fit, 40) : fit)
+    if (upload.isSvg) {
+      const layer = layers.value[layers.value.length - 1]
+      layer.svg = upload.svgContent
+      layer.colorMap = {}
+    }
+    closeSheetOnPhone()
+  } catch (error) {
+    errorMessage.value = 'That image could not be opened.'
+  }
+}
+
+async function deleteMyUpload(upload) {
+  myUploads.value = myUploads.value.filter((item) => item.id !== upload.id)
+  await removeUpload(upload.id)
 }
 
 // Shared by Upload and by pasting a screenshot or copied picture (Ctrl+V).
@@ -991,6 +1319,87 @@ async function loadFolders() {
   }
 }
 
+// ----
+// "My stickers": open another of your saved stickers and keep editing it (like the Frame
+// Editor's "My templates")
+// ----
+const myStickersOpen = ref(false)
+const myStickersQuery = ref('')
+const openStickerId = ref(null)       // the saved sticker on the canvas now, if any
+const editableIds = ref(new Set())    // stickers whose layers are kept on this device
+
+const shownMyStickers = computed(() => {
+  const query = myStickersQuery.value.trim().toLowerCase()
+  return myStickers.value.filter((sticker) => !sticker.saved && (!query || (sticker.name || '').toLowerCase().includes(query)))
+})
+
+async function openMyStickers() {
+  myStickersOpen.value = true
+  myStickersQuery.value = ''
+  editableIds.value = await stickerProjectIds()
+  if (isAccount.value && myStickers.value.length === 0 && !loadingMine.value) loadMine()
+}
+
+function hasWork() {
+  return frames.value.some((frame) => frame.layers.length > 0)
+}
+
+// Start again with an empty canvas
+async function newSticker() {
+  if (hasWork() && !(await askConfirm({ title: 'Start a new sticker?', message: 'The sticker on the canvas will be cleared. Save it first if you want to keep it.', confirmLabel: 'Start new' }))) return
+  stopPlaying()
+  frames.value = [{ id: 'frame-1', layers: [] }]
+  activeFrameId.value = 'frame-1'
+  mode.value = 'sticker'
+  selectedId.value = null
+  undoStack.value = []
+  redoStack.value = []
+  stickerName.value = ''
+  openStickerId.value = null
+  myStickersOpen.value = false
+  refreshThumbs()
+}
+
+async function editSavedSticker(sticker) {
+  if (sticker.id === openStickerId.value) {
+    myStickersOpen.value = false
+    return
+  }
+  if (hasWork() && !(await askConfirm({ title: 'Open "' + sticker.name + '"?', message: 'The sticker on the canvas will be replaced. Save it first if you want to keep it.', confirmLabel: 'Open' }))) return
+  errorMessage.value = ''
+  try {
+    stopPlaying()
+    const project = await loadStickerProject(sticker.id)
+    if (project && project.frames && project.frames.length) {
+      // Every layer, as it was saved
+      frames.value = project.frames
+      mode.value = project.mode === 'gif' ? 'gif' : 'sticker'
+      if (project.gifSpeed) gifSpeed.value = project.gifSpeed
+    } else {
+      // Only the finished picture is known (saved on another device, or before layers were kept)
+      const response = await fetch(sticker.thumbUrl)
+      if (!response.ok) throw new Error('Download failed')
+      const url = tempUrl(await response.blob())
+      const img = await loadImage(url)
+      const ratio = img.naturalHeight / img.naturalWidth || 1
+      const width = ratio <= 1 ? 90 : 90 / ratio
+      frames.value = [{ id: 'frame-1', layers: [{ id: newId(), type: 'image', name: sticker.name, url, ratio, x: 50, y: 50, width, fitWidth: width, rotation: 0, source: sticker.kind === 'animated' ? 'sticker' : 'saved' }] }]
+      mode.value = 'sticker'
+    }
+    activeFrameId.value = frames.value[0].id
+    selectedId.value = null
+    undoStack.value = []
+    redoStack.value = []
+    stickerName.value = sticker.name || ''
+    openStickerId.value = sticker.id
+    myStickersOpen.value = false
+    refreshThumbs()
+    showToast('Opened "' + sticker.name + '". Saving makes a new copy in My Studio.')
+  } catch (error) {
+    errorMessage.value = 'Could not open "' + sticker.name + '". Please try again.'
+  }
+}
+
 async function loadMine() {
   loadingMine.value = true
   try {
@@ -1171,6 +1580,7 @@ function pickColor(color) {
 
 // One object remembers the gesture in progress: 'move', 'resize' or 'rotate'.
 let gesture = null
+const rotatingId = ref(null) // the layer being turned: its angle shows above the rotate handle
 
 function startGesture(event, layer, mode2) {
   // While typing, a drag on the text box must not move it.
@@ -1178,6 +1588,13 @@ function startGesture(event, layer, mode2) {
   event.preventDefault() // stops the browser selecting text or dragging the image
   const wasSelected = selectedId.value === layer.id
   selectedId.value = layer.id
+  closeLayerMenu()
+  startLongPress(event, layer)
+  // A locked layer can be picked (to unlock it from the menu) but not moved or resized
+  if (layer.locked) {
+    window.addEventListener('pointerup', cancelLongPress, { once: true })
+    return
+  }
   snapshot()
 
   const rect = canvasEl.value.getBoundingClientRect()
@@ -1200,6 +1617,7 @@ function startGesture(event, layer, mode2) {
     startSize: layer[sizeKey(layer)],
     wasSelected: wasSelected,
   }
+  if (mode2 === 'rotate') rotatingId.value = layer.id
 
   // Listen on the whole window so the gesture keeps working if the pointer leaves.
   window.addEventListener('pointermove', onGesture)
@@ -1210,13 +1628,15 @@ function onGesture(event) {
   if (!gesture) return
   const layer = layers.value.find((item) => item.id === gesture.id)
   if (!layer) return
+  if (Math.hypot(event.clientX - gesture.startX, event.clientY - gesture.startY) > 6) cancelLongPress()
 
   if (gesture.mode === 'move') {
     // Pixels moved, turned into percentages of the canvas
     const movedX = ((event.clientX - gesture.startX) / gesture.rectWidth) * 100
     const movedY = ((event.clientY - gesture.startY) / gesture.rectHeight) * 100
-    layer.x = clamp(gesture.originX + movedX, 0, 100)
-    layer.y = clamp(gesture.originY + movedY, 0, 100)
+    // Hold Alt to place freely without snapping
+    layer.x = event.altKey ? clamp(gesture.originX + movedX, 0, 100) : snap(clamp(gesture.originX + movedX, 0, 100), 'x', layer.id)
+    layer.y = event.altKey ? clamp(gesture.originY + movedY, 0, 100) : snap(clamp(gesture.originY + movedY, 0, 100), 'y', layer.id)
   } else if (gesture.mode === 'resize') {
     // Dragging a corner twice as far from the centre makes the layer twice as big.
     const distance = Math.hypot(event.clientX - gesture.centerX, event.clientY - gesture.centerY)
@@ -1232,6 +1652,9 @@ function onGesture(event) {
 }
 
 function endGesture(event) {
+  cancelLongPress()
+  rotatingId.value = null
+  snapLines.value = { x: null, y: null }
   // WHY: phones have no double-click, so tapping text that is already selected (without
   // dragging it) starts typing, the same as double-clicking does with a mouse.
   if (gesture && event && gesture.mode === 'move' && gesture.wasSelected
@@ -1416,21 +1839,25 @@ async function renderFrameCanvas(frame, size = EXPORT_SIZE, background = 'transp
   }
 
   for (const layer of frame.layers) {
+    if (layer.hidden) continue
     ctx.save()
 
     if (layer.type === 'image') {
       const img = await loadImage(layer.url)
       const w = layer.width * k
       const h = w * layer.ratio
+      ctx.globalAlpha = layer.opacity ?? 1
       ctx.translate(layer.x * k, layer.y * k)
       ctx.rotate((layer.rotation * Math.PI) / 180)
+      ctx.scale(layer.flipX ? -1 : 1, layer.flipY ? -1 : 1)
       ctx.drawImage(img, -w / 2, -h / 2, w, h)
     } else if (layer.type === 'text') {
       const fontSize = layer.size * k
       const maxWidth = (layer.width || 70) * k
+      ctx.globalAlpha = layer.opacity ?? 1
       ctx.translate(layer.x * k, layer.y * k)
       ctx.rotate((layer.rotation * Math.PI) / 180)
-      ctx.font = (layer.italic ? 'italic ' : '') + (layer.weight || 400) + ' ' + fontSize + 'px ' + fontStack(layer.font)
+      ctx.font = textFont(layer, fontSize)
       ctx.fillStyle = layer.color
       ctx.textAlign = layer.align || 'center'   // matches text-align in the preview
       ctx.textBaseline = 'middle'
@@ -1438,20 +1865,38 @@ async function renderFrameCanvas(frame, size = EXPORT_SIZE, background = 'transp
         ctx.shadowColor = 'rgba(0, 0, 0, 0.45)' // the same thin shadow as the preview
         ctx.shadowBlur = 2 * (S / EXPORT_SIZE)
       }
-      const lines = wrapText(ctx, layer.text, maxWidth)
-      const lineHeight = fontSize * 1.2
+      // Curved text: each letter on its spot of the arch, worked out the same way as on screen
+      if (layer.curve && !layer.emoji) {
+        ctx.textAlign = 'center'
+        for (const spot of placeLetters(ctx, layer, fontSize)) {
+          ctx.save()
+          ctx.translate(spot.x, spot.y)
+          ctx.rotate((spot.rotate * Math.PI) / 180)
+          ctx.fillText(spot.letter, 0, 0)
+          ctx.restore()
+        }
+        ctx.restore()
+        continue
+      }
+      // Letter spacing: newer browsers can space letters on a canvas; older ones draw them
+      // at normal spacing, which is close enough
+      if ('letterSpacing' in ctx) ctx.letterSpacing = ((layer.spacing || 0) / 100) * fontSize + 'px'
+      const lines = wrapText(ctx, shownText(layer), maxWidth)
+      const lineHeight = fontSize * (layer.lineHeight || 1.2)
       const startY = -((lines.length - 1) * lineHeight) / 2
       // Left-aligned text starts at the left edge of its box, right-aligned at the right.
       const startX = layer.align === 'left' ? -maxWidth / 2 : layer.align === 'right' ? maxWidth / 2 : 0
       lines.forEach((line, index) => ctx.fillText(line, startX, startY + index * lineHeight))
       // A canvas cannot underline text, so draw the line under each row by hand, where the
       // browser draws it on screen (just below the letters, about 1/16 of the size thick).
-      if (layer.underline) {
+      // Strikethrough the same way, through the middle of the letters.
+      const lineOffsets = [layer.underline && 0.42, layer.strike && 0.02].filter((offset) => offset !== false)
+      for (const offset of lineOffsets) {
         lines.forEach((line, index) => {
           const lineWidth = ctx.measureText(line).width
           const left = layer.align === 'left' ? startX : layer.align === 'right' ? startX - lineWidth : startX - lineWidth / 2
           const thickness = Math.max(1, fontSize / 16)
-          ctx.fillRect(left, startY + index * lineHeight + fontSize * 0.42, lineWidth, thickness)
+          ctx.fillRect(left, startY + index * lineHeight + fontSize * offset, lineWidth, thickness)
         })
       }
     } else if (layer.type === 'draw') {
@@ -1620,6 +2065,8 @@ async function openDownload() {
     return
   }
   if (frames.value.length < 2 && dlFormat.value === 'gif') dlFormat.value = 'photo'
+  // The file is named after the sticker: "Blue Studios" -> blue-studios
+  dlName.value = stickerName.value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'untitled'
   stopPlaying() // the canvas preview and the dialog preview share one player
   previewUrl.value = ''
   dlOpen.value = true
@@ -1756,6 +2203,20 @@ async function openSave() {
     showToast('Add a photo, text or drawing first.', 'warn')
     return
   }
+  // No name yet: ask for one first (it can still be changed in the Save dialog)
+  if (!stickerName.value.trim()) {
+    const name = await askText({
+      title: 'Name your sticker',
+      message: 'Give it a name so you can find it in My Studio.',
+      label: 'Name',
+      placeholder: 'e.g. Main character energy',
+      maxLength: 40,
+      confirmLabel: 'Next',
+      icon: 'save',
+    })
+    if (name === null || !name.trim()) return
+    stickerName.value = name.trim()
+  }
   showSave.value = true
   await loadFolders() // fresh list every time, in case folders changed in another tab
 }
@@ -1882,8 +2343,15 @@ async function saveToStudio() {
       folderFailed = true
     }
 
+    // Keep the layers too (on this device), so "My stickers" can open it again with every layer
+    try {
+      await saveStickerProject({ id: stickerId, name: name, mode: mode.value, gifSpeed: gifSpeed.value, frames: await keepableFrames(frames.value) })
+      openStickerId.value = stickerId
+    } catch (error) {
+      console.warn('Could not keep the layers of the sticker:', error)
+    }
+
     showSave.value = false
-    stickerName.value = ''
     pickedDefaults.value = []
     pickedFolders.value = []
     myStickers.value = []
@@ -2010,6 +2478,7 @@ function onKeyDown(event) {
     if (layer) deleteLayer(layer)
   }
   if (event.key === 'Escape') {
+    closeLayerMenu()
     selectedId.value = null
     editingId.value = null
     dlOpen.value = false
@@ -2024,6 +2493,10 @@ function onKeyDown(event) {
 
 let resizeObserver = null
 
+function onFontsLoaded() {
+  fontsVersion.value++
+}
+
 // WHY: the canvas is square, so it must fit the smaller of the two sides of the grey
 // area. The spare pixels leave room for the corner labels and a little breathing space.
 // The top always keeps room for the text and drawing bars, so selecting text does not
@@ -2032,11 +2505,70 @@ function measureStage() {
   const el = stageEl.value
   if (!el) return
   const box = el.getBoundingClientRect()
-  const spareWidth = drawing.value ? 104 : 56
-  const spareHeight = 128
+  const rulerRoom = showRulers.value ? 48 : 0 // the rulers take 24px on each of two sides
+  const spareWidth = (drawing.value ? 104 : 56) + rulerRoom
+  const spareHeight = 128 + rulerRoom
   stageWidth.value = Math.max(180, Math.floor(Math.min(box.width - spareWidth, box.height - spareHeight)))
+  nextTick(measureRulers)
 }
 watch(drawing, () => nextTick(measureStage))
+watch(showRulers, () => nextTick(measureStage))
+// Uploads made in the Frame Editor show up here too
+watch(tool, (name) => { if (name === 'upload') refreshUploads() })
+
+// The rulers: where the canvas is inside the grey area, and how big
+function measureRulers() {
+  if (!stageEl.value || !canvasEl.value) return
+  const stage = stageEl.value.getBoundingClientRect()
+  const canvas = canvasEl.value.getBoundingClientRect()
+  rulerView.value = { scale: canvas.width / DOWNLOAD_SIZE, panX: canvas.left - stage.left, panY: canvas.top - stage.top }
+}
+
+function onStageMove(event) {
+  if (!showRulers.value || !stageEl.value) return
+  const stage = stageEl.value.getBoundingClientRect()
+  rulerCursor.value = { screenX: event.clientX - stage.left, screenY: event.clientY - stage.top, canvasX: 0, canvasY: 0 }
+}
+
+// Guides: drag one out of a ruler, drag it again to move it, drop it off the sticker to remove it
+function guidePos(event, type) {
+  const stage = stageEl.value.getBoundingClientRect()
+  const view = rulerView.value
+  return Math.round(type === 'vertical'
+    ? (event.clientX - stage.left - view.panX) / view.scale
+    : (event.clientY - stage.top - view.panY) / view.scale)
+}
+
+function startGuideDrag(type, event) {
+  event.preventDefault()
+  draggedGuide.value = { id: null, type: type, pos: guidePos(event, type) }
+  window.addEventListener('pointermove', moveGuide)
+  window.addEventListener('pointerup', dropGuide)
+}
+
+function startGuideMove(guide, event) {
+  event.preventDefault()
+  guides.value = guides.value.filter((item) => item.id !== guide.id)
+  draggedGuide.value = { ...guide }
+  window.addEventListener('pointermove', moveGuide)
+  window.addEventListener('pointerup', dropGuide)
+}
+
+function moveGuide(event) {
+  if (draggedGuide.value) draggedGuide.value = { ...draggedGuide.value, pos: guidePos(event, draggedGuide.value.type) }
+}
+
+function dropGuide() {
+  const guide = draggedGuide.value
+  if (guide && guide.pos >= 0 && guide.pos <= DOWNLOAD_SIZE) guides.value.push({ ...guide, id: guide.id || newId() })
+  draggedGuide.value = null
+  window.removeEventListener('pointermove', moveGuide)
+  window.removeEventListener('pointerup', dropGuide)
+}
+
+function removeGuide(id) {
+  guides.value = guides.value.filter((item) => item.id !== id)
+}
 
 onMounted(() => {
   loadArtFonts() // the shared library's 29 fonts (only added to the page once)
@@ -2047,7 +2579,9 @@ onMounted(() => {
   window.addEventListener('copy', onCopy)
   window.addEventListener('cut', onCut)
   window.addEventListener('paste', onPaste)
+  if (document.fonts) document.fonts.addEventListener('loadingdone', onFontsLoaded)
   refreshThumbs()
+  refreshUploads()
   if (isAccount.value) loadMine()
 })
 
@@ -2062,12 +2596,15 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown)
   endGesture() // remove the window listeners if the page is left mid-drag
   endRowDrag()
+  dropGuide()
   clearTimeout(toastTimer)
   clearTimeout(thumbTimer)
   clearInterval(playTimer)
   window.removeEventListener('copy', onCopy)
   window.removeEventListener('cut', onCut)
   window.removeEventListener('paste', onPaste)
+  if (document.fonts) document.fonts.removeEventListener('loadingdone', onFontsLoaded)
+  cancelLongPress()
   // Free every temporary photo link this page made, in every frame, undo step and copy.
   createdUrls.forEach((url) => URL.revokeObjectURL(url))
 })
@@ -2085,11 +2622,39 @@ function textStyle(layer) {
     fontFamily: fontStack(layer.font),
     fontWeight: layer.weight,
     fontStyle: layer.italic ? 'italic' : 'normal',
-    textDecoration: layer.underline ? 'underline' : 'none',
+    textDecoration: [layer.underline && 'underline', layer.strike && 'line-through'].filter(Boolean).join(' ') || 'none',
+    textTransform: layer.caps ? 'uppercase' : 'none',
+    letterSpacing: (layer.spacing || 0) / 100 + 'em',
+    lineHeight: layer.lineHeight || 1.2,
     textAlign: layer.align,
     color: layer.color,
     transform: 'translate(-50%, -50%) rotate(' + layer.rotation + 'deg)',
   }
+}
+
+// One letter of curved text, placed on its spot on the circle
+function letterStyle(spot) {
+  return { transform: 'translate(' + spot.x + 'px, ' + spot.y + 'px) translate(-50%, -50%) rotate(' + spot.rotate + 'deg)' }
+}
+
+// Curved text's box: one line, plus how far the ends of the arch reach up or down,
+// so the selection box goes round all of it
+function curvedHeight(layer) {
+  const fontPx = screenFontPx(layer)
+  const reach = Math.max(0, ...curvedLetters(layer, fontPx).map((spot) => Math.abs(spot.y)))
+  return fontPx * 1.25 + reach * 2
+}
+
+// The text's size on screen in pixels (its size is stored as a percent of the canvas)
+function screenFontPx(layer) {
+  return (layer.size / 100) * stageWidth.value
+}
+
+// Opacity and flip go on the picture or words only, not the box, so the selection handles
+// stay solid and the rotate handle stays on top.
+function contentStyle(layer) {
+  const flip = (layer.flipX ? ' scaleX(-1)' : '') + (layer.flipY ? ' scaleY(-1)' : '')
+  return { opacity: layer.opacity ?? 1, transform: flip || null }
 }
 
 function imageStyle(layer) {
@@ -2112,8 +2677,20 @@ function imageStyle(layer) {
         <div class="sm-brand-text">
           <h1 class="sm-brand-title">Sticker Maker</h1>
         </div>
+        <!-- The name: the same as the Template Editor's. Save to My Studio uses it. -->
+        <input
+          v-model="stickerName"
+          class="sm-name"
+          maxlength="40"
+          placeholder="Untitled"
+          title="Click to name the sticker"
+          aria-label="Sticker name"
+          @blur="stickerName = stickerName.trim()"
+        />
       </div>
 
+      <!-- In the middle: Sticker / GIF, and the rulers (the same place as the Frame Editor's) -->
+      <div class="sm-topbar-center">
       <!-- Sticker / GIF: the only difference is whether the frame strip exists -->
       <div class="seg-tabs sm-mode" role="tablist" aria-label="Mode">
         <button
@@ -2140,7 +2717,21 @@ function imageStyle(layer) {
         </button>
       </div>
 
+      <button
+        type="button"
+        class="sm-toggle"
+        :class="{ active: showRulers }"
+        :aria-pressed="showRulers"
+        :title="showRulers ? 'Hide the rulers' : 'Show the rulers (drag from a ruler to add a guide)'"
+        @click="showRulers = !showRulers"
+      >
+        <svg viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true"><path d="M3 8h18v8H3z M7 8v3 M11 8v4 M15 8v3 M19 8v4" /></svg>
+        <span class="sm-hide-xs">Rulers</span>
+      </button>
+      </div>
+
       <div class="sm-topbar-actions">
+        <button type="button" class="btn btn-outline-secondary sm-square" title="How it works" aria-label="How it works" @click="guide && guide.start()">?</button>
         <button
           type="button"
           class="btn btn-outline-secondary sm-square"
@@ -2161,13 +2752,18 @@ function imageStyle(layer) {
         >
           <AppIcon name="redo" :size="16" />
         </button>
+        <!-- My stickers: open another of your stickers and keep editing it -->
+        <button type="button" class="btn btn-outline-secondary sm-action" title="My stickers: open another of your stickers" aria-label="My stickers" @click="openMyStickers">
+          <AppIcon name="folder" :size="16" />
+          <span class="sm-hide-xs sm-hide-lg">My stickers</span>
+        </button>
         <button type="button" class="btn btn-outline-secondary sm-action" aria-label="Download" @click="openDownload">
           <AppIcon name="download" :size="16" />
-          <span class="sm-hide-xs">Download</span>
+          <span class="sm-hide-xs sm-hide-md">Download</span>
         </button>
         <button type="button" class="btn btn-primary sm-action" aria-label="Save to My Studio" @click="openSave">
           <AppIcon name="save" :size="16" />
-          <span class="sm-hide-xs">Save to My Studio</span>
+          <span class="sm-hide-xs"><span class="sm-hide-md">Save to My Studio</span><span class="sm-show-md">Save</span></span>
         </button>
       </div>
     </header>
@@ -2219,18 +2815,20 @@ function imageStyle(layer) {
         <div class="sm-panel-body">
           <!-- ---------- STICKERS ---------- -->
           <template v-if="tool === 'stickers'">
-            <!-- Tag filter: the tags come from the shared library -->
-            <div v-chip-scroll class="sm-chip-row" role="group" aria-label="Filter stickers">
-              <button
-                v-for="tag in ART_TAGS"
-                :key="tag"
-                type="button"
-                class="chip chip-sm"
-                :class="{ active: activeTag === tag }"
-                :aria-pressed="activeTag === tag"
-                @click="activeTag = tag"
-              >{{ tag }}</button>
+            <!-- Search: matches the names and tags of the shared library -->
+            <div class="sm-search">
+              <AppIcon name="search" :size="15" />
+              <input
+                v-model="artQuery"
+                type="search"
+                placeholder="Search stickers, shapes, washi…"
+                aria-label="Search elements"
+              />
+              <button v-if="artQuery" type="button" class="sm-search-clear" aria-label="Clear search" @click="artQuery = ''">
+                <AppIcon name="close" :size="13" />
+              </button>
             </div>
+            <p v-if="artSections.length === 0" class="sm-hint">Nothing matches "{{ artQuery }}".</p>
 
             <div v-for="section in artSections" :key="section.id" class="sm-section">
               <p class="sm-label">
@@ -2319,9 +2917,6 @@ function imageStyle(layer) {
               <AppIcon name="plus" :size="16" />
               <span>Add a text box</span>
             </button>
-            <p class="sm-hint">
-              {{ selectedText ? 'Tap a font to change the selected text.' : 'Or double-tap anywhere on the canvas.' }}
-            </p>
 
             <!-- The fun fonts from the shared library. Each card is set in its own face. -->
             <div v-for="group in FONT_GROUPS_READY" :key="group.group" class="sm-section">
@@ -2394,12 +2989,12 @@ function imageStyle(layer) {
             </div>
           </template>
 
-          <!-- ---------- UPLOAD ---------- -->
+          <!-- ---------- UPLOAD (the same as the Frame Editor's Uploads) ---------- -->
           <template v-else-if="tool === 'upload'">
             <button
               type="button"
               class="sm-drop"
-              :class="{ 'is-dragover': dropActive }"
+              :class="{ 'is-dragover': dropActive, 'is-busy': uploadBusy }"
               @click="openFilePicker"
               @dragenter="onFileDragEnter"
               @dragover="onFileDragOver"
@@ -2407,20 +3002,39 @@ function imageStyle(layer) {
               @drop="onFileDrop"
             >
               <span class="empty-icon"><AppIcon name="upload" :size="20" /></span>
-              <span class="sm-drop-title">{{ dropActive ? 'Drop to add it' : 'Choose or drop a photo' }}</span>
-              <span class="sm-hint mt-0">PNG, JPEG or WebP</span>
+              <span class="sm-drop-title">{{ dropActive ? 'Drop to add them' : uploadBusy ? 'Adding…' : 'Choose or drop photos' }}</span>
             </button>
             <input
               ref="fileInput"
               type="file"
               class="d-none"
-              accept="image/png,image/jpeg,image/webp"
+              multiple
+              :accept="UPLOAD_TYPES"
               @change="uploadPhoto"
             />
-            <p class="sm-hint">
-              The photo becomes a layer you can move, resize and rotate. Select it to
-              remove the background.
-            </p>
+
+            <div class="sm-section">
+              <p class="sm-label">
+                Your uploads
+                <span class="sm-count">{{ myUploads.length }}</span>
+              </p>
+              <div v-if="myUploads.length" class="sm-grid sm-grid-3">
+                <div v-for="upload in myUploads" :key="upload.id" class="sm-upload">
+                  <button
+                    type="button"
+                    class="sm-cell"
+                    :title="'Add ' + upload.name"
+                    :aria-label="'Add ' + upload.name"
+                    @click="placeUpload(upload)"
+                  >
+                    <img :src="upload.dataUrl" alt="" class="sm-thumb" draggable="false" />
+                  </button>
+                  <button type="button" class="sm-upload-del" title="Remove from your uploads" :aria-label="'Remove ' + upload.name" @click.stop="deleteMyUpload(upload)">
+                    <AppIcon name="close" :size="12" />
+                  </button>
+                </div>
+              </div>
+            </div>
           </template>
         </div>
       </aside>
@@ -2435,13 +3049,38 @@ function imageStyle(layer) {
           @dragover="onFileDragOver"
           @dragleave="onFileDragLeave"
           @drop="onFileDrop"
+          @pointermove="onStageMove"
         >
+          <!-- Rulers and guides: the Frame Editor's. Only on screen, not in the download. -->
+          <CanvasRulerOverlay
+            :show-rulers="showRulers"
+            :scale="rulerView.scale"
+            :pan-x="rulerView.panX"
+            :pan-y="rulerView.panY"
+            :cursor-info="rulerCursor"
+            :custom-guides="guides"
+            :is-dragging-guide="!!draggedGuide"
+            :dragged-guide="draggedGuide"
+            :frame-width="DOWNLOAD_SIZE"
+            :frame-height="DOWNLOAD_SIZE"
+            @start-drag-guide="startGuideDrag"
+            @start-move-guide="startGuideMove"
+            @remove-guide="removeGuide"
+            @toggle-rulers="showRulers = false"
+          />
           <!-- Text bar: shows while a text box is selected. pointerdown.prevent on the buttons
                keeps you typing in the box while you press Bold or pick a colour. -->
           <div v-if="selectedText && !drawing && !playing" class="sm-drawbar" role="toolbar" aria-label="Text style">
+            <div class="sm-drawbar-scroll">
             <button type="button" class="sm-drawbar-btn sm-textbar-font" title="Font" aria-label="Choose a font" @pointerdown.prevent @click="openFonts">
               <span :style="{ fontFamily: fontStack(selectedText.font) }">Aa</span>
             </button>
+            <!-- Size in pixels of the 1000px sticker, the same as the Template Editor -->
+            <div class="sm-textbar-size" title="Text size">
+              <button type="button" class="sm-drawbar-btn" aria-label="Smaller" @pointerdown.prevent @click="stepTextSize(-1)">−</button>
+              <input type="number" min="30" max="400" :value="Math.round(selectedText.size * 10)" aria-label="Text size" @change="setTextSize($event.target.value)" />
+              <button type="button" class="sm-drawbar-btn" aria-label="Bigger" @pointerdown.prevent @click="stepTextSize(1)">+</button>
+            </div>
             <span class="sm-drawbar-line" aria-hidden="true"></span>
             <button
               type="button"
@@ -2475,6 +3114,26 @@ function imageStyle(layer) {
             ><u>U</u></button>
             <button
               type="button"
+              class="sm-drawbar-btn sm-textbar-letter"
+              :class="{ active: selectedText.strike }"
+              :aria-pressed="!!selectedText.strike"
+              aria-label="Strikethrough"
+              title="Strikethrough"
+              @pointerdown.prevent
+              @click="toggleTextStyle('strike')"
+            ><s>S</s></button>
+            <button
+              type="button"
+              class="sm-drawbar-btn sm-textbar-letter sm-textbar-caps"
+              :class="{ active: selectedText.caps }"
+              :aria-pressed="!!selectedText.caps"
+              aria-label="All capitals"
+              title="All capitals"
+              @pointerdown.prevent
+              @click="toggleTextStyle('caps')"
+            >aA</button>
+            <button
+              type="button"
               class="sm-drawbar-btn"
               :aria-label="'Align: ' + selectedText.align"
               :title="'Align ' + selectedText.align + ' (tap to change)'"
@@ -2486,41 +3145,238 @@ function imageStyle(layer) {
               </svg>
             </button>
             <span class="sm-drawbar-line" aria-hidden="true"></span>
-            <div class="sm-drawbar-colors">
-              <button
-                v-for="color in [...SOLID_COLORS, ...PASTEL_COLORS]"
-                :key="color"
-                type="button"
-                class="sm-drawbar-swatch"
-                :class="{ active: selectedText.color === color }"
-                :style="{ background: color }"
-                :aria-label="'Text colour ' + color"
-                :aria-pressed="selectedText.color === color"
-                @pointerdown.prevent
-                @click="pickTextColor(color)"
-              ></button>
-              <label class="sm-drawbar-swatch sm-swatch-custom" title="Any colour">
-                <input type="color" :value="selectedText.color" aria-label="Any text colour" @change="pickTextColor($event.target.value)" />
-                <AppIcon name="plus" :size="12" />
-              </label>
-              <button
-                v-if="canPickFromScreen"
-                type="button"
-                class="sm-drawbar-swatch sm-pipette"
-                title="Pick a colour from the screen"
-                aria-label="Pick a colour from the screen"
-                @pointerdown.prevent
-                @click="pickFromScreen(pickTextColor)"
-              >
-                <svg viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true"><path :d="LOCAL_ICONS.pipette" /></svg>
-              </button>
+            <button
+              type="button"
+              class="sm-drawbar-btn"
+              :class="{ active: textPop === 'color' }"
+              title="Text colour"
+              aria-label="Text colour"
+              @pointerdown.prevent
+              @click="toggleTextPop('color')"
+            >
+              <span class="sm-drawbar-swatch" :style="{ background: selectedText.color }"></span>
+            </button>
+            <button type="button" class="sm-drawbar-btn sm-drawbar-wide" :class="{ active: textPop === 'spacing' }" title="Letter and line spacing" @pointerdown.prevent @click="toggleTextPop('spacing')">Spacing</button>
+            <button type="button" class="sm-drawbar-btn sm-drawbar-wide" :class="{ active: textPop === 'curve' || selectedText.curve }" title="Curve the text" @pointerdown.prevent @click="toggleTextPop('curve')">
+              Curve<template v-if="selectedText.curve">&nbsp;{{ selectedText.curve }}%</template>
+            </button>
+            <button type="button" class="sm-drawbar-btn sm-drawbar-wide" :class="{ active: textPop === 'adjust' }" title="Opacity and rotation" @pointerdown.prevent @click="toggleTextPop('adjust')">Adjust</button>
+            <span class="sm-drawbar-line" aria-hidden="true"></span>
+            <button type="button" class="sm-drawbar-btn" title="Centre left to right" aria-label="Centre left to right" @pointerdown.prevent @click="centreLayer('x')"><svg viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true"><path d="M12 2v20 M7 6h10v4H7z M9 14h6v4H9z" /></svg></button>
+            <button type="button" class="sm-drawbar-btn" title="Centre top to bottom" aria-label="Centre top to bottom" @pointerdown.prevent @click="centreLayer('y')"><svg viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true"><path d="M2 12h20 M6 7h4v10H6z M14 9h4v6h-4z" /></svg></button>
+            </div>
+
+            <!-- Pop-ups under the bar -->
+            <div v-if="textPop === 'color'" class="sm-pop" @pointerdown.stop>
+              <p class="sm-label">Text colour</p>
+              <div class="sm-drawbar-colors sm-pop-colors">
+                <button
+                  v-for="color in [...SOLID_COLORS, ...PASTEL_COLORS]"
+                  :key="color"
+                  type="button"
+                  class="sm-drawbar-swatch"
+                  :class="{ active: selectedText.color === color }"
+                  :style="{ background: color }"
+                  :aria-label="'Text colour ' + color"
+                  :aria-pressed="selectedText.color === color"
+                  @pointerdown.prevent
+                  @click="pickTextColor(color)"
+                ></button>
+                <label class="sm-drawbar-swatch sm-swatch-custom" title="Any colour">
+                  <input type="color" :value="selectedText.color" aria-label="Any text colour" @change="pickTextColor($event.target.value)" />
+                  <AppIcon name="plus" :size="12" />
+                </label>
+                <button
+                  v-if="canPickFromScreen"
+                  type="button"
+                  class="sm-drawbar-swatch sm-pipette"
+                  title="Pick a colour from the screen"
+                  aria-label="Pick a colour from the screen"
+                  @pointerdown.prevent
+                  @click="pickFromScreen(pickTextColor)"
+                >
+                  <svg viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true"><path :d="LOCAL_ICONS.pipette" /></svg>
+                </button>
+              </div>
+            </div>
+
+            <div v-if="textPop === 'spacing'" class="sm-pop" @pointerdown.stop>
+              <div>
+                <p class="sm-label">Letter spacing <span class="sm-count">{{ selectedText.spacing || 0 }}</span></p>
+                <input
+                  type="range" class="sm-range" min="-10" max="60" step="1"
+                  :value="selectedText.spacing || 0"
+                  :style="{ '--fill': (((selectedText.spacing || 0) + 10) / 70) * 100 + '%' }"
+                  aria-label="Letter spacing"
+                  @pointerdown="snapshot"
+                  @input="setProp('spacing', +$event.target.value)"
+                />
+              </div>
+              <div>
+                <p class="sm-label">Line spacing <span class="sm-count">{{ selectedText.lineHeight || 1.2 }}</span></p>
+                <input
+                  type="range" class="sm-range" min="0.8" max="2.5" step="0.05"
+                  :value="selectedText.lineHeight || 1.2"
+                  :style="{ '--fill': (((selectedText.lineHeight || 1.2) - 0.8) / 1.7) * 100 + '%' }"
+                  aria-label="Line spacing"
+                  @pointerdown="snapshot"
+                  @input="setProp('lineHeight', +$event.target.value)"
+                />
+              </div>
+            </div>
+
+            <div v-if="textPop === 'curve'" class="sm-pop" @pointerdown.stop>
+              <div>
+                <p class="sm-label">Curve <span class="sm-count">{{ selectedText.curve ? selectedText.curve + '%' : 'Straight' }}</span></p>
+                <input
+                  type="range" class="sm-range" min="-100" max="100" step="1"
+                  :value="selectedText.curve || 0"
+                  :style="{ '--fill': (((selectedText.curve || 0) + 100) / 200) * 100 + '%' }"
+                  aria-label="Curve"
+                  @pointerdown="snapshot"
+                  @input="setProp('curve', +$event.target.value)"
+                />
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="!selectedText.curve" @click="snapshot(); selectedText.curve = 0">Straighten</button>
+            </div>
+
+            <div v-if="textPop === 'adjust'" class="sm-pop" @pointerdown.stop>
+              <div>
+                <p class="sm-label">Opacity <span class="sm-count">{{ Math.round((selectedText.opacity ?? 1) * 100) }}%</span></p>
+                <input
+                  type="range" class="sm-range" min="0.1" max="1" step="0.05"
+                  :value="selectedText.opacity ?? 1"
+                  :style="{ '--fill': (((selectedText.opacity ?? 1) - 0.1) / 0.9) * 100 + '%' }"
+                  aria-label="Opacity"
+                  @pointerdown="snapshot"
+                  @input="setProp('opacity', +$event.target.value)"
+                />
+              </div>
+              <div>
+                <p class="sm-label">Rotation <span class="sm-count">{{ Math.round(selectedText.rotation) }}°</span></p>
+                <input
+                  type="range" class="sm-range" min="-180" max="180" step="1"
+                  :value="selectedText.rotation"
+                  :style="{ '--fill': ((selectedText.rotation + 180) / 360) * 100 + '%' }"
+                  aria-label="Rotation"
+                  @pointerdown="snapshot"
+                  @input="setProp('rotation', +$event.target.value)"
+                />
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="!selectedText.rotation" @click="snapshot(); selectedText.rotation = 0">Straighten (0°)</button>
             </div>
           </div>
 
-          <template v-if="!drawing && !selectedText">
-            <span class="sm-stage-pill sm-stage-tag">{{ EXPORT_SIZE }} × {{ EXPORT_SIZE }}</span>
-            <span v-if="playing" class="sm-stage-pill sm-stage-zoom sm-stage-playing">Playing · tap to stop</span>
-          </template>
+          <span v-if="playing" class="sm-stage-pill sm-stage-zoom sm-stage-playing">Playing · tap to stop</span>
+
+          <!-- Photo / sticker bar: opacity, rotation, flip and centring (like the Template Editor's) -->
+          <div v-if="selectedImage && !drawing && !playing" class="sm-drawbar" role="toolbar" aria-label="Photo or sticker">
+            <span class="sm-drawbar-title">{{ selectedImage.emoji ? 'Emoji ' + selectedImage.text : (selectedImage.name || selectedKind) }}</span>
+            <template v-if="imageColors.length">
+              <span class="sm-drawbar-line" aria-hidden="true"></span>
+              <div class="sm-drawbar-colors">
+                <button
+                  v-for="original in imageColors"
+                  :key="original"
+                  type="button"
+                  class="sm-drawbar-swatch"
+                  :class="{ active: recolorTarget === original }"
+                  :style="{ background: shownColor(selectedImage, original) }"
+                  :title="'Change this colour (' + shownColor(selectedImage, original) + ')'"
+                  :aria-label="'Change colour ' + shownColor(selectedImage, original)"
+                  @click="toggleRecolor(original)"
+                ></button>
+              </div>
+            </template>
+            <span class="sm-drawbar-line" aria-hidden="true"></span>
+            <button
+              type="button"
+              class="sm-drawbar-btn sm-drawbar-wide"
+              :class="{ active: imageAdjustOpen }"
+              :title="selectedImage.emoji ? 'Opacity and rotation' : 'Opacity, rotation and flip'"
+              @click="recolorTarget = null; imageAdjustOpen = !imageAdjustOpen"
+            >
+              <svg viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true"><path :d="LOCAL_ICONS.sliders" /></svg>
+              <span>Adjust</span>
+            </button>
+            <button type="button" class="sm-drawbar-btn" title="Centre left to right" aria-label="Centre left to right" @click="centreLayer('x')"><svg viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true"><path d="M12 2v20 M7 6h10v4H7z M9 14h6v4H9z" /></svg></button>
+            <button type="button" class="sm-drawbar-btn" title="Centre top to bottom" aria-label="Centre top to bottom" @click="centreLayer('y')"><svg viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true"><path d="M2 12h20 M6 7h4v10H6z M14 9h4v6h-4z" /></svg></button>
+
+            <div v-if="recolorTarget && selectedImage.svg" class="sm-pop" @pointerdown.stop>
+              <p class="sm-label">Change colour</p>
+              <div class="sm-drawbar-colors sm-pop-colors">
+                <button
+                  v-for="color in [...SOLID_COLORS, ...PASTEL_COLORS]"
+                  :key="color"
+                  type="button"
+                  class="sm-drawbar-swatch"
+                  :class="{ active: shownColor(selectedImage, recolorTarget).toLowerCase() === color }"
+                  :style="{ background: color }"
+                  :aria-label="'Colour ' + color"
+                  @click="recolor(recolorTarget, color)"
+                ></button>
+                <label class="sm-drawbar-swatch sm-swatch-custom" title="Any colour">
+                  <input type="color" :value="shownColor(selectedImage, recolorTarget).slice(0, 7)" aria-label="Any colour" @change="recolor(recolorTarget, $event.target.value)" />
+                  <AppIcon name="plus" :size="12" />
+                </label>
+                <button
+                  v-if="canPickFromScreen"
+                  type="button"
+                  class="sm-drawbar-swatch sm-pipette"
+                  title="Pick a colour from the screen"
+                  aria-label="Pick a colour from the screen"
+                  @click="pickFromScreen((color) => recolor(recolorTarget, color))"
+                >
+                  <svg viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true"><path :d="LOCAL_ICONS.pipette" /></svg>
+                </button>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-secondary" @click="recolor(recolorTarget, recolorTarget)">Back to the original colour</button>
+            </div>
+
+            <div v-if="imageAdjustOpen" class="sm-pop" @pointerdown.stop>
+              <div>
+                <p class="sm-label">
+                  Opacity
+                  <span class="sm-count">{{ Math.round((selectedImage.opacity ?? 1) * 100) }}%</span>
+                </p>
+                <input
+                  type="range"
+                  class="sm-range"
+                  min="0.1"
+                  max="1"
+                  step="0.05"
+                  :value="selectedImage.opacity ?? 1"
+                  :style="{ '--fill': (((selectedImage.opacity ?? 1) - 0.1) / 0.9) * 100 + '%' }"
+                  aria-label="Opacity"
+                  @pointerdown="snapshot"
+                  @input="setProp('opacity', +$event.target.value)"
+                />
+              </div>
+              <div>
+                <p class="sm-label">
+                  Rotation
+                  <span class="sm-count">{{ Math.round(selectedImage.rotation) }}°</span>
+                </p>
+                <input
+                  type="range"
+                  class="sm-range"
+                  min="-180"
+                  max="180"
+                  step="1"
+                  :value="selectedImage.rotation"
+                  :style="{ '--fill': ((selectedImage.rotation + 180) / 360) * 100 + '%' }"
+                  aria-label="Rotation"
+                  @pointerdown="snapshot"
+                  @input="setProp('rotation', +$event.target.value)"
+                />
+              </div>
+              <div class="sm-btn-row">
+                <button v-if="selectedImage.type === 'image'" type="button" class="btn btn-sm" :class="selectedImage.flipX ? 'btn-primary' : 'btn-outline-secondary'" :aria-pressed="!!selectedImage.flipX" @click="toggleFlip('flipX')">⇄ Flip</button>
+                <button v-if="selectedImage.type === 'image'" type="button" class="btn btn-sm" :class="selectedImage.flipY ? 'btn-primary' : 'btn-outline-secondary'" :aria-pressed="!!selectedImage.flipY" @click="toggleFlip('flipY')">⇅ Flip</button>
+                <button type="button" class="btn btn-sm btn-outline-secondary" :disabled="!selectedImage.rotation" @click="snapshot(); selectedImage.rotation = 0">0°</button>
+              </div>
+            </div>
+          </div>
 
           <!-- Drawing tools on the canvas itself: pen or highlighter, colours, undo, done -->
           <div v-if="drawing" class="sm-drawbar" role="toolbar" aria-label="Drawing tools">
@@ -2607,11 +3463,11 @@ function imageStyle(layer) {
             <div v-if="layers.length === 0" class="sm-empty">
               <span class="sm-empty-tile"><AppIcon name="sparkle" :size="22" /></span>
               <span class="sm-empty-title">Your sticker starts here</span>
-              <span>Pick a sticker or upload a photo. Double-tap anywhere to write.</span>
             </div>
 
             <!-- One element per layer. Later layers are drawn on top, because that is the list order. -->
-            <template v-for="item in layers" :key="item.id">
+            <!-- Hidden layers (the eye in the layers list) are left out -->
+            <template v-for="item in layers.filter((layer) => !layer.hidden)" :key="item.id">
               <!-- PHOTO / STICKER -->
               <div
                 v-if="item.type === 'image'"
@@ -2619,8 +3475,9 @@ function imageStyle(layer) {
                 :class="{ 'is-selected': isSelected(item) }"
                 :style="imageStyle(item)"
                 @pointerdown.stop="startGesture($event, item, 'move')"
+                @contextmenu="openLayerMenu($event, item)"
               >
-                <img :src="item.url" :alt="item.name" class="sm-layer-img" draggable="false" />
+                <img :src="item.url" :alt="item.name" class="sm-layer-img" :style="contentStyle(item)" draggable="false" />
                 <template v-if="isSelected(item)">
                   <span class="sm-handle nw" @pointerdown.stop.prevent="startGesture($event, item, 'resize')"></span>
                   <span class="sm-handle ne" @pointerdown.stop.prevent="startGesture($event, item, 'resize')"></span>
@@ -2628,6 +3485,19 @@ function imageStyle(layer) {
                   <span class="sm-handle sw" @pointerdown.stop.prevent="startGesture($event, item, 'resize')"></span>
                   <span class="sm-rot-stem"></span>
                   <span class="sm-rot" title="Rotate (hold Shift to snap)" @pointerdown.stop.prevent="startGesture($event, item, 'rotate')"></span>
+                  <span v-if="rotatingId === item.id" class="sm-rot-tip">{{ Math.round(item.rotation) }}°</span>
+                  <!-- Small bar under the selected layer: duplicate, lock, delete (like the Template Editor) -->
+                  <div class="sm-mini-bar" @pointerdown.stop>
+                    <button type="button" class="sm-mini-btn" title="Duplicate (Ctrl+D)" aria-label="Duplicate" @click.stop="duplicateLayer(item)">
+                      <AppIcon name="duplicate" :size="13" />
+                    </button>
+                    <button type="button" class="sm-mini-btn" :class="{ on: item.locked }" :title="item.locked ? 'Unlock' : 'Lock'" :aria-label="item.locked ? 'Unlock' : 'Lock'" @click.stop="toggleLock(item)">
+                      <AppIcon :name="item.locked ? 'lock' : 'unlock'" :size="13" />
+                    </button>
+                    <button type="button" class="sm-mini-btn del" title="Delete (Del)" aria-label="Delete" @click.stop="deleteLayer(item)">
+                      <AppIcon name="trash" :size="13" />
+                    </button>
+                  </div>
                 </template>
               </div>
 
@@ -2639,6 +3509,7 @@ function imageStyle(layer) {
                 :style="textStyle(item)"
                 @pointerdown.stop="startGesture($event, item, 'move')"
                 @dblclick.stop="startEditing(item)"
+                @contextmenu="openLayerMenu($event, item)"
               >
                 <div
                   v-if="editingId === item.id"
@@ -2650,7 +3521,22 @@ function imageStyle(layer) {
                   @blur="stopEditing"
                   @keydown.esc.prevent="stopEditing"
                 ></div>
-                <div v-else class="sm-text-view">{{ item.text || 'Text' }}</div>
+                <!-- Curved: one span per letter, placed along the arch -->
+                <div
+                  v-else-if="item.curve && !item.emoji"
+                  class="sm-text-view sm-text-curved"
+                  :style="[contentStyle(item), { height: curvedHeight(item) + 'px' }]"
+                  :aria-label="item.text"
+                >
+                  <span
+                    v-for="(spot, i) in curvedLetters(item, screenFontPx(item))"
+                    :key="i"
+                    class="sm-curve-letter"
+                    aria-hidden="true"
+                    :style="letterStyle(spot)"
+                  >{{ spot.letter === ' ' ? ' ' : spot.letter }}</span>
+                </div>
+                <div v-else class="sm-text-view" :style="contentStyle(item)">{{ item.text || 'Text' }}</div>
 
                 <template v-if="isSelected(item) && editingId !== item.id">
                   <span class="sm-handle nw" @pointerdown.stop.prevent="startGesture($event, item, 'resize')"></span>
@@ -2659,6 +3545,19 @@ function imageStyle(layer) {
                   <span class="sm-handle sw" @pointerdown.stop.prevent="startGesture($event, item, 'resize')"></span>
                   <span class="sm-rot-stem"></span>
                   <span class="sm-rot" title="Rotate (hold Shift to snap)" @pointerdown.stop.prevent="startGesture($event, item, 'rotate')"></span>
+                  <span v-if="rotatingId === item.id" class="sm-rot-tip">{{ Math.round(item.rotation) }}°</span>
+                  <!-- Small bar under the selected layer: duplicate, lock, delete (like the Template Editor) -->
+                  <div class="sm-mini-bar" @pointerdown.stop>
+                    <button type="button" class="sm-mini-btn" title="Duplicate (Ctrl+D)" aria-label="Duplicate" @click.stop="duplicateLayer(item)">
+                      <AppIcon name="duplicate" :size="13" />
+                    </button>
+                    <button type="button" class="sm-mini-btn" :class="{ on: item.locked }" :title="item.locked ? 'Unlock' : 'Lock'" :aria-label="item.locked ? 'Unlock' : 'Lock'" @click.stop="toggleLock(item)">
+                      <AppIcon :name="item.locked ? 'lock' : 'unlock'" :size="13" />
+                    </button>
+                    <button type="button" class="sm-mini-btn del" title="Delete (Del)" aria-label="Delete" @click.stop="deleteLayer(item)">
+                      <AppIcon name="trash" :size="13" />
+                    </button>
+                  </div>
                 </template>
               </div>
 
@@ -2682,6 +3581,10 @@ function imageStyle(layer) {
                 />
               </svg>
             </template>
+
+            <!-- Red lines while dragging: what the layer clicked onto -->
+            <span v-if="snapLines.x !== null" class="sm-snap sm-snap-x" :style="{ left: snapLines.x + '%' }" aria-hidden="true"></span>
+            <span v-if="snapLines.y !== null" class="sm-snap sm-snap-y" :style="{ top: snapLines.y + '%' }" aria-hidden="true"></span>
 
             <!-- GIF preview: covers the canvas while it plays. Tapping it stops. -->
             <button
@@ -2742,8 +3645,10 @@ function imageStyle(layer) {
                 <span v-else class="sm-frame-blank"></span>
                 <span class="sm-frame-num">{{ index + 1 }}</span>
               </button>
-              <!-- Reorder arrows only on the frame you are on, so the strip stays calm -->
-              <div v-if="frame.id === activeFrameId && frames.length > 1" class="sm-frame-move">
+              <!-- Reorder arrows only on the frame you are on, so the strip stays calm.
+                   WHY hidden and not removed: their row keeps its space, so the strip (and the
+                   whiteboard above it) stays the same size when the second frame is added -->
+              <div class="sm-frame-move" :class="{ 'is-hidden': frame.id !== activeFrameId || frames.length < 2 }">
                 <button type="button" :disabled="index === 0" aria-label="Move frame left" @click="moveFrame(frame, -1)">‹</button>
                 <button type="button" :disabled="index === frames.length - 1" aria-label="Move frame right" @click="moveFrame(frame, 1)">›</button>
               </div>
@@ -2813,14 +3718,15 @@ function imageStyle(layer) {
 
       <!-- ---------- PROPERTIES ---------- -->
       <aside class="sm-panel sm-props sm-card" :class="{ 'is-open': mobilePanel === 'props' }">
-        <div class="sm-panel-head">
-          <h2 class="sm-panel-title">{{ selectedLayer ? selectedKind : 'Canvas' }}</h2>
+        <!-- No title for text: the panel only lists the layers then. The head stays on a phone for its close button. -->
+        <div class="sm-panel-head" :class="{ 'sm-head-phone-only': selectedText }">
+          <h2 v-if="!selectedText" class="sm-panel-title">{{ selectedLayer ? selectedKind : 'Canvas' }}</h2>
           <button type="button" class="sm-close sm-mobile-only" aria-label="Close" @click="mobilePanel = null">
             <AppIcon name="close" :size="16" />
           </button>
         </div>
 
-        <div class="sm-panel-body">
+        <div class="sm-panel-body" :class="{ 'is-layers-only': selectedText }">
           <!-- Nothing selected: canvas facts -->
           <template v-if="!selectedLayer">
             <div class="sm-rows">
@@ -2833,48 +3739,87 @@ function imageStyle(layer) {
 
           <!-- Something selected -->
           <template v-else>
-            <!-- TEXT: only size here. Font, bold, italic, colour and alignment are all under the
-                 Text tool and on the bar above the canvas, so there is one place for them. -->
-            <template v-if="selectedLayer.type === 'text'">
-              <div class="sm-section mt-0">
-                <p class="sm-label">
-                  Size
-                  <span class="sm-count">{{ Math.round(selectedLayer.size) }}</span>
-                </p>
-                <input
-                  type="range"
-                  class="sm-range"
-                  min="3"
-                  max="40"
-                  step="0.5"
-                  :value="selectedLayer.size"
-                  :style="{ '--fill': ((selectedLayer.size - 3) / 37) * 100 + '%' }"
-                  aria-label="Text size"
-                  @pointerdown="snapshot"
-                  @input="setProp('size', +$event.target.value)"
-                />
-              </div>
-            </template>
+            <!-- PHOTO / STICKER properties: laid out exactly like the Frame Editor's element panel -->
+            <template v-if="selectedLayer.type === 'image'">
+              <div class="d-flex flex-column gap-3">
+                <!-- What is selected -->
+                <div class="d-flex align-items-center justify-content-between p-2 bg-light border rounded-3">
+                  <div class="d-flex align-items-center gap-2 text-truncate">
+                    <AppIcon name="sparkle" :size="16" />
+                    <div class="text-truncate">
+                      <span class="small fw-bold text-dark d-block text-truncate">{{ selectedLayer.name || selectedKind }}</span>
+                      <span class="badge bg-primary bg-opacity-10 text-primary" style="font-size: 0.65rem;">
+                        {{ selectedLayer.svg ? 'Vector SVG' : selectedKind }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
 
-            <!-- PHOTO / STICKER properties -->
-            <template v-else-if="selectedLayer.type === 'image'">
-              <div class="sm-section mt-0">
-                <p class="sm-label">
-                  Size
-                  <span class="sm-count">{{ Math.round(selectedLayer.width) }}%</span>
-                </p>
-                <input
-                  type="range"
-                  class="sm-range"
-                  min="3"
-                  max="200"
-                  step="1"
-                  :value="selectedLayer.width"
-                  :style="{ '--fill': ((selectedLayer.width - 3) / 197) * 100 + '%' }"
-                  aria-label="Size"
-                  @pointerdown="snapshot"
-                  @input="setProp('width', +$event.target.value)"
-                />
+                <!-- Colours: each colour of the drawing, with its exact code and quick colours -->
+                <div v-if="imageColors.length" class="d-flex flex-column gap-2">
+                  <label class="form-label small fw-bold text-secondary mb-0">Colours</label>
+                  <div
+                    v-for="(original, i) in imageColors"
+                    :key="original"
+                    class="card p-2 bg-light border rounded-3 d-flex flex-column gap-2"
+                  >
+                    <div class="d-flex justify-content-between align-items-center">
+                      <span class="small fw-semibold text-dark">Colour {{ i + 1 }}</span>
+                      <span class="font-monospace small text-muted">{{ shownColor(selectedLayer, original).toUpperCase() }}</span>
+                    </div>
+                    <div class="input-group input-group-sm">
+                      <input
+                        type="color"
+                        :value="hexOnly(shownColor(selectedLayer, original))"
+                        class="form-control form-control-color form-control-sm p-1"
+                        style="max-width: 38px;"
+                        :aria-label="'Colour ' + (i + 1)"
+                        @change="recolor(original, $event.target.value)"
+                      />
+                      <input
+                        type="text"
+                        :value="shownColor(selectedLayer, original).toUpperCase()"
+                        class="form-control form-control-sm text-uppercase font-monospace sm-hex"
+                        maxlength="9"
+                        spellcheck="false"
+                        :aria-label="'Colour ' + (i + 1) + ' code'"
+                        @change="setHexColor(original, $event.target)"
+                      />
+                    </div>
+                    <div class="d-flex align-items-center gap-1 flex-wrap">
+                      <button
+                        v-for="c in [...SOLID_COLORS, ...PASTEL_COLORS]"
+                        :key="c"
+                        type="button"
+                        class="btn p-0 rounded-circle border shadow-none"
+                        :style="{
+                          backgroundColor: c,
+                          width: '18px',
+                          height: '18px',
+                          boxShadow: shownColor(selectedLayer, original).toLowerCase() === c.toLowerCase() ? '0 0 0 2px #fff, 0 0 0 3.5px #2563eb' : 'none'
+                        }"
+                        :title="c"
+                        :aria-label="'Colour ' + c"
+                        @click="recolor(original, c)"
+                      ></button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Dimensions in pixels of the 1000px download -->
+                <div class="d-flex flex-column gap-1">
+                  <label class="form-label small fw-bold text-secondary mb-0">Dimensions (px)</label>
+                  <div class="d-flex gap-2">
+                    <div class="input-group input-group-sm">
+                      <span class="input-group-text bg-light">W</span>
+                      <input type="number" min="10" max="2000" class="form-control text-center" :value="layerPx(selectedLayer).w" aria-label="Width in pixels" @change="setLayerPx('w', $event.target.value)" />
+                    </div>
+                    <div class="input-group input-group-sm">
+                      <span class="input-group-text bg-light">H</span>
+                      <input type="number" min="10" max="2000" class="form-control text-center" :value="layerPx(selectedLayer).h" aria-label="Height in pixels" @change="setLayerPx('h', $event.target.value)" />
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <button
@@ -2889,36 +3834,9 @@ function imageStyle(layer) {
               </button>
             </template>
 
-            <!-- Rotation: photos, stickers, text and emoji all turn the same way -->
-            <div v-if="selectedLayer.type !== 'draw'" class="sm-section">
-              <p class="sm-label">
-                Rotation
-                <span class="sm-count">{{ Math.round(selectedLayer.rotation) }}°</span>
-              </p>
-              <input
-                type="range"
-                class="sm-range"
-                min="-180"
-                max="180"
-                step="1"
-                :value="selectedLayer.rotation"
-                :style="{ '--fill': ((selectedLayer.rotation + 180) / 360) * 100 + '%' }"
-                aria-label="Rotation"
-                @pointerdown="snapshot"
-                @input="setProp('rotation', +$event.target.value)"
-              />
-            </div>
-
-            <!-- Order and actions -->
-            <div class="sm-section">
-              <p class="sm-label">Arrange</p>
-              <div class="sm-btn-grid">
-                <button type="button" class="btn btn-outline-secondary btn-sm" @click="bringToFront(selectedLayer)">To front</button>
-                <button type="button" class="btn btn-outline-secondary btn-sm" @click="moveUp(selectedLayer)">Forward</button>
-                <button type="button" class="btn btn-outline-secondary btn-sm" @click="moveDown(selectedLayer)">Backward</button>
-                <button type="button" class="btn btn-outline-secondary btn-sm" @click="sendToBack(selectedLayer)">To back</button>
-              </div>
-              <div class="sm-btn-row mt-2">
+            <!-- Actions (photos and stickers). Forward / backward / front / back are in the right-click menu. -->
+            <div v-if="selectedLayer.type === 'image'" class="sm-section">
+              <div class="sm-btn-row">
                 <button
                   v-if="selectedLayer.type === 'image'"
                   type="button"
@@ -2926,17 +3844,6 @@ function imageStyle(layer) {
                   @click="resetLayer(selectedLayer)"
                 >
                   <AppIcon name="refresh" :size="14" /> Reset
-                </button>
-                <button
-                  type="button"
-                  class="btn btn-outline-secondary btn-sm"
-                  title="Duplicate (Ctrl+D)"
-                  @click="duplicateLayer(selectedLayer)"
-                >
-                  <AppIcon name="duplicate" :size="14" /> Duplicate
-                </button>
-                <button type="button" class="btn btn-outline-danger btn-sm" @click="deleteLayer(selectedLayer)">
-                  <AppIcon name="trash" :size="14" /> Delete
                 </button>
               </div>
             </div>
@@ -2948,15 +3855,19 @@ function imageStyle(layer) {
               {{ mode === 'gif' ? 'Layers in this frame' : 'Layers' }}
               <span class="sm-count">{{ layers.length }}</span>
             </p>
-            <p v-if="layers.length === 0" class="sm-hint">Nothing here yet. Add a sticker or a text box.</p>
-            <div v-else ref="layerListEl" class="sm-layer-list">
+            <div v-if="layers.length" ref="layerListEl" class="sm-layer-list">
               <div
                 v-for="layer in layersTopFirst"
                 :key="layer.id"
                 :data-id="layer.id"
                 class="sm-layer-row"
-                :class="{ active: layer.id === selectedId, 'is-dragging': layer.id === draggingLayerId }"
+                :class="{ active: layer.id === selectedId, 'is-dragging': layer.id === draggingLayerId, 'is-hidden': layer.hidden }"
                 @click="selectLayer(layer)"
+                @contextmenu="openLayerMenu($event, layer)"
+                @pointerdown="startLongPress($event, layer)"
+                @pointerup="cancelLongPress"
+                @pointercancel="cancelLongPress"
+                @pointerleave="cancelLongPress"
               >
                 <span
                   class="sm-grip-handle"
@@ -2973,6 +3884,25 @@ function imageStyle(layer) {
                   <AppIcon v-if="layer.type === 'draw'" name="pen" :size="13" />
                 </span>
                 <span class="sm-layer-name">{{ layerLabel(layer) }}</span>
+                <button
+                  type="button"
+                  class="sm-row-del sm-row-btn"
+                  :title="layer.hidden ? 'Show' : 'Hide'"
+                  :aria-label="layer.hidden ? 'Show layer' : 'Hide layer'"
+                  @click.stop="toggleHidden(layer)"
+                >
+                  <AppIcon :name="layer.hidden ? 'eye-off' : 'eye'" :size="14" />
+                </button>
+                <button
+                  type="button"
+                  class="sm-row-del sm-row-btn"
+                  :class="{ 'sm-row-lock': layer.locked }"
+                  :title="layer.locked ? 'Unlock' : 'Lock'"
+                  :aria-label="layer.locked ? 'Unlock layer' : 'Lock layer'"
+                  @click.stop="toggleLock(layer)"
+                >
+                  <AppIcon :name="layer.locked ? 'lock' : 'unlock'" :size="14" />
+                </button>
                 <button type="button" class="sm-row-del" title="Delete layer" aria-label="Delete layer" @click.stop="deleteLayer(layer)">
                   <AppIcon name="trash" :size="14" />
                 </button>
@@ -2983,10 +3913,103 @@ function imageStyle(layer) {
       </aside>
     </div>
 
+    <!-- ============ RIGHT-CLICK MENU (long-press on a phone) ============ -->
+    <div
+      v-if="layerMenu && menuLayer"
+      class="sm-menu-backdrop"
+      @pointerdown.self="closeLayerMenu"
+      @contextmenu.prevent="closeLayerMenu"
+    >
+      <div class="sm-menu" role="menu" :aria-label="layerLabel(menuLayer)" :style="{ left: layerMenu.x + 'px', top: layerMenu.y + 'px' }">
+        <p class="sm-menu-title">{{ layerLabel(menuLayer) }}</p>
+        <button type="button" class="sm-menu-item" role="menuitem" :disabled="menuIndex === layers.length - 1" @click="fromMenu(moveUp)">
+          <AppIcon name="chevron-up" :size="15" /> Bring forward
+        </button>
+        <button type="button" class="sm-menu-item" role="menuitem" :disabled="menuIndex === layers.length - 1" @click="fromMenu(bringToFront)">
+          <svg viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true"><path d="M6 11l6-6 6 6 M6 18l6-6 6 6" /></svg> Bring to front
+        </button>
+        <button type="button" class="sm-menu-item" role="menuitem" :disabled="menuIndex === 0" @click="fromMenu(moveDown)">
+          <AppIcon name="chevron-down" :size="15" /> Send backward
+        </button>
+        <button type="button" class="sm-menu-item" role="menuitem" :disabled="menuIndex === 0" @click="fromMenu(sendToBack)">
+          <svg viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true"><path d="M6 6l6 6 6-6 M6 13l6 6 6-6" /></svg> Send to back
+        </button>
+        <span class="sm-menu-line" aria-hidden="true"></span>
+        <button type="button" class="sm-menu-item" role="menuitem" @click="fromMenu(duplicateLayer)">
+          <AppIcon name="duplicate" :size="15" /> Duplicate
+        </button>
+        <button type="button" class="sm-menu-item" role="menuitem" @click="fromMenu(toggleLock)">
+          <AppIcon :name="menuLayer.locked ? 'unlock' : 'lock'" :size="15" /> {{ menuLayer.locked ? 'Unlock' : 'Lock in place' }}
+        </button>
+        <span class="sm-menu-line" aria-hidden="true"></span>
+        <button type="button" class="sm-menu-item is-danger" role="menuitem" @click="fromMenu(deleteLayer)">
+          <AppIcon name="trash" :size="15" /> Delete
+        </button>
+      </div>
+    </div>
+
     <!-- Backdrop for the phone sheets -->
     <div v-if="mobilePanel" class="sm-sheet-backdrop sm-mobile-only" @click="mobilePanel = null"></div>
 
     <!-- ============ DOWNLOAD DIALOG ============ -->
+    <!-- First-visit tips (the "?" in the top bar shows them again) -->
+    <GuideTips ref="guide" :steps="EDITOR_TIPS" storage-key="sm-guide-seen" />
+
+    <!-- ============ MY STICKERS (like the Frame Editor's My templates) ============ -->
+    <div v-if="myStickersOpen" class="sm-modal-backdrop" @click.self="myStickersOpen = false">
+      <div class="sm-modal sm-modal-wide" role="dialog" aria-modal="true" aria-labelledby="sm-mine-title">
+        <div class="sm-modal-head">
+          <span class="sm-modal-tile"><AppIcon name="folder" :size="18" /></span>
+          <h2 id="sm-mine-title" class="sm-modal-title">My stickers</h2>
+          <button type="button" class="btn btn-outline-secondary btn-sm sm-action ms-auto" @click="newSticker">
+            <AppIcon name="plus" :size="14" /> New sticker
+          </button>
+          <button type="button" class="sm-close" aria-label="Close" @click="myStickersOpen = false">
+            <AppIcon name="close" :size="16" />
+          </button>
+        </div>
+
+        <div class="sm-modal-body">
+          <div v-if="!isAccount" class="empty-state sm-empty-state">
+            <span class="empty-icon"><AppIcon name="lock" :size="20" /></span>
+            <span>Log in to see the stickers you saved.</span>
+          </div>
+          <template v-else>
+            <div class="sm-search mb-3">
+              <AppIcon name="search" :size="15" />
+              <input v-model="myStickersQuery" type="search" placeholder="Search your stickers" aria-label="Search your stickers" />
+            </div>
+            <div v-if="loadingMine" class="sm-mine-grid">
+              <div v-for="n in 8" :key="n" class="skeleton sm-mine-card"></div>
+            </div>
+            <div v-else-if="shownMyStickers.length === 0" class="empty-state sm-empty-state">
+              <span class="empty-icon"><AppIcon name="folder" :size="20" /></span>
+              <span>{{ myStickersQuery ? 'No stickers match "' + myStickersQuery + '".' : 'No saved stickers yet. Make one and press Save to My Studio.' }}</span>
+            </div>
+            <div v-else class="sm-mine-grid">
+              <button
+                v-for="sticker in shownMyStickers"
+                :key="sticker.id"
+                type="button"
+                class="sm-mine-card"
+                :class="{ active: sticker.id === openStickerId }"
+                :title="'Open ' + sticker.name"
+                @click="editSavedSticker(sticker)"
+              >
+                <span class="sm-mine-thumb"><img :src="sticker.thumbUrl" alt="" draggable="false" /></span>
+                <span class="sm-mine-name">{{ sticker.name }}</span>
+                <span class="sm-mine-tags">
+                  <span v-if="sticker.kind === 'animated'" class="sm-mine-tag">GIF</span>
+                  <span v-if="editableIds.has(sticker.id)" class="sm-mine-tag is-layers">Layers</span>
+                  <span v-if="sticker.id === openStickerId" class="sm-mine-tag is-open">Open now</span>
+                </span>
+              </button>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
     <div v-if="dlOpen" class="sm-modal-backdrop" @click.self="dlOpen = false">
       <div class="sm-modal" role="dialog" aria-modal="true" aria-labelledby="sm-dl-title">
         <div class="sm-modal-head">
@@ -3242,19 +4265,14 @@ function imageStyle(layer) {
 /*  Blue Studios rather than a copy of another editor.                 */
 /* ------------------------------------------------------------------ */
 .sm-page {
-  /* App.vue puts the page in a centred column under the navbar. An editor wants every pixel,
-     so it breaks out: the full width of the window (the negative side margins undo the column)
-     and up against the navbar (-24px undoes its mb-4 margin). What is left to subtract is the
-     57px navbar and main's 16px bottom padding (pb-3), so the editor fills the screen exactly. */
-  --sm-navbar: 73px;
+  /* App.vue puts the editors straight under the 57px Blue Studios bar (not in the centred
+     column), the same as the Template Editor, so the page fills the rest of the screen. */
+  --sm-navbar: 57px;
   --sm-gap: 12px;
   --sm-float: 0 1px 2px rgba(20, 23, 43, 0.04), 0 12px 32px rgba(20, 23, 43, 0.06);
   --sm-faint: #9AA0AE;
 
-  width: 100vw;
-  margin-left: calc(50% - 50vw);
-  margin-right: calc(50% - 50vw);
-  margin-top: -24px;
+  width: 100%;
   height: calc(100vh - var(--sm-navbar));
   height: calc(100dvh - var(--sm-navbar));
   min-height: 560px;
@@ -3302,8 +4320,14 @@ function imageStyle(layer) {
   font-weight: 800;
   letter-spacing: -0.01em;
 }
-.sm-mode { margin-left: auto; }
+.sm-topbar-center { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .sm-topbar-actions { display: flex; align-items: center; gap: 6px; margin-left: 8px; }
+/* Laptop: name on the left, Sticker / GIF and Rulers in the true middle, actions on the right */
+@media (min-width: 992px) {
+  .sm-topbar { display: grid; grid-template-columns: 1fr auto 1fr; }
+  .sm-topbar-center { margin-left: 0; }
+  .sm-topbar-actions { justify-self: end; }
+}
 
 /* Buttons: Bootstrap's btn from pages.css, plus room for an icon */
 .sm-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
@@ -3378,6 +4402,12 @@ function imageStyle(layer) {
   flex: 0 0 auto;
   display: flex; align-items: center; justify-content: space-between;
   padding: 14px 16px 10px;
+}
+@media (min-width: 992px) {
+  .sm-head-phone-only { display: none; }
+  /* Only the layers: no line above them, and room at the top where the title was */
+  .sm-panel-body.is-layers-only { padding-top: 14px; }
+  .sm-panel-body.is-layers-only .sm-layers { margin-top: 0; padding-top: 0; border-top: 0; }
 }
 .sm-panel-title { margin: 0; font-size: 1.05rem; font-weight: 700; text-wrap: balance; }
 .sm-panel-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 16px 16px; scrollbar-width: thin; }
@@ -3494,6 +4524,173 @@ function imageStyle(layer) {
 .sm-drawbar-btn.active { color: var(--brand); background: var(--brand-tint); }
 .sm-drawbar-btn:active { transform: scale(0.92); }
 .sm-drawbar-line { width: 1px; height: 22px; flex-shrink: 0; background: var(--line); }
+.sm-drawbar-wide { width: auto; gap: 4px; padding: 0 10px; font-size: 0.85rem; font-weight: 600; white-space: nowrap; }
+.sm-drawbar-title {
+  max-width: 140px; padding: 0 6px 0 10px;
+  font-size: 0.85rem; font-weight: 700; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 1; min-width: 0;
+}
+/* A small card under a bar (Adjust) */
+.sm-pop {
+  position: absolute; top: calc(100% + 8px); left: 50%; z-index: 31;
+  transform: translateX(-50%);
+  width: 260px; max-width: calc(100vw - 32px);
+  padding: 14px;
+  border: 1px solid var(--line); border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 12px 32px rgba(20, 23, 43, 0.16);
+  display: flex; flex-direction: column; gap: 12px;
+}
+.sm-pop .sm-label { margin-bottom: 4px; }
+.sm-pop .sm-btn-row .btn { flex: 1; }
+
+/* Rulers switch: a pill, blue when on (the same as the Template Editor's) */
+.sm-toggle {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 38px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: #ffffff; color: var(--muted);
+  font-size: 0.85rem; font-weight: 600; white-space: nowrap;
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease;
+}
+.sm-toggle .sm-local-icon { width: 15px; height: 15px; }
+.sm-toggle.active { color: var(--brand); border-color: var(--brand); background: var(--brand-tint); }
+
+/* Snap lines: red, the same as the Template Editor and Decorate */
+.sm-snap { position: absolute; z-index: 26; background: #F04438; pointer-events: none; }
+.sm-snap-x { top: 0; bottom: 0; width: 1px; }
+.sm-snap-y { left: 0; right: 0; height: 1px; }
+
+/* Search box in the Elements panel */
+.sm-search {
+  display: flex; align-items: center; gap: 8px;
+  height: 38px; padding: 0 10px;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--soft); color: var(--muted);
+}
+.sm-search:focus-within { border-color: var(--brand); background: #ffffff; }
+.sm-search input {
+  flex: 1; min-width: 0;
+  border: 0; outline: none; background: transparent;
+  color: var(--ink); font-size: 0.88rem;
+}
+.sm-search input::-webkit-search-cancel-button { -webkit-appearance: none; }
+.sm-search-clear {
+  display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; padding: 0;
+  border: 0; border-radius: 999px;
+  background: transparent; color: var(--muted);
+}
+
+/* The sticker's name in the top bar (the same as the Template Editor's) */
+.sm-name {
+  width: 170px; min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid transparent; border-radius: 8px;
+  background: transparent;
+  color: var(--ink); font-size: 0.9rem; font-weight: 600;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+.sm-name:focus { outline: none; border-color: var(--brand); background: #ffffff; }
+.sm-name::placeholder { color: var(--sm-faint); font-weight: 500; }
+/* The text bar's buttons scroll sideways on a narrow phone; its pop-ups sit outside the scroll */
+.sm-drawbar-scroll {
+  display: flex; align-items: center; gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.sm-drawbar-scroll::-webkit-scrollbar { display: none; }
+.sm-textbar-size { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.sm-textbar-size input {
+  width: 44px; height: 30px; padding: 0;
+  border: 1px solid var(--line); border-radius: 8px;
+  color: var(--ink); text-align: center; font-size: 0.85rem; font-weight: 600; font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+}
+.sm-textbar-size input::-webkit-inner-spin-button { -webkit-appearance: none; }
+.sm-textbar-size input:focus { outline: none; border-color: var(--brand); }
+.sm-pop-colors { flex-wrap: wrap; padding: 0; overflow: visible; }
+/* A hidden layer: faded in the list */
+.sm-layer-row.is-hidden .sm-layer-name,
+.sm-layer-row.is-hidden .sm-layer-thumb { opacity: 0.45; }
+.sm-row-btn { width: 26px; }
+/* My stickers: a grid of your saved stickers */
+.sm-modal.sm-modal-wide { width: min(920px, calc(100vw - 32px)); max-width: 920px; }
+.sm-mine-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 12px; max-height: 60vh; overflow-y: auto; padding: 2px; }
+.sm-mine-card {
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--line); border-radius: 14px;
+  background: #ffffff;
+  text-align: left;
+  transition: border-color 150ms ease, box-shadow 150ms ease, transform 160ms var(--ease-out);
+}
+.skeleton.sm-mine-card { height: 190px; }
+.sm-mine-card:active { transform: scale(0.98); }
+.sm-mine-card.active { border-color: var(--brand); box-shadow: 0 0 0 2px var(--brand-tint); }
+.sm-mine-thumb {
+  display: flex; align-items: center; justify-content: center;
+  aspect-ratio: 1 / 1; padding: 8px;
+  border-radius: 10px;
+  background-color: #ffffff;
+  background-image: linear-gradient(45deg, #F4F6FA 25%, transparent 25%), linear-gradient(-45deg, #F4F6FA 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #F4F6FA 75%), linear-gradient(-45deg, transparent 75%, #F4F6FA 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+.sm-mine-thumb img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.sm-mine-name { font-size: 0.85rem; font-weight: 600; color: var(--ink); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sm-mine-tags { display: flex; flex-wrap: wrap; gap: 4px; min-height: 18px; }
+.sm-mine-tag { padding: 1px 7px; border-radius: 999px; font-size: 0.68rem; font-weight: 700; color: var(--muted); background: var(--soft); }
+.sm-mine-tag.is-layers { color: #027A48; background: #ECFDF3; }
+.sm-mine-tag.is-open { color: var(--brand); background: var(--brand-tint); }
+/* Laptops: the top bar keeps to one line. Below 1600px "My stickers" is just its icon
+   (the tooltip names it); below 1366px Download is too, and Save to My Studio says "Save". */
+.sm-topbar .sm-action { white-space: nowrap; }
+.sm-show-md { display: none; }
+@media (min-width: 992px) and (max-width: 1599.98px) { .sm-hide-lg { display: none; } }
+@media (min-width: 992px) and (max-width: 1365.98px) { .sm-hide-md { display: none; } .sm-show-md { display: inline; } }
+/* Dimensions: W and H boxes side by side */
+.sm-dims { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sm-dim {
+  display: flex; align-items: center; gap: 6px; margin: 0;
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--line); border-radius: 10px;
+  font-size: 0.78rem; font-weight: 700; color: var(--muted);
+}
+.sm-dim:focus-within { border-color: var(--brand); }
+.sm-dim input {
+  flex: 1; min-width: 0; height: 34px;
+  border: 0; outline: none; background: transparent;
+  color: var(--ink); font-size: 0.88rem; font-weight: 600; font-variant-numeric: tabular-nums;
+}
+/* One colour of a drawing: a round picker, its code, and "back to the original" */
+.sm-color-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.sm-color-pick { position: relative; width: 30px; height: 30px; flex-shrink: 0; margin: 0; cursor: pointer; }
+.sm-color-pick input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.sm-hex { flex: 1; min-width: 0; font-family: ui-monospace, monospace; }
+.sm-row-del:disabled { opacity: 0.35; }
+/* The small bar under a selected layer: duplicate, lock, delete */
+.sm-mini-bar {
+  position: absolute; top: calc(100% + 10px); left: 50%; z-index: 5;
+  transform: translateX(-50%);
+  display: flex; gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 4px 14px rgba(20, 23, 43, 0.14);
+  /* the layer's own font size and spacing must not change the bar */
+  font-size: 1rem; letter-spacing: 0; line-height: 1; text-transform: none;
+}
+.sm-mini-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; padding: 0;
+  border: 0; border-radius: 999px;
+  background: transparent; color: var(--muted);
+}
+.sm-mini-btn.on { color: var(--brand); background: var(--brand-tint); }
+.sm-mini-btn.del { color: var(--danger); }
+.sm-mini-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 /* The colours scroll sideways inside the bar on a narrow phone */
 .sm-drawbar-colors {
   display: flex; align-items: center; gap: 6px;
@@ -3555,6 +4752,7 @@ function imageStyle(layer) {
 .sm-textbar-font { width: auto; padding: 0 10px; font-size: 1.05rem; color: var(--ink); }
 .sm-textbar-letter { font-size: 1rem; color: var(--ink); font-family: Georgia, 'Times New Roman', serif; }
 .sm-textbar-letter.active { color: var(--brand); }
+.sm-textbar-caps { font-family: inherit; font-size: 0.82rem; font-weight: 700; }
 /* The screen colour picker: a pipette in a white circle, next to the colours */
 .sm-pipette {
   display: flex; align-items: center; justify-content: center;
@@ -3697,6 +4895,22 @@ function imageStyle(layer) {
 .sm-drop.is-dragover { border-color: var(--brand); background: var(--brand-tint); }
 .sm-stage.is-dragover { box-shadow: inset 0 0 0 2px var(--brand); }
 .sm-drop-title { font-weight: 700; color: var(--ink); }
+.sm-drop.is-busy { border-color: var(--brand); background: var(--brand-tint); }
+/* Your uploads: a tile each, with a small remove button in the corner */
+.sm-upload { position: relative; }
+.sm-upload .sm-cell { width: 100%; }
+.sm-upload-del {
+  position: absolute; top: -6px; right: -6px;
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; padding: 0;
+  border: 2px solid #ffffff; border-radius: 999px;
+  background: var(--ink); color: #ffffff;
+}
+/* Small laptops: narrower panels, so the canvas keeps its room */
+@media (min-width: 992px) and (max-width: 1279.98px) {
+  .sm-panel, .sm-props { width: 256px; }
+  .sm-rail { width: 68px; }
+}
 
 /* ---------- canvas stage: a dotted cutting mat ---------- */
 .sm-main { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: var(--sm-gap); }
@@ -3770,6 +4984,9 @@ function imageStyle(layer) {
 .sm-layer-img { display: block; width: 100%; height: 100%; pointer-events: none; }
 .sm-text { line-height: 1.2; white-space: pre-wrap; word-break: break-word; min-height: 1.2em; }
 .sm-text-view { text-shadow: 0 0 2px rgba(0, 0, 0, 0.45); }
+/* Curved text: the box is one line tall, each letter sits on its own spot of the arch */
+.sm-text-curved { position: relative; }
+.sm-curve-letter { position: absolute; left: 50%; top: 50%; white-space: pre; letter-spacing: 0; }
 .sm-text-edit { outline: none; cursor: text; caret-color: var(--brand); text-shadow: 0 0 2px rgba(0, 0, 0, 0.45); }
 .sm-text.is-emoji .sm-text-view { text-shadow: none; }
 .sm-layer.is-selected { outline: 1.5px solid var(--brand); outline-offset: 2px; border-radius: 4px; }
@@ -3800,6 +5017,19 @@ function imageStyle(layer) {
   background: var(--brand);
   box-shadow: 0 1px 3px rgba(20, 23, 43, 0.25);
   cursor: grab;
+}
+
+/* The angle while rotating, above the rotate handle (the same as the Template Editor) */
+.sm-rot-tip {
+  position: absolute; left: 50%; top: -62px;
+  transform: translateX(-50%);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--ink); color: #ffffff;
+  font-family: 'Plus Jakarta Sans', sans-serif; font-size: 0.72rem; font-weight: 600; font-style: normal;
+  letter-spacing: 0; line-height: 1.5; text-transform: none; text-shadow: none;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+  pointer-events: none;
 }
 
 /* GIF preview: sits over the layers with the same checkerboard, so it looks like the canvas moving */
@@ -3859,6 +5089,7 @@ function imageStyle(layer) {
 .sm-frame.active .sm-frame-num { background: var(--brand); }
 .sm-frame-add { display: flex; align-items: center; justify-content: center; color: var(--brand); border-style: dashed; }
 .sm-frame-move { display: flex; gap: 2px; }
+.sm-frame-move.is-hidden { visibility: hidden; }
 .sm-frame-move button {
   width: 26px; height: 20px;
   padding: 0;
@@ -3942,6 +5173,43 @@ function imageStyle(layer) {
   color: var(--sm-faint);
   transition: color 150ms ease, background-color 150ms ease;
 }
+/* A locked layer shows a lock in its row: tap it to unlock */
+.sm-row-lock { color: var(--brand); }
+
+/* ---------- right-click menu ---------- */
+/* The backdrop is see-through: it only catches the click outside the menu that closes it */
+.sm-menu-backdrop { position: fixed; inset: 0; z-index: 1060; }
+.sm-menu {
+  position: fixed;
+  width: 210px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 12px 32px rgba(20, 23, 43, 0.16);
+  transform-origin: top left;
+  animation: sm-menu-in 160ms var(--ease-out);
+}
+@keyframes sm-menu-in { from { opacity: 0; transform: scale(0.96); } }
+.sm-menu-title {
+  margin: 0; padding: 6px 10px 4px;
+  font-size: 0.75rem; font-weight: 600; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.sm-menu-item {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; min-height: 36px;
+  padding: 0 10px;
+  border: 0; border-radius: 9px;
+  background: transparent; color: var(--ink);
+  font-size: 0.88rem; font-weight: 500; text-align: left;
+  transition: background-color 150ms ease;
+}
+.sm-menu-item .sm-local-icon { width: 15px; height: 15px; }
+.sm-menu-item:disabled { opacity: 0.4; }
+.sm-menu-item.is-danger { color: var(--danger); }
+.sm-menu-item:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.sm-menu-line { display: block; height: 1px; margin: 4px 6px; background: var(--line); }
 
 .sm-close {
   display: inline-flex; align-items: center; justify-content: center;
@@ -4079,6 +5347,15 @@ function imageStyle(layer) {
   .sm-drop:hover { border-color: var(--brand); background: var(--brand-tint); }
   .sm-layer-row:not(.active):hover { background: var(--soft); }
   .sm-row-del:hover { color: var(--danger); background: #FDE4E5; }
+  .sm-toggle:not(.active):hover { color: var(--ink); background: var(--soft); }
+  .sm-upload-del:hover { background: var(--danger); }
+  .sm-mine-card:not(.active):hover { border-color: var(--brand); }
+  .sm-mini-btn:not(.on):hover { color: var(--ink); background: var(--soft); }
+  .sm-mini-btn.del:hover { color: var(--danger); background: #FDE4E5; }
+  .sm-name:hover:not(:focus) { background: var(--soft); }
+  .sm-row-lock:hover { color: var(--brand); background: var(--brand-tint); }
+  .sm-menu-item:not(:disabled):hover { background: var(--soft); }
+  .sm-menu-item.is-danger:not(:disabled):hover { background: #FDE4E5; }
   .sm-close:hover { color: var(--ink); background: var(--soft); }
   .sm-mini:hover { color: var(--brand); border-color: var(--brand); }
   .sm-mini-danger:hover { color: var(--danger); border-color: var(--danger); background: #FDE4E5; }
@@ -4102,12 +5379,17 @@ function imageStyle(layer) {
 
   /* Top bar: title and actions on one row, Sticker / GIF underneath */
   .sm-topbar { flex-wrap: wrap; gap: 6px; padding: 6px 6px 6px 10px; }
-  .sm-mode { order: 3; margin-left: 0; width: 100%; }
+  .sm-topbar-center { order: 3; margin-left: 0; width: 100%; gap: 6px; }
+  .sm-mode { flex: 1; }
   .sm-mode .seg-tab { flex: 1; justify-content: center; padding-top: 5px; padding-bottom: 5px; }
   .sm-topbar-actions { margin-left: auto; gap: 4px; }
   .sm-topbar .sm-square,
   .sm-topbar .sm-action { width: 36px; height: 36px; padding: 0; }
   .sm-topbar .sm-hide-xs { display: none; }
+  .sm-brand { flex: 1 1 0; }
+  .sm-brand-text { display: none; } /* the name is enough on a phone */
+  .sm-name { width: 100%; }
+  .sm-toggle { width: 36px; height: 36px; padding: 0; justify-content: center; }
 
   .sm-body { flex-direction: column; gap: 8px; }
   .sm-mobile-only,
@@ -4208,6 +5490,7 @@ function imageStyle(layer) {
   .sm-frame:active,
   .sm-range:active::-webkit-slider-thumb { transform: none; }
   .sm-panel { transition: none; }
+  .sm-menu { animation: none; }
   .sm-modal, .sm-toast { animation: sm-fade 200ms ease; }
 }
 </style>

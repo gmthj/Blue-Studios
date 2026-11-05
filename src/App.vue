@@ -16,10 +16,12 @@ const { user, isAccount, isAdmin, authError, avatar, logOut, resendVerification 
 // Room pages and frame editor use the full width of the screen (Bootstrap container-fluid), so big laptop and
 // computer screens get a bigger camera, video call tiles, or full-width editor canvas.
 // Other pages (home) use the normal centred container.
-const isEditor = computed(() => route.path === '/frame-editor')
+// The two editors (Frame Editor, Sticker Maker) fill the screen under the bar
+const isEditor = computed(() => route.path === '/frame-editor' || route.path === '/sticker-maker')
 const inRoom = computed(() => route.path.startsWith('/room/'))
 const containerClass = computed(() => {
-  return (inRoom.value || isEditor.value) ? 'container-fluid' : 'container'
+  // WHY not the editors: the bar then lines up exactly as on every other page
+  return inRoom.value ? 'container-fluid' : 'container'
 })
 
 // Fullscreen button in a room (StageBar.vue): the header is hidden so the room gets the whole screen
@@ -139,6 +141,15 @@ async function logOutAndGoHome() {
        Outside the v-if above, so the template editor can use it too. -->
   <AppDialog />
 </template>
+
+<style>
+/* WHY: long pages have a scrollbar and the editors do not. Without this the Blue Studios bar
+   (and everything centred) jumps sideways by the scrollbar's width when you change page.
+   Keeping the scrollbar's space on every page keeps the bar in exactly the same place. */
+html {
+  scrollbar-gutter: stable;
+}
+</style>
 
 <style scoped>
 /* The same colours and font as the landing page */
