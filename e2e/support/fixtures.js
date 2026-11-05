@@ -43,6 +43,8 @@ export const test = base.extend({
       localStorage.setItem('callDock', JSON.stringify({ x: 8, y: 64, right: true, bottom: false }))
       // The Pick page's first-time tips (PickView.vue) would sit over the gallery the tests drag from
       localStorage.setItem('pick-tips-seen', '1')
+      // The same for the other first-time tips: Decorate, and the makers' "How it works" tours (GuideTips.vue)
+      for (const key of ['decorate-tips-seen', 'fe-guide-seen', 'sm-guide-seen', 'sm-gif-tips-seen']) localStorage.setItem(key, '1')
     })
     await use(page)
   },

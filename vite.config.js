@@ -77,7 +77,12 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    plugins: [vue(), localApi()],
+    // In unit tests (vitest), <img src="/images/..."> must stay a plain URL: turning it into an import
+    // makes Node look for C:/images/... and the whole test file fails to load. The real site is unchanged.
+    plugins: [
+      vue(mode === 'test' ? { template: { transformAssetUrls: { includeAbsolute: false } } } : {}),
+      localApi(),
+    ],
     // FFmpeg.wasm starts its own web worker from a file next to it, which breaks if Vite
     // pre-bundles the package in dev mode. So Vite leaves these two packages as they are.
     optimizeDeps: {
@@ -90,6 +95,9 @@ export default defineConfig(({ mode }) => {
     },
     test: {
       environment: 'jsdom',
+      // Only the Vitest files. tests/*.test.js are the rules + api tests (node --test with the emulators,
+      // npm run test:rules) and e2e/*.spec.js are Playwright's (npm run test:e2e).
+      include: ['tests/**/*.spec.js'],
     },
   }
 })

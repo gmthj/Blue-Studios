@@ -16,6 +16,9 @@ const PROJECT_ID = 'demo-blue-studios'
 
 export default defineConfig({
   testDir: './e2e',
+  // Copies today's security rules for the emulators (with their link check change) before every run.
+  // Without this, emulators left running from an earlier run would keep testing the rules from back then.
+  globalSetup: './e2e/emulator/prepare.mjs',
   timeout: 60000,
   // The tests share one set of emulators, but each makes its own rooms and accounts, so they can run side by side.
   // Rooms use the camera and the CPU (countdowns, photos, files), so not too many at once.

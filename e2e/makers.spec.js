@@ -14,10 +14,12 @@ test.describe('Frame Editor', () => {
     const name = 'Frame ' + uniq()
     await logIn(page, account, '/frame-editor')
 
-    await page.getByRole('button', { name: 'Save Frame' }).click()
-    await page.getByLabel('Frame Title').fill(name)
-    await page.getByRole('button', { name: 'Cute', exact: true }).click()
+    // The Save button in the top bar opens the save pop-up, which asks for a name and categories
     await page.getByRole('button', { name: 'Save to My Studio', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Save frame' })
+    await dialog.getByLabel('Frame name').fill(name)
+    await dialog.getByRole('button', { name: 'Cute', exact: true }).click()
+    await dialog.getByRole('button', { name: 'Save to My Studio', exact: true }).click()
     await expect(page.getByText('Saved Successfully!')).toBeVisible({ timeout: 30000 })
 
     // Saved as a private template, with its files
@@ -34,12 +36,14 @@ test.describe('Frame Editor', () => {
     const original = await seedTemplate(maker)
     const account = await createAccount()
     await logIn(page, account, '/frame-editor?template=' + original.id)
-    // Their frame is loaded: its name is the frame title
-    await expect(page.getByPlaceholder('my-frame-1')).toHaveValue(original.name, { timeout: 20000 })
+    // Their frame is loaded: its name is in the top bar. It is not linked to their template, so saving makes a new one
+    await expect(page.getByLabel('Template name')).toHaveValue(original.name, { timeout: 20000 })
 
-    await page.getByRole('button', { name: 'Save Frame' }).click()
-    await page.getByRole('button', { name: 'Cute', exact: true }).click()
     await page.getByRole('button', { name: 'Save to My Studio', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: 'Save frame' })
+    await expect(dialog.getByLabel('Frame name')).toHaveValue(original.name)
+    await dialog.getByRole('button', { name: 'Cute', exact: true }).click()
+    await dialog.getByRole('button', { name: 'Save to My Studio', exact: true }).click()
     await expect(page.getByText('Saved Successfully!')).toBeVisible({ timeout: 30000 })
 
     const mine = await itemsOf('templates', account)
@@ -52,11 +56,19 @@ test.describe('Frame Editor', () => {
   })
 })
 
+// Saving a sticker that has no name yet first asks for one (askText in useDialog.js, shown by AppDialog.vue)
+async function nameSticker(page, name) {
+  const ask = page.getByRole('dialog', { name: 'Name your sticker' })
+  await ask.getByLabel('Name').fill(name)
+  await ask.getByRole('button', { name: 'Next' }).click()
+}
+
 test.describe('Sticker Maker', () => {
   test('guests are asked to log in to save', async ({ page }) => {
     await page.goto('/sticker-maker')
     await page.getByRole('button', { name: /^Add / }).first().click() // an empty sticker can't be saved
     await page.getByRole('button', { name: 'Save to My Studio' }).click()
+    await nameSticker(page, 'Guest sticker')
 
     await expect(page.getByText('You need an account to save stickers to My Studio.')).toBeVisible()
     await expect(page.getByRole('link', { name: 'Log in to save' })).toHaveAttribute('href', '/login?redirect=/sticker-maker')
@@ -71,12 +83,15 @@ test.describe('Sticker Maker', () => {
     // Put something on it: the first sticker in the Stickers tool
     await page.getByRole('button', { name: /^Add / }).first().click()
 
+    // An unnamed sticker is named first, then the Save pop-up opens with that name filled in
     await page.getByRole('button', { name: 'Save to My Studio' }).click()
+    await nameSticker(page, name)
     const dialog = page.getByRole('dialog', { name: 'Save to My Studio' })
-    // Both are needed: the save checks them first
+    await expect(dialog.getByLabel('Name')).toHaveValue(name)
+    await expect(page.getByLabel('Sticker name')).toHaveValue(name) // the top bar too
+    // A category is needed: the save checks it first
     await dialog.getByRole('button', { name: 'Save sticker' }).click()
-    await expect(dialog.getByRole('alert')).toHaveText('Give your sticker a name (1 to 40 characters).')
-    await dialog.getByLabel('Name').fill(name)
+    await expect(dialog.getByRole('alert')).toHaveText('Pick at least one category or folder.')
     await dialog.getByRole('button', { name: 'Cute', exact: true }).click()
     await dialog.getByRole('button', { name: 'Save sticker' }).click()
 

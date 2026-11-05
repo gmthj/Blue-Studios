@@ -308,7 +308,7 @@ watch(isAccount, (now) => {
         </template>
         <template v-else-if="!job">
           <h2 class="section-title">Nothing to share yet</h2>
-          <p class="hint">Choose a format and press "Share and download" on the Export page.</p>
+          <p class="hint">Name the strip and press "Share and download" on the Export page.</p>
           <button type="button" class="btn btn-outline-secondary step-link" @click="goToStage('export')">
             <AppIcon name="arrow-left" :size="16" /> Export
           </button>

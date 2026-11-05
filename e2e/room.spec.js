@@ -55,6 +55,27 @@ test('leaving a room takes me home and out of the members list', async ({ page }
   await expect.poll(async () => (await adminDb.collection('rooms/' + code + '/members').get()).size).toBe(0)
 })
 
+test('after leaving, the home page offers to go back into the room, until I say not now', async ({ page }) => {
+  const code = await createRoom(page, 'Rejoiner')
+  await page.getByRole('button', { name: 'Leave' }).click()
+  await expect(page).toHaveURL('/')
+
+  // The room is still open, so the home page asks (recentRooms.js remembers it on this device)
+  const card = page.getByRole('region', { name: 'Go back into room ' + code + '?' })
+  await expect(card).toBeVisible({ timeout: 15000 })
+  await card.getByRole('button', { name: 'Rejoin room ' + code }).click()
+  await expect(page).toHaveURL('/room/' + code + '/shoot', { timeout: 20000 })
+
+  // Leave again and press Not now: the card goes, and stays gone after a reload
+  await page.getByRole('button', { name: 'Leave' }).click()
+  await expect(card).toBeVisible({ timeout: 15000 })
+  await card.getByRole('button', { name: 'Not now' }).click()
+  await expect(card).toBeHidden()
+  await page.reload()
+  await expect(page.getByLabel('Your name')).toBeVisible()
+  await expect(card).toBeHidden()
+})
+
 test('a room link opened without a name goes home with the code filled in', async ({ page }) => {
   await page.goto('/room/0000')
 
@@ -84,11 +105,10 @@ test('should make a strip, add a sticker, export it as a PNG and open its public
   await page.locator('section[aria-label="Sticker tray"]').getByRole('button', { name: /^Add / }).first().click()
   await expect(page.getByRole('button', { name: 'Hide this sticker' })).toHaveCount(1)
 
-  // Music (skip it), then Export: PNG, and a name everyone sees
+  // Music (skip it), then Export: a name everyone sees. Nobody picks the format: a still strip with no music
+  // is a PNG (chooseExportFormat in exportRules.js)
   await nextStage(page, 'music')
   await nextStage(page, 'export')
-  await page.getByRole('radio', { name: /PNG/ }).click()
-  await expect(page.getByRole('radio', { name: /PNG/ })).toHaveAttribute('aria-checked', 'true')
   await page.getByLabel('Everyone in the room sees this as you type').fill('E2E strip ' + code)
   await page.getByRole('button', { name: 'Share and download' }).click()
 

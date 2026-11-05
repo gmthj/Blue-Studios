@@ -68,8 +68,8 @@ function wideScore(camera) {
 
 // Phones list every lens (ultra wide, telephoto...) as its own camera, so "switch camera" went through
 // 3 or 4 of them. Keep just the widest front one and the widest back one. Cameras we can't place
-// (laptop and USB webcams) are all kept.
-function onePerSide(allCameras) {
+// (laptop and USB webcams) are all kept. Exported for the unit tests (tests/cameraList.spec.js).
+export function onePerSide(allCameras) {
   const best = {}
   const kept = []
   for (const camera of allCameras) {

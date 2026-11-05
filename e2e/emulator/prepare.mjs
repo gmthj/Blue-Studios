@@ -37,3 +37,8 @@ config.emulators.ui = { enabled: false }
 fs.writeFileSync(path.join(out, 'firebase.json'), JSON.stringify(config, null, 2))
 
 console.log('Emulator rules ready in e2e/.emulator/')
+
+// Also used as Playwright's globalSetup (playwright.config.js): the copies above are made again on every test run,
+// even when emulators that are already running get reused. The emulators reload rules files when they change,
+// so reused emulators always test today's rules, not the ones from when they were started.
+export default function () {}
