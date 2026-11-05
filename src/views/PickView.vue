@@ -977,7 +977,9 @@ watch(
 /* A floating card: sticks to the bottom of the screen while the strip is in view */
 .reposition-bar {
   position: sticky;
-  bottom: 12px;
+  /* Sticks just above the docked Back / Next bar (RoomStageNav.vue sets its height as --stage-nav-h),
+     not the bottom of the screen, where that bar would cover its Reset / Remove / Done buttons */
+  bottom: calc(var(--stage-nav-h, 56px) + 12px);
   z-index: 30;
   width: 100%;
   max-width: 320px;

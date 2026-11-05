@@ -457,36 +457,32 @@ async function copyJoinLink() {
                 <span class="host-only-status" :class="{ on: hostVirtualFriends.length > 0 }">
                   {{ hostVirtualFriends.length > 0 ? 'ON' : 'OFF' }}
                 </span>
-                <span class="host-only-tag"><AppIcon name="lock" :size="12" /> Host only</span>
+                <span class="host-only-tag" title="Host only" aria-label="Host only"><AppIcon name="lock" :size="12" /></span>
                 <button class="host-only-close" aria-label="Close" @click="showHostOnlyInfo = false">
                   <AppIcon name="close" :size="16" />
                 </button>
               </div>
-              <p class="host-only-text">
-                Only the room host ({{ room.hostName }}) can add people into their camera, so everyone stands together.
-              </p>
-              <!-- Who is in the host's camera (blue) and who is not (grey) -->
-              <div class="host-only-group in">
-                <p class="host-only-list-title">In the host's camera ({{ hostVirtualFriends.length }})</p>
-                <ul v-if="hostVirtualFriends.length > 0" class="host-only-list">
-                  <li v-for="member in hostVirtualFriends" :key="member.id">
-                    {{ member.name }}<template v-if="member.id === uid"> (you)</template>
+              <p class="host-only-text">Only {{ room.hostName || 'the host' }} can change this.</p>
+              <!-- Who is in the host's camera (blue chips) and who is not (grey chips). Chips wrap, so even
+                   6 people fit in a few lines without the card having to scroll. -->
+              <p class="host-only-list-title">In camera ({{ hostVirtualFriends.length }})</p>
+              <ul v-if="hostVirtualFriends.length > 0" class="host-only-chips">
+                <li v-for="member in hostVirtualFriends" :key="member.id" class="chip in" :class="{ me: member.id === uid }">
+                  {{ member.id === uid ? 'You' : member.name }}
+                </li>
+              </ul>
+              <p v-else class="host-only-empty">No one yet</p>
+
+              <template v-if="notVirtualFriends.length > 0">
+                <p class="host-only-list-title mt-2">Not in ({{ notVirtualFriends.length }})</p>
+                <ul class="host-only-chips">
+                  <li v-for="member in notVirtualFriends" :key="member.id" class="chip out" :class="{ me: member.id === uid }">
+                    {{ member.id === uid ? 'You' : member.name }}
                   </li>
                 </ul>
-                <p v-else class="host-only-empty">No one yet</p>
-              </div>
+              </template>
 
-              <div class="host-only-group out">
-                <p class="host-only-list-title">Not included ({{ notVirtualFriends.length }})</p>
-                <ul v-if="notVirtualFriends.length > 0" class="host-only-list">
-                  <li v-for="member in notVirtualFriends" :key="member.id">
-                    {{ member.name }}<template v-if="member.id === uid"> (you)</template>
-                  </li>
-                </ul>
-                <p v-else class="host-only-empty">Everyone is in</p>
-              </div>
-
-              <p v-if="iAmVirtual" class="host-only-text mt-2 mb-0">Stay in your camera's view so you show up.</p>
+              <p v-if="iAmVirtual" class="host-only-text mt-2 mb-0">Stay in view to show up.</p>
             </div>
 
             <!-- Everyone else, while Virtual Friends is on: switch the big view between the host's camera and mine -->
@@ -680,11 +676,48 @@ async function copyJoinLink() {
   min-width: 0;
 }
 
-/* Bootstrap "xl" and up (1200px+): a bigger QR code */
-@media (min-width: 1200px) {
+/* Tablets and computers (768px+ wide, and tall enough for the gallery to keep room under the card): the QR code
+   goes on top and is big (easy to scan from across the room), with the code, the address and Copy link centred
+   under it. Up to 220px while the gallery shares the column (md / lg), 280px once it has its own (xl). */
+@media (min-width: 768px) and (min-height: 700px) {
+  .join-big {
+    flex-direction: column;
+    gap: 12px;
+    text-align: center;
+  }
+
   .join-qr {
-    width: 104px;
-    height: 104px;
+    width: 100%;
+    max-width: 220px;
+    height: auto;
+    aspect-ratio: 1;
+    padding: 8px;
+    border-radius: 12px;
+  }
+
+  .join-big .room-code {
+    margin: 2px auto 0;
+  }
+}
+
+@media (min-width: 1200px) {
+  .join-big {
+    flex-direction: column;
+    gap: 12px;
+    text-align: center;
+  }
+
+  .join-qr {
+    width: 100%;
+    max-width: 280px;
+    height: auto;
+    aspect-ratio: 1;
+    padding: 8px;
+    border-radius: 12px;
+  }
+
+  .join-big .room-code {
+    margin: 2px auto 0;
   }
 
   .room-code {
@@ -809,10 +842,11 @@ async function copyJoinLink() {
 
 /* Everyone else's card about Virtual Friends (in the same place as the host's list) */
 .host-only-info {
-  width: 290px;
+  width: 260px;
   max-width: calc(100% - 24px);
   padding: 12px;
   overflow-y: auto;
+  scrollbar-width: none; /* it still scrolls on a very short screen, just without a scroll bar */
   border-radius: 16px;
   color: #ffffff;
   background: rgba(14, 16, 32, 0.72);
@@ -869,38 +903,55 @@ async function copyJoinLink() {
   background: var(--brand);
 }
 
-.host-only-group {
-  margin-top: 8px;
-  padding: 8px 10px;
-  border-radius: 12px;
-}
-
-/* In the host's camera: the brand blue, like the ON label */
-.host-only-group.in {
-  color: #ffffff;
-  background: rgba(47, 91, 234, 0.45);
-  box-shadow: inset 0 0 0 1px rgba(120, 150, 255, 0.5);
-}
-
-/* Not included: a faint grey */
-.host-only-group.out {
-  color: rgba(255, 255, 255, 0.65);
-  background: rgba(255, 255, 255, 0.08);
+.host-only-info::-webkit-scrollbar {
+  display: none;
 }
 
 .host-only-list-title {
   margin: 0;
-  font-size: 0.72rem;
+  font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  opacity: 0.8;
+  color: rgba(255, 255, 255, 0.6);
 }
 
-.host-only-list {
+/* Names as small chips that wrap onto the next line */
+.host-only-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
   margin: 4px 0 0;
-  padding-left: 18px;
-  font-size: 0.82rem;
+  padding: 0;
+  list-style: none;
+}
+
+.chip {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* In the host's camera: the brand blue, like the ON label */
+.chip.in {
+  color: #ffffff;
+  background: rgba(47, 91, 234, 0.6);
+}
+
+/* Not in: a faint grey */
+.chip.out {
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* Me: a white ring, so I can find myself quickly */
+.chip.me {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.85);
 }
 
 .host-only-empty {

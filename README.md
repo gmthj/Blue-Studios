@@ -47,7 +47,7 @@ This is a shared demo: please don't enter any real personal information, expect 
 | [Node.js](https://nodejs.org/) LTS (v24 is used), with npm | everything | `node -v` |
 | [Git](https://git-scm.com/) | getting the code | `git --version` |
 | Firebase CLI: `npm install -g firebase-tools` | deploying the security rules, the rules and end-to-end tests | `firebase --version` |
-| Vercel CLI: `npm install -g vercel` | running the app **with** its `api/` functions (video call, admin) | `vercel --version` |
+| Vercel CLI: `npm install -g vercel` (optional) | `vercel env pull` / `vercel logs`, or running exactly like Vercel with `vercel dev`; `npm run dev` already runs the `api/` functions | `vercel --version` |
 | Java 21 or later (e.g. [Adoptium Temurin](https://adoptium.net/)) | **only** for the rules and end-to-end tests on your own laptop (the Firestore emulator runs on Java) | `java -version` |
 | Free [Firebase](https://console.firebase.google.com/), [Agora](https://console.agora.io/) and [Vercel](https://vercel.com/) accounts | your own copy (step 2) | |
 
@@ -155,15 +155,17 @@ Paste the result after `FIREBASE_SERVICE_ACCOUNT=`, then **delete the downloaded
 
 ## 6. Run the app
 
-**Full app, including the video call and admin (recommended).** The Vercel CLI runs the website **and** the `api/` functions:
-
 ```bash
-vercel login     # "Continue with GitHub", approve in the browser
-vercel link      # link to your Vercel project (team: the existing "blue-studios" project)
-vercel dev       # reads .env, opens http://localhost:3000
+npm run dev      # the website AND the api/ functions, open http://localhost:5173
 ```
 
-**Website only (faster to start):** `npm run dev`, then open `http://localhost:5173`. Everything works except what needs `api/`: the video call shows "Live video unavailable", and the admin page can't load accounts or ban anyone.
+That's the full app, video call and admin included. A small plugin in [`vite.config.js`](vite.config.js) runs `api/<name>.js` for each request to `/api/<name>`, the way Vercel would:
+
+- It reads the server secrets (`AGORA_APP_CERTIFICATE`, `FIREBASE_SERVICE_ACCOUNT`...) from `.env`, only on your laptop's side. The browser still only gets the `VITE_` variables.
+- Editing a file in `api/` applies to the next request, no restart needed. Errors in a function are printed in the `npm run dev` terminal.
+- **It uses the real Firebase project and API keys**, like the live site: rooms you make, bans and deletes are real.
+- The daily cleanup cron doesn't run locally. To try it, put a `CRON_SECRET` in `.env` and call `http://localhost:5173/api/cleanup?dryRun=1` with the header `Authorization: Bearer <CRON_SECRET>`.
+- It only adds the Vercel extras our functions use (`req.query`, `req.body`, `res.status()`, `res.json()`, `res.send()`). If a new function needs another one (for example `req.cookies`), add it to the plugin, or check with `vercel dev`, which runs exactly like Vercel (`vercel login`, `vercel link` to the "blue-studios" project, then `vercel dev`, on port 3000).
 
 You'll land on the home page. Type a name and press **Create a new room** to start shooting, or click **Sign up** to make an account.
 
@@ -227,7 +229,7 @@ npx playwright show-report              # the HTML report of the last run, with 
 | `e2e/makers.spec.js` | The Frame Editor and the Sticker Maker saving to My Studio |
 | `e2e/support/fixtures.js` | Shared helpers (`createAccount`, `logIn`, `seedTemplate`, `seedReport`, `createRoom`, `makeStrip`...) reused across spec files |
 
-`support/fixtures.js` is worth reading first, as it shows the pattern the rest of the suite follows: keep common flows (making an account, logging in, taking 4 photos) in one place and call them from each test, instead of repeating the same clicks everywhere. It sets up data straight in the emulators with the Firebase Admin SDK, and answers the `/api/*` functions (which the test server doesn't run) with "not available", unless a test answers one itself. Import `test` and `expect` from it, not from `@playwright/test`.
+`support/fixtures.js` is worth reading first, as it shows the pattern the rest of the suite follows: keep common flows (making an account, logging in, taking 4 photos) in one place and call them from each test, instead of repeating the same clicks everywhere. It sets up data straight in the emulators with the Firebase Admin SDK, and answers the `/api/*` functions with "not available" inside the browser, before they reach the test server (which would run them with the real keys from `.env`), unless a test answers one itself. Import `test` and `expect` from it, not from `@playwright/test`.
 
 The emulators use the real security rules, copied by [`e2e/emulator/prepare.mjs`](e2e/emulator/prepare.mjs) with one change: links to our files may also start with the Storage emulator's address.
 
@@ -436,6 +438,7 @@ A short version for markers. The details are in the comments of [`firestore.rule
 ### Notes for developers
 
 - `package.json` has `"overrides": { "jwks-rsa": { "jose": "^5.10.0" } }`. **Don't remove it.** `firebase-admin` uses `jwks-rsa`, which loads `jose` with `require()`, but `jose` 6 only works with `import`, and Vercel's server can't `require()` it (the API crashes with `ERR_REQUIRE_ESM`). See [Use of AI](#use-of-ai).
+- The `localApi` plugin and the `ssr.optimizeDeps` setting in [`vite.config.js`](vite.config.js) are for `npm run dev` only and don't change the build. Keep `noDiscovery: true`: without it, the first call to `/api/` makes Vite pre-bundle `firebase-admin` and reload the page (in a room, the call drops).
 - `.vue` files are ordered `<script setup>`, `<template>`, `<style scoped>`. Pages wrapped in `<div class="app-page">` get the shared look from [`src/styles/pages.css`](src/styles/pages.css).
 
 
