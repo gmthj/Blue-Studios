@@ -120,7 +120,7 @@ async function forgotPassword() {
         <h1 class="auth-title">{{ mode === 'signup' ? 'Create your account' : 'Welcome back' }}</h1>
         <p class="auth-sub">
           {{ mode === 'signup'
-            ? 'Save your photostrips, make templates and stickers, and share them in the marketplace.'
+            ? 'Save your photostrips, make frames and stickers, and share them in the marketplace.'
             : 'Log in to see your studio and saved photostrips.' }}
         </p>
       </div>

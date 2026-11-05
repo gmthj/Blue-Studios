@@ -98,7 +98,7 @@ const {
               <span class="visually-hidden">Loading...</span>
             </div>
           </div>
-          <h5 class="workspace-loading-title">{{ workspaceLoadingMessage || 'Loading Saved Template...' }}</h5>
+          <h5 class="workspace-loading-title">{{ workspaceLoadingMessage || 'Loading Saved Frame...' }}</h5>
           <p class="workspace-loading-subtitle">Preparing your layout, canvas elements, and workspace...</p>
           <div class="workspace-loading-progress-bar">
             <div class="workspace-loading-progress-indeterminate"></div>

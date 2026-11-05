@@ -201,7 +201,7 @@ service cloud.firestore {
 
       allow delete: if false;
 
-      // Shutter: shotNumber goes up by exactly 1 (see pressShutter() in RoomView.vue)
+      // Shutter: shotNumber goes up by exactly 1 (see pressShutter() in ShootView.vue)
       function pressShutter() {
         return onlyChanged(['shotNumber', 'shotStartedBy'])
           && request.resource.data.shotNumber == resource.data.shotNumber + 1

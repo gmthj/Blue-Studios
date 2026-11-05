@@ -89,8 +89,8 @@ const shown = computed(() => {
             <td class="text-nowrap">{{ formatTime(entry.createdAt) }}</td>
             <td>{{ nameOf(entry.adminId) }}</td>
             <td>{{ LOG_ACTIONS[entry.action] || entry.action }}</td>
-            <td class="text-break">{{ targetOf(entry) }}</td>
-            <td class="text-break">{{ entry.reason }}</td>
+            <td class="text-break cell-wide">{{ targetOf(entry) }}</td>
+            <td class="text-break cell-wide">{{ entry.reason }}</td>
           </tr>
         </tbody>
       </table>

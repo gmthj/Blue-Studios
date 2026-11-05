@@ -38,7 +38,7 @@ export const test = base.extend({
     // The floating video call window is remembered on each device (VideoCallCard.vue). Start it minimised, at the
     // top right, so it never covers the Back / Next buttons at the bottom of the room pages.
     await page.addInitScript(() => {
-      localStorage.setItem('callMinimised', 'true')
+      localStorage.setItem('callStartMinimised', 'true')
       localStorage.setItem('callDock', JSON.stringify({ x: 8, y: 64, right: true, bottom: false }))
     })
     await use(page)
@@ -95,7 +95,7 @@ async function upload(path, data, contentType) {
 }
 
 // A plain 4-cut frame, in the shape the frame editor saves (projectData in useFrameEditor.js),
-// so "Use template" and "Open in Frame Editor" can load it
+// so "Use frame" and "Open in Frame Editor" can load it
 function templateProject(name) {
   const slots = [
     { x: 6, y: 3, w: 88, h: 20 },

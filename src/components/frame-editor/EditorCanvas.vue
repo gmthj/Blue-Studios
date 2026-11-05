@@ -578,22 +578,22 @@ onMounted(() => {
                     <div
                       class="resize-handle handle-nw"
                       title="Resize"
-                      @mousedown.stop="startResize(el, 'nw', $event)"
+                      @mousedown.stop @touchstart.stop @pointerdown.stop="startResize(el, 'nw', $event)"
                     ></div>
                     <div
                       class="resize-handle handle-ne"
                       title="Resize"
-                      @mousedown.stop="startResize(el, 'ne', $event)"
+                      @mousedown.stop @touchstart.stop @pointerdown.stop="startResize(el, 'ne', $event)"
                     ></div>
                     <div
                       class="resize-handle handle-sw"
                       title="Resize"
-                      @mousedown.stop="startResize(el, 'sw', $event)"
+                      @mousedown.stop @touchstart.stop @pointerdown.stop="startResize(el, 'sw', $event)"
                     ></div>
                     <div
                       class="resize-handle handle-se"
                       title="Resize"
-                      @mousedown.stop="startResize(el, 'se', $event)"
+                      @mousedown.stop @touchstart.stop @pointerdown.stop="startResize(el, 'se', $event)"
                     ></div>
 
                     <!-- Rotate Handle Stem & Knob (bottom center) -->
@@ -601,7 +601,7 @@ onMounted(() => {
                     <div
                       class="element-rotate-handle"
                       title="Drag to rotate"
-                      @mousedown.stop="startRotate(el, $event)"
+                      @mousedown.stop @touchstart.stop @pointerdown.stop="startRotate(el, $event)"
                     >
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#2F5BEA" stroke-width="2.6">
                         <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.19" />
@@ -735,14 +735,14 @@ onMounted(() => {
               </div>
 
               <!-- Collective 4-Corner Resize Handles -->
-              <div class="resize-handle handle-nw" title="Scale Selection" @mousedown.stop="startCollectiveResize('nw', $event)"></div>
-              <div class="resize-handle handle-ne" title="Scale Selection" @mousedown.stop="startCollectiveResize('ne', $event)"></div>
-              <div class="resize-handle handle-sw" title="Scale Selection" @mousedown.stop="startCollectiveResize('sw', $event)"></div>
-              <div class="resize-handle handle-se" title="Scale Selection" @mousedown.stop="startCollectiveResize('se', $event)"></div>
+              <div class="resize-handle handle-nw" title="Scale Selection" @mousedown.stop @touchstart.stop @pointerdown.stop="startCollectiveResize('nw', $event)"></div>
+              <div class="resize-handle handle-ne" title="Scale Selection" @mousedown.stop @touchstart.stop @pointerdown.stop="startCollectiveResize('ne', $event)"></div>
+              <div class="resize-handle handle-sw" title="Scale Selection" @mousedown.stop @touchstart.stop @pointerdown.stop="startCollectiveResize('sw', $event)"></div>
+              <div class="resize-handle handle-se" title="Scale Selection" @mousedown.stop @touchstart.stop @pointerdown.stop="startCollectiveResize('se', $event)"></div>
 
               <!-- Collective Rotate Handle Stem & Knob -->
               <div class="rotate-stem"></div>
-              <div class="element-rotate-handle" title="Rotate Selection" @mousedown.stop="startCollectiveRotate($event)">
+              <div class="element-rotate-handle" title="Rotate Selection" @mousedown.stop @touchstart.stop @pointerdown.stop="startCollectiveRotate($event)">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#2F5BEA" stroke-width="2.6">
                   <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.19" />
                 </svg>

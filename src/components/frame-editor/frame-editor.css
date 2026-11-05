@@ -1055,7 +1055,22 @@ label[for],
   cursor: grabbing;
 }
 
-/* Corner Resize Handles */
+/* Corner Resize Handles. touch-action: none so a finger drag resizes instead of scrolling the page. */
+.resize-handle,
+.element-rotate-handle {
+  touch-action: none;
+}
+
+/* Touch screens: a bigger invisible area around each handle, so a finger can catch it */
+@media (pointer: coarse) {
+  .resize-handle::after,
+  .element-rotate-handle::after {
+    content: '';
+    position: absolute;
+    inset: -12px;
+  }
+}
+
 .resize-handle {
   position: absolute;
   width: 9px;
@@ -2042,8 +2057,9 @@ label[for],
 
 .element-image-content {
   display: block;
-  max-width: 100%;
-  max-height: 100%;
+  /* No max-width: the editor sets the picture's size (width / height). max-width: 100% capped it at the
+     strip's right edge, so it stopped growing there while resizing. */
+  max-width: none;
   user-select: none;
 }
 

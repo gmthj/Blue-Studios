@@ -92,8 +92,8 @@ function dismiss(group) {
     </div>
     <div class="col-6 col-md-auto">
       <select v-model="type" class="form-select form-select-sm" aria-label="Type">
-        <option value="all">Templates and stickers</option>
-        <option value="templates">Templates</option>
+        <option value="all">Frames and stickers</option>
+        <option value="templates">Frames</option>
         <option value="stickers">Stickers</option>
       </select>
     </div>
@@ -127,7 +127,7 @@ function dismiss(group) {
           <div class="col-8 col-md-10">
             <p class="fw-semibold mb-0 text-break">
               {{ group.item ? group.item.name : 'Deleted item' }}
-              <span class="badge text-bg-light border ms-1">{{ group.type === 'templates' ? 'Template' : 'Sticker' }}</span>
+              <span class="badge text-bg-light border ms-1">{{ group.type === 'templates' ? 'Frame' : 'Sticker' }}</span>
               <span v-if="group.item && group.item.status === 'hidden'" class="badge text-bg-warning ms-1">Hidden</span>
             </p>
             <p class="small text-muted mb-2">

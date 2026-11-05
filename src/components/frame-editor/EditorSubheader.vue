@@ -63,7 +63,7 @@ const {
           type="text"
           class="form-control form-control-sm border-start-0 template-name-field ps-1"
           style="width: 185px; font-size: 0.875rem;"
-          placeholder="my-templates-1"
+          placeholder="my-frame-1"
           title="Frame Title (Click to edit)"
           maxlength="40"
         />
@@ -233,12 +233,12 @@ const {
       <button
         type="button"
         class="btn btn-sm btn-outline-secondary d-flex align-items-center justify-content-center gap-1"
-        title="View all your saved templates"
-        aria-label="My Templates"
+        title="View all your saved frames"
+        aria-label="My Frames"
         @click="openMyTemplatesDrawer"
       >
         <IconFolder :size="15" :stroke-width="2.2" />
-        <span class="d-none d-lg-inline">My Templates</span>
+        <span class="d-none d-lg-inline">My Frames</span>
         <span v-if="allUserTemplatesCount > 0" class="badge rounded-pill bg-primary ms-1 d-none d-lg-inline">{{ allUserTemplatesCount }}</span>
       </button>
 
@@ -259,7 +259,7 @@ const {
         v-else
         :to="'/login?redirect=' + encodeURIComponent($route.fullPath)"
         class="btn btn-sm btn-primary d-flex align-items-center gap-1 shadow-sm text-decoration-none px-3"
-        :title="`Log in to save your template to My Studio (${shortcuts.save})`"
+        :title="`Log in to save your frame to My Studio (${shortcuts.save})`"
       >
         <IconSave :size="14" :stroke-width="2.3" />
         <span class="d-none d-lg-inline">Login to save</span>

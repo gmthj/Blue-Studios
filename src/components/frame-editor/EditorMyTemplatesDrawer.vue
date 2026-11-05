@@ -95,7 +95,7 @@ function formatDate(timestamp) {
               <IconFolder :size="20" :stroke-width="2" />
             </div>
             <div class="min-w-0">
-              <h5 id="templates-overlay-title" class="fw-bold text-dark fs-6 fs-sm-5 mb-0 text-truncate">My Saved Templates</h5>
+              <h5 id="templates-overlay-title" class="fw-bold text-dark fs-6 fs-sm-5 mb-0 text-truncate">My Saved Frames</h5>
             </div>
           </div>
 
@@ -152,7 +152,7 @@ function formatDate(timestamp) {
             <input
               v-model="searchQuery"
               type="text"
-              placeholder="Search templates by name..."
+              placeholder="Search frames by name..."
               class="form-control border-start-0 ps-1"
               style="font-size: 0.85rem;"
             />
@@ -181,7 +181,7 @@ function formatDate(timestamp) {
             <div class="spinner-border text-primary mb-3" style="width: 2.8rem; height: 2.8rem;" role="status">
               <span class="visually-hidden">Loading...</span>
             </div>
-            <h6 class="fw-bold text-dark mb-1">Loading your saved templates...</h6>
+            <h6 class="fw-bold text-dark mb-1">Loading your saved frames...</h6>
             <p class="text-muted small mb-0">Connecting to storage and loading files...</p>
           </div>
 
@@ -191,7 +191,7 @@ function formatDate(timestamp) {
               <IconFolder :size="36" :stroke-width="1.8" />
             </div>
             <h5 class="fw-bold text-dark mb-1">
-              {{ searchQuery ? 'No matching templates found' : 'No saved templates yet' }}
+              {{ searchQuery ? 'No matching frames found' : 'No saved frames yet' }}
             </h5>
             <p class="text-muted small mb-4 mx-auto" style="max-width: 380px; font-size: 0.85rem;">
               {{
@@ -297,7 +297,7 @@ function formatDate(timestamp) {
                       type="button"
                       class="btn btn-sm btn-link text-danger p-0 d-flex align-items-center gap-1 text-decoration-none"
                       style="font-size: 0.75rem;"
-                      title="Delete saved template"
+                      title="Delete saved frame"
                       :disabled="deletingId === template.id"
                       @click.stop="handleDeleteClick(template)"
                     >
@@ -364,7 +364,7 @@ function formatDate(timestamp) {
             </p>
             <div class="p-3 bg-light rounded-3 border mb-3 text-center">
               <div class="fw-bold text-dark fs-6 text-truncate mb-1">
-                {{ pendingSwitchTemplate.name || 'Untitled Template' }}
+                {{ pendingSwitchTemplate.name || 'Untitled Frame' }}
               </div>
               <div class="d-flex align-items-center justify-content-center gap-2 text-muted" style="font-size: 0.75rem;">
                 <span class="badge bg-white text-secondary border">{{ pendingSwitchTemplate.slotCount || 4 }} slots</span>
