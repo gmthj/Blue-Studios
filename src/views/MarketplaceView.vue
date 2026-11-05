@@ -105,7 +105,7 @@ const columnClass = computed(() => {
   <div class="app-page">
     <header class="page-header">
       <h1 class="page-title">Marketplace</h1>
-      <p class="page-sub">Templates and stickers made by the community. Save the ones you like to your studio.</p>
+      <p class="page-sub">Frames and stickers made by the community. Save the ones you like to your studio.</p>
     </header>
 
     <!-- Top row: Templates / Stickers, the search box, and sort. On phones the search box gets its own line. -->
@@ -115,7 +115,7 @@ const columnClass = computed(() => {
           class="seg-tab" :class="{ active: type === 'templates' }" role="tab" :aria-selected="type === 'templates'"
           @click="setFilter({ type: 'templates' })"
         >
-          <AppIcon name="layout" :size="16" /> Templates
+          <AppIcon name="layout" :size="16" /> Frames
         </button>
         <button
           class="seg-tab" :class="{ active: type === 'stickers' }" role="tab" :aria-selected="type === 'stickers'"

@@ -365,7 +365,7 @@ defineExpose({ refresh })
         <tbody>
           <tr v-for="r in shown" :key="r.code" class="clickable" :class="{ 'table-active': room && room.code === r.code }" @click="openRoom(r.code)">
             <td class="fw-semibold">{{ r.code }}</td>
-            <td class="text-break">{{ r.hostName }}</td>
+            <td class="text-break cell-wide">{{ r.hostName }}</td>
             <td>
               <span v-if="r.members.length === 0" class="text-muted">nobody joined</span>
               <span

@@ -22,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   createShare: vi.fn(),
   getShare: vi.fn(),
   saveStripFile: vi.fn(),
+  hasSavedShare: vi.fn(),
   toDataURL: vi.fn(),
 }))
 
@@ -57,7 +58,7 @@ vi.mock('../src/shares.js', async (importOriginal) => ({
   createShare: mocks.createShare,
   getShare: mocks.getShare,
 }))
-vi.mock('../src/studio.js', async (importOriginal) => ({ ...(await importOriginal()), saveStripFile: mocks.saveStripFile }))
+vi.mock('../src/studio.js', async (importOriginal) => ({ ...(await importOriginal()), saveStripFile: mocks.saveStripFile, hasSavedShare: mocks.hasSavedShare }))
 // The QR code (with the logo in the middle) is drawn on a canvas, which the test browser does not have:
 // a fake qrWithLogo that only remembers what it was asked to encode
 vi.mock('../src/utils/qrWithLogo.js', () => ({ qrWithLogo: mocks.toDataURL }))
@@ -99,14 +100,14 @@ function setJob(exportJob, extra = {}) {
 
 const mounted = []
 function mountPage() {
-  const page = mount(ShareView, { global: { stubs: { StageBar: true, PhotoStrip: true } } })
+  const page = mount(ShareView, { global: { stubs: { StageBar: true, PhotoStrip: true, RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } } })
   mounted.push(page)
   return page
 }
 const buttonNamed = (page, text) => page.findAll('button').find((b) => b.text() === text)
 
 beforeEach(() => {
-  for (const name of ['updateDoc', 'runTransaction', 'txUpdate', 'goToStage', 'exitRoom', 'push', 'buildExportFile', 'createShare', 'getShare', 'saveStripFile', 'toDataURL']) {
+  for (const name of ['updateDoc', 'runTransaction', 'txUpdate', 'goToStage', 'exitRoom', 'push', 'buildExportFile', 'createShare', 'getShare', 'saveStripFile', 'hasSavedShare', 'toDataURL']) {
     mocks[name].mockReset()
   }
   mocks.updateDoc.mockImplementation(async (ref, changes) => applyChanges(changes))
@@ -125,6 +126,8 @@ beforeEach(() => {
   mocks.createShare.mockResolvedValue({ id: 'newid' })
   mocks.getShare.mockResolvedValue(SHARE)
   mocks.saveStripFile.mockResolvedValue('strip1')
+  mocks.hasSavedShare.mockResolvedValue(false)
+  vi.stubGlobal('fetch', vi.fn(async () => ({ blob: async () => 'THE-BLOB' })))
   mocks.toDataURL.mockResolvedValue('data:image/png;base64,FAKEQR')
   isAccount.value = false
   setJob(null)
@@ -245,43 +248,67 @@ describe('Component test: Share page, when the strip is ready', () => {
     expect(page.find('img[alt^="QR code"]').exists()).toBe(true)
   })
 
-  it('Test2: an account can save it to My Studio', async () => {
+  it('Test2: an account gets it saved to My Studio by itself, without pressing anything', async () => {
     isAccount.value = true
     const page = mountPage()
     await flushPromises()
-    expect(buttonNamed(page, 'Save to My Studio')).toBeDefined()
+    expect(fetch).toHaveBeenCalledWith(SHARE.fileUrl)
+    expect(mocks.saveStripFile).toHaveBeenCalledWith({ title: 'Our strip', file: 'THE-BLOB', format: 'mp4', shareId: 'abc123' })
+    expect(page.find('a[href="/studio"]').text()).toBe('Saved to My Studio')
     expect(page.text()).not.toContain('Log in to save')
   })
 
-  it('Test3: a guest is asked to log in instead, and cannot save', async () => {
+  it('Test3: a guest is asked to log in instead, and nothing is saved', async () => {
     const page = mountPage()
     await flushPromises()
     expect(buttonNamed(page, 'Log in to save it to My Studio')).toBeDefined()
     expect(buttonNamed(page, 'Save to My Studio')).toBeUndefined()
+    expect(mocks.saveStripFile).not.toHaveBeenCalled()
   })
 
-  it('Test4: saving keeps a copy of the file, with its name, format and share, in My Studio', async () => {
+  it('Test4: a strip already in My Studio is not saved twice', async () => {
     isAccount.value = true
-    vi.stubGlobal('fetch', vi.fn(async () => ({ blob: async () => 'THE-BLOB' })))
+    mocks.hasSavedShare.mockResolvedValue(true)
     const page = mountPage()
     await flushPromises()
-    await buttonNamed(page, 'Save to My Studio').trigger('click')
-    await flushPromises()
-    expect(fetch).toHaveBeenCalledWith(SHARE.fileUrl)
-    expect(mocks.saveStripFile).toHaveBeenCalledWith({ title: 'Our strip', file: 'THE-BLOB', format: 'mp4', shareId: 'abc123' })
-    expect(page.text()).toContain('Saved to My Studio!')
+    expect(mocks.hasSavedShare).toHaveBeenCalledWith('abc123')
+    expect(mocks.saveStripFile).not.toHaveBeenCalled()
+    expect(page.text()).toContain('Saved to My Studio')
   })
 
-  it('Test5: if saving fails it says so and nothing breaks', async () => {
+  it('Test5: if saving fails it says so, and the button tries again', async () => {
     isAccount.value = true
-    vi.stubGlobal('fetch', vi.fn(async () => ({ blob: async () => 'THE-BLOB' })))
-    mocks.saveStripFile.mockRejectedValue(new Error('permission-denied'))
+    mocks.saveStripFile.mockRejectedValueOnce(new Error('permission-denied'))
     const page = mountPage()
     await flushPromises()
+    expect(page.text()).toContain('Could not save it to My Studio. Please try again.')
     await buttonNamed(page, 'Save to My Studio').trigger('click')
     await flushPromises()
-    expect(page.text()).toContain('Could not save. Please try again.')
-    expect(page.text()).not.toContain('Saved to My Studio!')
+    expect(mocks.saveStripFile).toHaveBeenCalledTimes(2)
+    expect(page.find('a[href="/studio"]').text()).toBe('Saved to My Studio')
+  })
+
+  it('Test5b: the file downloads by itself when it has just been made, but not when opening one that was already done', async () => {
+    const clicks = []
+    const realClick = HTMLAnchorElement.prototype.click
+    HTMLAnchorElement.prototype.click = function () { clicks.push(this.href) }
+    try {
+      // Already done when the page opened: no download
+      const first = mountPage()
+      await flushPromises()
+      expect(clicks).toEqual([])
+      first.unmount()
+
+      // Watched it finish: it downloads
+      setJob(job('working', { by: 'other' }))
+      mountPage()
+      await flushPromises()
+      setJob(job('done', { shareId: 'abc123', progress: 1 }))
+      await flushPromises()
+      expect(clicks).toEqual([SHARE.fileUrl])
+    } finally {
+      HTMLAnchorElement.prototype.click = realClick
+    }
   })
 
   it('Test6: the login button leaves the room first, then goes to login and comes back to this page', async () => {

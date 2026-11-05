@@ -1,6 +1,6 @@
 import { test, expect, createAccount, logIn, seedTemplate, seedSticker } from './support/fixtures.js'
 
-// My Studio (StudioView.vue): my templates and stickers, publishing them, and deleting them
+// My Studio (StudioView.vue): my frames and stickers, publishing them, and deleting them
 
 function card(page, name) {
   return page.locator('.card').filter({ hasText: name })
@@ -12,7 +12,7 @@ test('a new account sees the empty sections', async ({ page }) => {
 
   await expect(page.getByRole('heading', { name: 'Hey Empty' })).toBeVisible()
   await expect(page.getByText('No strips yet.')).toBeVisible()
-  await expect(page.getByText('No templates yet.')).toBeVisible()
+  await expect(page.getByText('No frames yet.')).toBeVisible()
   await expect(page.getByText('Nothing saved yet.')).toBeVisible()
 })
 
@@ -62,5 +62,5 @@ test('deleting a template asks first, then removes it', async ({ page }) => {
   await confirm.getByRole('button', { name: 'Delete' }).click()
   await expect(card(page, template.name)).toHaveCount(0)
   await page.reload()
-  await expect(page.getByText('No templates yet.')).toBeVisible()
+  await expect(page.getByText('No frames yet.')).toBeVisible()
 })

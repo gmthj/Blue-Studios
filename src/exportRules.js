@@ -10,7 +10,7 @@ import { isTrustedStickerSrc } from './stripData.js'
 // ---------- WHAT IS IN THE STRIP ----------
 
 // Is every slot filled, and does the strip have a video? A slot holds the id of a photo, a clip or a saved edit
-// (see StripView.vue), so each id is looked up in all three.
+// (see PickView.vue), so each id is looked up in all three.
 //   slotPhotos: { 0: 'id', 1: 'id', ... }. photosById: { id: photo }. clips: the room's clips. editedVideos: { id: edit } (see resolveEditedVideos).
 export function stripContents({ layout, slotPhotos, photosById, clips, editedVideos }) {
   let complete = true

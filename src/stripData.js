@@ -1,6 +1,6 @@
 import { updateDoc } from 'firebase/firestore'
 
-// SHARED data for the photostrip pages (StripView.vue = Pick, DecorateView.vue = Decorate):
+// SHARED data for the photostrip pages (PickView.vue = Pick, DecorateView.vue = Decorate):
 // the frame layouts and styles, the sticker tray, the filters, and helpers to save the strip.
 //
 // The strip is saved in the room document (rooms/{code}), so everyone in the room sees the same strip:

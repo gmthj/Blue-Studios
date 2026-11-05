@@ -569,6 +569,20 @@ async function copyJoinLink() {
   min-height: 0;
 }
 
+/* Phones held upright: the camera takes whatever height is left after the room code and the gallery.
+   flex-basis 0 + flex-shrink 1, because Bootstrap's .row > * sets flex-shrink: 0, and the camera's own
+   picture height would otherwise push the gallery down under the Make photostrip bar. */
+@media (max-width: 575.98px) {
+  .camera-col {
+    flex: 1 1 0;
+  }
+
+  .camera-area :deep(video) {
+    position: absolute;
+    inset: 0;
+  }
+}
+
 /* Bootstrap "sm" and up (576px+): the left column is full height, the gallery takes the rest of it.
    (The video call is not in this column: it floats over the page, see VideoCallCard.vue) */
 @media (min-width: 576px) {

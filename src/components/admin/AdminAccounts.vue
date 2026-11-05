@@ -181,7 +181,7 @@ function unban() {
         Joined {{ formatTime(picked.createdAt) }}<template v-if="picked.lastLogin"> &middot; last login {{ formatTime(picked.lastLogin) }}</template>
       </p>
       <p v-if="activity" class="small mb-3">
-        {{ activity.templates }} template(s) &middot; {{ activity.stickers }} sticker(s) &middot; {{ activity.strips }} saved strip(s)
+        {{ activity.templates }} frame(s) &middot; {{ activity.stickers }} sticker(s) &middot; {{ activity.strips }} saved strip(s)
         &middot; reported {{ activity.reportsAgainst }} time(s) &middot; filed {{ activity.reportsFiled }} report(s)
         <button v-if="activity.templates + activity.stickers > 0" class="btn btn-link btn-sm p-0 ms-1 align-baseline" @click="emit('open-tab', 'items', { owner: picked.uid })">See their items</button>
       </p>
@@ -235,13 +235,13 @@ function unban() {
         </thead>
         <tbody>
           <tr v-for="a in shown" :key="a.uid" class="clickable" :class="{ 'table-active': picked && picked.uid === a.uid }" @click="pick(a.uid)">
-            <td class="text-break">
+            <td class="text-break cell-wide">
               <span class="d-inline-flex align-items-center gap-2">
                 <img :src="profileOf(a.uid).avatar" class="row-avatar" alt="" width="24" height="24" loading="lazy" />
                 {{ a.displayName || (a.isAccount ? '(no name)' : 'Guest') }}
               </span>
             </td>
-            <td class="text-break">{{ a.email }}</td>
+            <td class="text-break cell-wide">{{ a.email }}</td>
             <td class="text-nowrap">{{ loginLabel(a) }}</td>
             <td class="text-nowrap">
               <span v-if="a.admin" class="badge text-bg-primary">Admin</span>
