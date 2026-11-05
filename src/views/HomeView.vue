@@ -9,6 +9,7 @@ import { isRoomFull, isActive, MAX_PEOPLE } from '../room.js'
 import { recentRooms, forgetRoom } from '../recentRooms.js'
 import { LAYOUTS } from '../stripData.js'
 import { getItem } from '../marketplace.js'
+import { qrWithLogo } from '../utils/qrWithLogo.js'
 import AppIcon from '../components/AppIcon.vue'
 import StorageImage from '../components/StorageImage.vue'
 
@@ -178,6 +179,11 @@ const currentStrip = computed(() => {
 
 let stripTimer = null
 
+// Step 2's picture: the countdown runs 3, 2, 1, then 0 = the flash, once a second.
+// Reduced motion: it just stays on 3.
+const demoCount = ref(3)
+let countTimer = null
+
 onMounted(() => {
   // Load every picture now, so a new strip does not appear with empty holes
   for (const file of STRIP_PICTURES) {
@@ -191,31 +197,82 @@ onMounted(() => {
     firstPicture.value += currentStrip.value.photos.length
     stripCount.value++
   }, SHOW_EACH_STRIP_FOR)
+
+  if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    countTimer = setInterval(() => {
+      demoCount.value = demoCount.value === 0 ? 3 : demoCount.value - 1
+    }, 1000)
+  }
 })
 
 onUnmounted(() => {
   clearInterval(stripTimer)
+  clearInterval(countTimer)
   clearTimeout(closedToastTimer)
 })
 
-const FEATURES = [
-  {
-    icon: 'camera',
-    title: 'Shoot together on any device',
-    text: 'Everyone joins from their own phone or laptop with a code or QR, and the countdown starts on every screen at once.',
-  },
-  {
-    icon: 'layout',
-    title: 'Design your own strip',
-    text: "Drag-and-drop frames and layouts, then fill them with the room's photos together.",
-  },
-  {
-    icon: 'music',
-    title: 'Stickers, video and music',
-    text: 'Make stickers, cut a video strip, mix a track, and share frames in the marketplace.',
-    link: '/marketplace',
-  },
+// ---------- BELOW THE HERO: how it works, the studio, and a last "start a room" ----------
+
+// Step 3's picture: one real strip (the navy 4-cut) filled with the landing photos
+const DEMO_STRIP = (() => {
+  const layout = LAYOUTS.find((item) => item.id === 'retro-4-cut')
+  return {
+    src: landingSrc('templates', 'retro-4-cut-navy.png'),
+    aspect: layout.aspect,
+    photos: layout.slots.map((slot, i) => ({ src: landingSrc('pictures', STRIP_PICTURES[(i + 1) % STRIP_PICTURES.length]), slot })),
+  }
+})()
+
+// Step 2's picture: four friends' cameras, each on their own device
+const DEMO_TILES = [
+  { src: landingSrc('pictures', 'cew2.jpg'), name: 'Rae', device: 'phone' },
+  { src: landingSrc('pictures', 'sjh1.jpg'), name: 'Joash', device: 'laptop' },
+  { src: landingSrc('pictures', 'kjs1.jpg'), name: 'Cha', device: 'phone' },
+  { src: landingSrc('pictures', 'cew3.jpg'), name: 'You', device: 'laptop' },
 ]
+
+// A real QR code of this site (steps 1 and 4). Drawn once, when the page opens.
+const siteQr = ref('')
+onMounted(async () => {
+  try {
+    siteQr.value = await qrWithLogo(window.location.origin, 240)
+  } catch (error) {
+    console.error(error) // just no QR picture
+  }
+})
+
+// Sections fade up when they scroll into view (once). Without IntersectionObserver, or with reduced
+// motion, they are simply there: the hidden state only applies once .reveal-on is on the page.
+const revealOn = ref(false)
+let revealObserver = null
+onMounted(() => {
+  if (typeof IntersectionObserver === 'undefined') return
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
+  revealObserver = new IntersectionObserver(
+    (entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('shown')
+          revealObserver.unobserve(entry.target)
+        }
+      }
+    },
+    { rootMargin: '0px 0px -80px 0px' }
+  )
+  for (const el of document.querySelectorAll('.landing .reveal')) {
+    revealObserver.observe(el)
+  }
+  revealOn.value = true
+})
+onUnmounted(() => {
+  if (revealObserver) revealObserver.disconnect()
+})
+
+// "Start a room" at the bottom: back up to the room card, ready to type a name (or create straight away)
+function scrollToStart() {
+  window.scrollTo({ top: 0, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' })
+  if (nameInput.value) nameInput.value.focus({ preventScroll: true })
+}
 
 // The name box: shakes red (like the code boxes) when Join or Create is pressed without a name
 const nameInput = ref(null)
@@ -313,6 +370,11 @@ async function checkRecentRooms() {
 }
 onMounted(checkRecentRooms)
 
+// The beach behind the whole page is drawn on <body> (class beach-page, see the unscoped styles at the end),
+// so it scrolls with the page and covers it from the very top (behind the nav) to the very bottom.
+onMounted(() => document.body.classList.add('beach-page'))
+onUnmounted(() => document.body.classList.remove('beach-page'))
+
 // Rejoin: the same as typing the code and pressing Join (so the name, closed and full checks all run),
 // and the code boxes fill in, so it is clear what happened
 function rejoinRoom(code) {
@@ -357,6 +419,12 @@ async function joinRoom() {
 <template>
   <!-- Landing page: what Blue Studios is, plus creating or joining a room straight away -->
   <div class="landing">
+    <!-- The waves on the beach background: the water and foam as their own layer, washing up the sand and back
+         (styles at the end). On <body>, so it lines up with the background picture drawn there. -->
+    <Teleport to="body">
+      <div class="beach-waves" aria-hidden="true"><div class="beach-wave"></div></div>
+    </Teleport>
+
     <!--
       HERO: a CSS grid with 3 parts (intro, room card, photostrip picture). Each screen shape places them
       differently (see HERO LAYOUT in the styles). The room card is always on screen without scrolling.
@@ -552,22 +620,194 @@ async function joinRoom() {
       </div>
     </section>
 
-    <!-- FEATURES: 1 column on phones, 3 from md (768px) up -->
-    <section id="how-it-works" class="features">
-      <p class="eyebrow">How it works</p>
-      <div class="row g-3">
-        <div v-for="feature in FEATURES" :key="feature.title" class="col-12 col-md-4 feature-col">
-          <div class="feature-card glass">
-            <span class="feature-icon"><AppIcon :name="feature.icon" :size="20" /></span>
-            <div>
-              <h2 class="feature-title">{{ feature.title }}</h2>
-              <p class="feature-text">{{ feature.text }}</p>
-              <router-link v-if="feature.link" :to="feature.link" class="feature-link">
-                Browse the <span class="text-nowrap">marketplace <AppIcon name="arrow-right" :size="14" /></span>
-              </router-link>
+    <!-- HOW IT WORKS: 4 steps, each with a small picture made from the app's own pieces.
+         Phones: one column. md (768px) and up: the picture and the words side by side, swapping sides each step. -->
+    <section id="how-it-works" class="how" :class="{ 'reveal-on': revealOn }">
+      <div class="section-head reveal">
+        <p class="eyebrow">How it works</p>
+        <h2 class="section-title">Get your photostrip in four steps</h2>
+        <p class="section-lead">No booth, no app to install. Everyone uses the phone or laptop they already have.</p>
+      </div>
+
+      <ol class="steps">
+        <!-- 1. Start a room -->
+        <li class="step reveal">
+          <div class="step-visual glass">
+            <div class="v-room">
+              <div class="v-phone">
+                <span class="v-label">Room</span>
+                <div class="v-code">
+                  <span v-for="digit in ['4', '8', '2', '1']" :key="digit">{{ digit }}</span>
+                </div>
+                <span class="v-pill"><AppIcon name="users" :size="12" /> 4 of {{ MAX_PEOPLE }} here</span>
+              </div>
+              <div class="v-qr">
+                <img v-if="siteQr" :src="siteQr" alt="" />
+                <span>Scan to join</span>
+              </div>
             </div>
           </div>
+          <div class="step-text">
+            <span class="step-num">1</span>
+            <h3 class="step-title">Start a room, share the code</h3>
+            <p class="step-body">Type your name and create a room. Friends join with the 4-digit code or by scanning the QR code, up to {{ MAX_PEOPLE }} people, no account needed.</p>
+          </div>
+        </li>
+
+        <!-- 2. Shoot together -->
+        <li class="step reveal">
+          <div class="step-visual glass">
+            <div class="v-shoot">
+              <div v-for="tile in DEMO_TILES" :key="tile.name" class="v-tile">
+                <img :src="tile.src" alt="" loading="lazy" />
+                <span class="v-tile-name"><AppIcon :name="tile.device === 'phone' ? 'camera' : 'laptop'" :size="11" /> {{ tile.name }}</span>
+              </div>
+              <!-- 3, 2, 1, then a flash (the photo is taken), and again. :key restarts the beat on every number. -->
+              <span v-if="demoCount > 0" :key="demoCount" class="v-count" aria-hidden="true">{{ demoCount }}</span>
+              <span v-else key="flash" class="v-flash" aria-hidden="true"></span>
+            </div>
+          </div>
+          <div class="step-text">
+            <span class="step-num">2</span>
+            <h3 class="step-title">Shoot on one countdown</h3>
+            <p class="step-body">Anyone presses the shutter and a 3-2-1 runs on every screen at once, so everyone's camera snaps (or records a clip) at the same moment. Add face filters, or put friends into one camera with Virtual Friends.</p>
+          </div>
+        </li>
+
+        <!-- 3. Make the strip together -->
+        <li class="step reveal">
+          <div class="step-visual glass">
+            <div class="v-make">
+              <div class="v-strip" :style="{ '--aspect': DEMO_STRIP.aspect }">
+                <img
+                  v-for="(photo, i) in DEMO_STRIP.photos"
+                  :key="i"
+                  :src="photo.src"
+                  class="v-strip-photo"
+                  :style="{ left: photo.slot.x - 1 + '%', top: photo.slot.y - 1 + '%', width: photo.slot.w + 2 + '%', height: photo.slot.h + 2 + '%' }"
+                  alt=""
+                  loading="lazy"
+                />
+                <img :src="DEMO_STRIP.src" class="v-strip-frame" alt="" loading="lazy" />
+                <span class="v-sticker s1" aria-hidden="true">💖</span>
+                <span class="v-sticker s2" aria-hidden="true">✨</span>
+                <span class="v-sticker s3" aria-hidden="true">🌸</span>
+              </div>
+              <span class="v-cursor c1" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M2 1l11 6-5 1.5L6 14z" /></svg><span class="v-cursor-name">Rae</span></span>
+              <span class="v-cursor c2" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M2 1l11 6-5 1.5L6 14z" /></svg><span class="v-cursor-name">Joash</span></span>
+            </div>
+          </div>
+          <div class="step-text">
+            <span class="step-num">3</span>
+            <h3 class="step-title">Make the strip together</h3>
+            <p class="step-body">Everyone picks the photos, the frame and the stickers on the same strip, live. Cut the clips into a video, then mix a soundtrack for it.</p>
+          </div>
+        </li>
+
+        <!-- 4. Export and share -->
+        <li class="step reveal">
+          <div class="step-visual glass">
+            <div class="v-share">
+              <div class="v-formats">
+                <span class="v-format">PNG</span>
+                <span class="v-format on">MP4</span>
+              </div>
+              <div class="v-share-card">
+                <img v-if="siteQr" :src="siteQr" alt="" class="v-share-qr" />
+                <div class="v-share-side">
+                  <span class="v-link">/s/k3j9x0q7</span>
+                  <span class="v-download"><AppIcon name="download" :size="14" /> Downloaded</span>
+                  <span class="v-saved"><AppIcon name="check" :size="14" /> Saved to My Studio</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="step-text">
+            <span class="step-num">4</span>
+            <h3 class="step-title">Export and share</h3>
+            <p class="step-body">A PNG, or an MP4 when there's video, music or a moving sticker. It downloads on everyone's device, with a link and a QR code to pass on, and goes into My Studio if you have an account.</p>
+          </div>
+        </li>
+      </ol>
+    </section>
+
+    <!-- THE STUDIO: the tools beyond the photobooth, as a grid of cards with a small picture each.
+         Phones: one column. sm: 2. lg: 3, where Frame maker, Video strip and Marketplace are twice as wide,
+         so the 6 cards fill 3 full rows. -->
+    <section class="studio" :class="{ 'reveal-on': revealOn }">
+      <div class="section-head reveal">
+        <p class="eyebrow">More than a photobooth</p>
+        <h2 class="section-title">Your own little studio</h2>
+        <p class="section-lead">Make the pieces once, use them in every room.</p>
+      </div>
+
+      <div class="bento">
+        <article class="tile glass tile-wide reveal">
+          <div class="tile-art art-frames" aria-hidden="true">
+            <span class="fr fr-a"><i></i><i></i><i></i><i></i></span>
+            <span class="fr fr-b"><i></i><i></i><i></i></span>
+            <span class="fr fr-c"><i></i><i></i><i></i><i></i></span>
+          </div>
+          <h3 class="tile-title"><AppIcon name="layout" :size="18" /> Frame maker</h3>
+          <p class="tile-text">Drag photo slots, shapes, tape and text onto a strip, or start from a template preset.</p>
+        </article>
+
+        <article class="tile glass reveal">
+          <div class="tile-art art-stickers" aria-hidden="true">
+            <span>🐻</span><span>🍓</span><span>⭐</span>
+          </div>
+          <h3 class="tile-title"><AppIcon name="sparkle" :size="18" /> Sticker maker</h3>
+          <p class="tile-text">Cut out a photo, draw, add text, even animate it.</p>
+        </article>
+
+        <article class="tile glass reveal">
+          <div class="tile-art art-wave" aria-hidden="true">
+            <span v-for="n in 18" :key="n" :style="{ '--h': [30, 55, 80, 45, 95, 60, 35, 70, 100, 50, 75, 40, 85, 55, 30, 65, 45, 25][n - 1] + '%' }"></span>
+          </div>
+          <h3 class="tile-title"><AppIcon name="music" :size="18" /> Music mixer</h3>
+          <p class="tile-text">Layer beats and loops into a soundtrack for your MP4.</p>
+        </article>
+
+        <article class="tile glass tile-wide reveal">
+          <div class="tile-art art-film" aria-hidden="true">
+            <span v-for="n in 4" :key="n" class="film-cell"></span>
+            <span class="film-play"><AppIcon name="play-fill" :size="16" /></span>
+          </div>
+          <h3 class="tile-title"><AppIcon name="scissors" :size="18" /> Video strip</h3>
+          <p class="tile-text">Trim everyone's clips into one video that plays inside the frame.</p>
+        </article>
+
+        <article class="tile glass reveal">
+          <div class="tile-art art-friends" aria-hidden="true">
+            <img v-for="file in ['cew1.jpg', 'kjs1.jpg', 'sjh1.jpg']" :key="file" :src="landingSrc('pictures', file)" alt="" loading="lazy" />
+          </div>
+          <h3 class="tile-title"><AppIcon name="users" :size="18" /> Virtual Friends</h3>
+          <p class="tile-text">Apart? The host puts everyone into one camera, so you stand together.</p>
+        </article>
+
+        <article class="tile glass tile-wide reveal">
+          <div class="tile-art art-market" aria-hidden="true">
+            <span class="mk mk-1"></span><span class="mk mk-2"></span><span class="mk mk-3"></span>
+          </div>
+          <h3 class="tile-title"><AppIcon name="shop" :size="18" /> Marketplace</h3>
+          <p class="tile-text">Share your frames and stickers, and save other people's.</p>
+          <router-link to="/marketplace" class="feature-link">
+            Browse the <span class="text-nowrap">marketplace <AppIcon name="arrow-right" :size="14" /></span>
+          </router-link>
+        </article>
+      </div>
+    </section>
+
+    <!-- LAST CALL: back up to the room card -->
+    <section class="cta reveal" :class="{ 'reveal-on': revealOn }">
+      <div class="cta-card">
+        <div>
+          <h2 class="cta-title">Ready when your friends are</h2>
+          <p class="cta-text">Free, in the browser, on any phone or laptop.</p>
         </div>
+        <button type="button" class="btn btn-light btn-lg cta-btn" @click="scrollToStart">
+          <AppIcon name="camera" :size="18" /> Start a room
+        </button>
       </div>
     </section>
   </div>
@@ -586,18 +826,6 @@ async function joinRoom() {
 
   font-family: 'Plus Jakarta Sans', var(--bs-body-font-family);
   color: var(--ink);
-}
-
-/* Tropical beach photo behind the whole screen (fixed, so it stays put while the page scrolls),
-   with a soft white wash on top so the text stays easy to read */
-.landing::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.55)),
-    url('/images/beautiful-tropical-beach-sea-ocean-with-white-cloud-blue-sky-copyspace.jpg') center / cover no-repeat;
 }
 
 /* Bootstrap buttons in the brand blue (Bootstrap 5.3 reads these variables), with rounder corners */
@@ -744,7 +972,7 @@ async function joinRoom() {
 .hero-lead {
   max-width: 34rem;
   margin-bottom: 28px;
-  color: var(--muted);
+  color: var(--ink); /* black, not grey: easy to read over the sea */
   font-size: clamp(1.05rem, 0.95rem + 0.4vw, 1.25rem);
   line-height: 1.6;
   text-wrap: pretty;
@@ -936,7 +1164,7 @@ async function joinRoom() {
 
 .card-sub {
   margin-bottom: 14px;
-  color: var(--muted);
+  color: var(--ink); /* black, not grey: easy to read over the sea */
   font-size: 0.875rem;
 }
 
@@ -1094,7 +1322,7 @@ async function joinRoom() {
 
 .start-template-missing {
   margin-bottom: 14px;
-  color: var(--muted);
+  color: var(--ink); /* black, not grey: easy to read over the sea */
   font-size: 0.85rem;
 }
 
@@ -1255,67 +1483,657 @@ async function joinRoom() {
   border-radius: 6px;
 }
 
-/* ---------- FEATURES ---------- */
+/* ---------- SECTIONS BELOW THE HERO ---------- */
+.how,
+.studio,
+.cta {
+  margin-bottom: 72px;
+}
+
 /* scroll-margin-top: the "How it works" link stops a little above the section, not right on its edge */
-.features {
-  margin-bottom: 48px;
+.how {
+  margin-top: 24px;
   scroll-margin-top: 24px;
 }
 
+.section-head {
+  max-width: 620px;
+  margin: 0 auto 32px;
+  text-align: center;
+}
+
 .eyebrow {
-  margin-bottom: 12px;
-  color: var(--muted);
-  font-size: 0.8rem;
+  display: inline-block;
+  margin-bottom: 10px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  color: var(--brand);
+  background: var(--brand-tint);
+  font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 
-/* Each column is a container, so the card can change layout depending on its own width (@container below) */
-.feature-col {
-  container-type: inline-size;
+.section-title {
+  /* block, not the flex row from styles/pages.css (made for a title + count pill): in a flex row the text sits
+     on the left and the section head's text-align: center does nothing */
+  display: block;
+  margin-bottom: 10px;
+  font-size: clamp(1.6rem, 1.1rem + 2vw, 2.4rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+  text-wrap: balance;
 }
 
-.feature-card {
+.section-lead {
+  margin: 0;
+  color: var(--ink); /* black, not grey: easy to read over the sea */
+  font-size: 1rem;
+  text-wrap: pretty;
+}
+
+/* Fade up into view (only once the page has turned it on, see revealOn in the script) */
+.reveal-on .reveal,
+.reveal-on.reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 600ms var(--ease-out), transform 600ms var(--ease-out);
+}
+
+.reveal-on .reveal.shown,
+.reveal-on.reveal.shown {
+  opacity: 1;
+  transform: none;
+}
+
+/* ---------- HOW IT WORKS: the steps ---------- */
+.steps {
   display: flex;
-  gap: 16px;
-  height: 100%;
-  padding: 20px;
-  border-radius: 20px;
+  flex-direction: column;
+  gap: 40px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
 }
 
-.feature-icon {
+.step {
+  display: grid;
+  gap: 20px;
+  align-items: center;
+}
+
+/* md and up: picture and words side by side, the picture swapping sides each step */
+@media (min-width: 768px) {
+  .steps {
+    gap: 56px;
+  }
+
+  .step {
+    grid-template-columns: 1.1fr 1fr;
+    gap: 48px;
+  }
+
+  .step:nth-child(even) .step-visual {
+    order: 2;
+  }
+}
+
+.step-visual {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  color: var(--brand);
-  background: var(--brand-tint);
+  min-height: 280px;
+  padding: 24px;
+  overflow: hidden;
+  border-radius: 28px;
 }
 
-.feature-title {
-  margin-bottom: 4px;
-  font-size: 1.05rem;
+.step-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 12px;
+  border-radius: 12px;
+  color: #ffffff;
+  background: var(--brand);
+  box-shadow: 0 6px 16px rgba(47, 91, 234, 0.35);
+  font-weight: 800;
+}
+
+.step-title {
+  margin-bottom: 8px;
+  font-size: 1.4rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.step-body {
+  margin: 0;
+  max-width: 46ch;
+  color: var(--ink); /* black, not grey: easy to read over the sea */
+  font-size: 0.98rem;
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+
+/* Step 1: the phone with the room code, and the QR code */
+.v-room {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+}
+
+.v-phone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  width: 190px;
+  padding: 22px 16px;
+  border: 6px solid var(--ink);
+  border-radius: 30px;
+  background: #ffffff;
+  box-shadow: 0 16px 32px rgba(20, 23, 43, 0.18);
+  transform: rotate(-4deg);
+}
+
+.v-label {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.v-code {
+  display: flex;
+  gap: 6px;
+}
+
+.v-code span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 40px;
+  border: 1.5px solid var(--brand);
+  border-radius: 9px;
+  color: var(--brand);
+  background: var(--brand-tint);
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.v-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  color: #15803D;
+  background: #DCFCE7;
+  font-size: 0.72rem;
   font-weight: 700;
 }
 
-.feature-text {
-  margin-bottom: 0;
+.v-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(20, 23, 43, 0.14);
+  transform: rotate(5deg);
+}
+
+.v-qr img {
+  width: 104px;
+  height: 104px;
+}
+
+.v-qr span {
   color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+/* Step 2: four cameras and a big 3 */
+.v-shoot {
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  width: min(100%, 360px);
+}
+
+.v-tile {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #0E1020;
+}
+
+.v-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.v-tile-name {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #ffffff;
+  background: rgba(14, 16, 32, 0.6);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.v-count {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 84px;
+  height: 84px;
+  border: 4px solid #ffffff;
+  border-radius: 50%;
+  color: #ffffff;
+  background: var(--brand);
+  box-shadow: 0 0 0 8px rgba(47, 91, 234, 0.25), 0 12px 28px rgba(47, 91, 234, 0.45);
+  font-size: 2.6rem;
+  font-weight: 800;
+  transform: translate(-50%, -50%);
+  animation: count-beat 1s var(--ease-out) infinite;
+}
+
+/* The shutter going off: a white flash over the 4 cameras */
+.v-flash {
+  position: absolute;
+  inset: -4px;
+  border-radius: 14px;
+  background: #ffffff;
+  pointer-events: none;
+  animation: demo-flash 700ms ease-out forwards;
+}
+
+@keyframes demo-flash {
+  0% { opacity: 0.9; }
+  100% { opacity: 0; }
+}
+
+@keyframes count-beat {
+  0% { transform: translate(-50%, -50%) scale(1.12); }
+  60%, 100% { transform: translate(-50%, -50%) scale(1); }
+}
+
+/* Step 3: a real strip, stickers, and friends' cursors */
+.v-make {
+  position: relative;
+  padding: 8px 56px;
+}
+
+.v-strip {
+  position: relative;
+  width: 132px;
+  aspect-ratio: var(--aspect);
+  border-radius: 6px;
+  box-shadow: 0 18px 36px rgba(20, 23, 43, 0.25);
+  transform: rotate(-3deg);
+}
+
+.v-strip-photo,
+.v-strip-frame {
+  position: absolute;
+  object-fit: cover;
+}
+
+.v-strip-frame {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.v-sticker {
+  position: absolute;
+  font-size: 1.7rem;
+  filter: drop-shadow(0 2px 3px rgba(20, 23, 43, 0.25));
+}
+
+.v-sticker.s1 { top: 8%; right: -14px; transform: rotate(12deg); }
+.v-sticker.s2 { top: 46%; left: -16px; }
+.v-sticker.s3 { bottom: 6%; right: -10px; transform: rotate(-10deg); }
+
+.v-cursor {
+  position: absolute;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 2px;
+  color: #ffffff;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.v-cursor svg {
+  width: 16px;
+  height: 16px;
+}
+
+.v-cursor.c1 { top: 22%; right: 0; animation: cursor-a 4s ease-in-out infinite; }
+.v-cursor.c1 svg { fill: #E5484D; stroke: #fff; stroke-width: 1.2; }
+.v-cursor.c2 { bottom: 18%; left: 0; animation: cursor-b 5s ease-in-out infinite; }
+.v-cursor.c2 svg { fill: #12A594; stroke: #fff; stroke-width: 1.2; }
+
+/* The name in a coloured tag just below and right of the arrow, like a shared cursor */
+.v-cursor-name {
+  margin-top: 12px;
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: var(--tag);
+}
+
+.v-cursor.c1 { --tag: #E5484D; }
+.v-cursor.c2 { --tag: #12A594; }
+
+@keyframes cursor-a {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(-14px, 10px); }
+}
+
+@keyframes cursor-b {
+  0%, 100% { transform: translate(0, 0); }
+  50% { transform: translate(12px, -12px); }
+}
+
+/* Step 4: the formats and the share card */
+.v-share {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.v-formats {
+  display: flex;
+  gap: 6px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.v-format {
+  padding: 6px 16px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.v-format.on {
+  color: #ffffff;
+  background: var(--brand);
+}
+
+.v-share-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 20px;
+  background: #ffffff;
+  box-shadow: 0 16px 32px rgba(20, 23, 43, 0.16);
+}
+
+.v-share-qr {
+  width: 96px;
+  height: 96px;
+}
+
+.v-share-side {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.v-link {
+  padding: 4px 10px;
+  border-radius: 8px;
+  color: var(--brand);
+  background: var(--brand-tint);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.v-download,
+.v-saved {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.v-download { color: var(--ink); }
+.v-saved { color: #15803D; }
+
+/* ---------- THE STUDIO: grid of tools ---------- */
+.bento {
+  display: grid;
+  gap: 16px;
+}
+
+@media (min-width: 576px) {
+  .bento {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 992px) {
+  .bento {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .tile-wide {
+    grid-column: span 2;
+  }
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  padding: 20px;
+  border-radius: 24px;
+  transition: transform 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tile:hover {
+    transform: translateY(-3px);
+  }
+}
+
+.tile-art {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 120px;
+  margin-bottom: 16px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.tile-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.tile-title :deep(svg),
+.tile-title > * {
+  color: var(--brand);
+}
+
+.tile-text {
+  margin: 0;
+  color: var(--ink); /* black, not grey: easy to read over the sea */
   font-size: 0.9rem;
   line-height: 1.5;
 }
 
+/* Frame maker: three little strips with their slots */
+.art-frames {
+  gap: 14px;
+}
+
+.fr {
+  display: grid;
+  gap: 4px;
+  padding: 6px;
+  border-radius: 6px;
+  box-shadow: 0 6px 14px rgba(20, 23, 43, 0.15);
+}
+
+.fr i {
+  display: block;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.85);
+}
+
+.fr-a { width: 44px; height: 96px; grid-template-rows: repeat(4, 1fr); background: #2F5BEA; transform: rotate(-6deg); }
+.fr-b { width: 70px; height: 84px; grid-template-rows: repeat(3, 1fr); background: #F5A3C7; }
+.fr-c { width: 76px; height: 76px; grid-template-columns: 1fr 1fr; background: #14172B; transform: rotate(6deg); }
+
+/* Sticker maker: stickers with a white cut-out edge */
+.art-stickers {
+  gap: 12px;
+  font-size: 2.6rem;
+}
+
+.art-stickers span {
+  filter: drop-shadow(0 0 0 #fff) drop-shadow(2px 0 0 #fff) drop-shadow(-2px 0 0 #fff) drop-shadow(0 2px 0 #fff) drop-shadow(0 -2px 0 #fff) drop-shadow(0 6px 8px rgba(20, 23, 43, 0.2));
+}
+
+.art-stickers span:nth-child(1) { transform: rotate(-10deg); }
+.art-stickers span:nth-child(3) { transform: rotate(10deg); }
+
+/* Video strip: a film strip with a play button */
+.art-film {
+  position: relative;
+  gap: 6px;
+  padding: 0 16px;
+  background: #14172B;
+  background-image:
+    radial-gradient(circle, rgba(255, 255, 255, 0.85) 2px, transparent 2.5px),
+    radial-gradient(circle, rgba(255, 255, 255, 0.85) 2px, transparent 2.5px);
+  background-size: 14px 14px, 14px 14px;
+  background-position: 0 6px, 0 calc(100% - 6px);
+  background-repeat: repeat-x;
+}
+
+.film-cell {
+  width: 52px;
+  height: 64px;
+  border-radius: 4px;
+  background: linear-gradient(160deg, #7FA3FF, #2F5BEA);
+}
+
+.film-cell:nth-child(2) { background: linear-gradient(160deg, #FFC2DA, #E5487A); }
+.film-cell:nth-child(3) { background: linear-gradient(160deg, #A7F3D0, #12A594); }
+.film-cell:nth-child(4) { background: linear-gradient(160deg, #FDE68A, #F59E0B); }
+
+.film-play {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  color: var(--brand);
+  background: #ffffff;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+}
+
+/* Music mixer: waveform bars */
+.art-wave {
+  gap: 4px;
+  padding: 0 18px;
+}
+
+.art-wave span {
+  flex: 1;
+  height: var(--h);
+  max-height: 90px;
+  border-radius: 999px;
+  background: linear-gradient(var(--brand), #7FA3FF);
+}
+
+/* Virtual Friends: faces overlapping in one camera */
+.art-friends {
+  background: linear-gradient(160deg, #1E2340, #0E1020);
+}
+
+.art-friends img {
+  width: 72px;
+  height: 72px;
+  margin: 0 -10px;
+  border: 3px solid #ffffff;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.art-friends img:nth-child(2) {
+  position: relative;
+  z-index: 1;
+  width: 84px;
+  height: 84px;
+}
+
+/* Marketplace: a little fan of cards */
+.art-market {
+  position: relative;
+}
+
+.mk {
+  position: absolute;
+  width: 62px;
+  height: 84px;
+  border: 3px solid #ffffff;
+  border-radius: 10px;
+  box-shadow: 0 8px 18px rgba(20, 23, 43, 0.18);
+}
+
+.mk-1 { background: linear-gradient(160deg, #FFC2DA, #E5487A); transform: translateX(-46px) rotate(-12deg); }
+.mk-2 { z-index: 1; background: linear-gradient(160deg, #7FA3FF, #2F5BEA); }
+.mk-3 { background: linear-gradient(160deg, #A7F3D0, #12A594); transform: translateX(46px) rotate(12deg); }
+
 /* text-nowrap in the template keeps the arrow on the same line as the last word */
 .feature-link {
   display: inline-block;
-  margin-top: 8px;
+  margin-top: 10px;
   color: var(--brand);
   font-size: 0.875rem;
-  font-weight: 600;
+  font-weight: 700;
   text-decoration: none;
 }
 
@@ -1325,11 +2143,84 @@ async function joinRoom() {
   }
 }
 
-/* Narrow cards (3 across on a tablet): icon above the text, so the text gets the full width */
-@container (max-width: 320px) {
-  .feature-card {
-    flex-direction: column;
-    gap: 12px;
+/* ---------- LAST CALL ---------- */
+.cta-card {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 32px;
+  border-radius: 28px;
+  color: #ffffff;
+  background:
+    radial-gradient(circle at 85% 20%, rgba(255, 255, 255, 0.22), transparent 45%),
+    linear-gradient(135deg, #2F5BEA, #2449C4 60%, #1B2F8F);
+  box-shadow: 0 20px 48px rgba(47, 91, 234, 0.35);
+}
+
+.cta-title {
+  margin-bottom: 6px;
+  font-size: clamp(1.4rem, 1rem + 1.6vw, 2rem);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.cta-text {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.landing .cta-btn {
+  color: var(--brand);
+  background: #ffffff;
+  border-color: #ffffff;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .landing .cta-btn:hover {
+    color: var(--brand-dark);
+    background: #F2F5FF;
+  }
+}
+
+/* Phones: the step pictures a little smaller */
+@media (max-width: 575.98px) {
+  .step-visual {
+    min-height: 240px;
+    padding: 18px;
+  }
+
+  .v-phone {
+    width: 160px;
+  }
+
+  .v-code span {
+    width: 26px;
+    height: 34px;
+    font-size: 1rem;
+  }
+
+  .v-qr img {
+    width: 80px;
+    height: 80px;
+  }
+
+  .cta-card {
+    padding: 24px;
+  }
+}
+
+/* Reduced motion: nothing moves on its own */
+@media (prefers-reduced-motion: reduce) {
+  .v-count,
+  .v-cursor.c1,
+  .v-cursor.c2 {
+    animation: none;
+  }
+
+  .tile:hover {
+    transform: none;
   }
 }
 
@@ -1361,6 +2252,81 @@ async function joinRoom() {
 </style>
 
 <style>
+/* The landing page's background (not scoped: it is on <body>, see onMounted). It scrolls with the page:
+   the beach photo at the top, then sand all the way down. Both pictures are made from the original photo
+   (public/images/beautiful-tropical-beach-...jpg): beach-top.jpg is the photo with its bottom edge blended into
+   sand-tile.jpg, a strip of its own sand that repeats top to bottom without a seam.
+   --beach-h: the photo's height. At least the screen's height, and tall enough to fill the width (it is 3:2),
+   so it always covers like "cover" did. The sand tile is the same width and 980/1600 as tall, and starts
+   right where the photo ends. A 30% white wash on top softens it so the text is easy to read. */
+body.beach-page {
+  --beach-h: max(100vh, 66.67vw);
+  /* The photo sits this much higher than the top of the page (some sky is cut off), so the shoreline and
+     waves are higher up the first screen. The sand continues underneath, so nothing shows below it. */
+  --beach-shift: calc(var(--beach-h) * 0.1);
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.3)),
+    url('/images/beach-top.jpg') center calc(-1 * var(--beach-shift)) / auto var(--beach-h) no-repeat,
+    url('/images/sand-tile.jpg') center calc(var(--beach-h) - var(--beach-shift)) / auto calc(var(--beach-h) * 0.6125) repeat-y;
+  /* Sand colour under the wash: shows while the pictures load, and fills the scrollbar gutter */
+  background-color: rgb(182, 163, 153);
+}
+
+/* The waves: public/images/beach-wave.webp is the shallow water and foam cut out of beach-top.jpg (see-through
+   everywhere else, with the 30% wash already in it), placed exactly over the same spot of the background.
+   It stretches down from its top edge, so the far sea stays still and the foam runs up the sand, then slides
+   back. Only transform is animated, so it stays smooth on phones. The numbers are where the cut-out sits in the
+   1600 x 2400 photo: from 66.25% of its height, 22.5% tall. */
+.beach-waves {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1; /* behind the page, in front of the body's background */
+  width: 100%;
+  height: var(--beach-h);
+  overflow: hidden; /* the wave is wider than the screen on phones: no sideways scrolling */
+  pointer-events: none;
+}
+
+.beach-wave {
+  position: absolute;
+  top: calc(var(--beach-h) * 0.6625 - var(--beach-shift)); /* moved up with the photo */
+  left: 50%;
+  width: calc(var(--beach-h) * 1.5);
+  height: calc(var(--beach-h) * 0.225);
+  margin-left: calc(var(--beach-h) * -0.75); /* centred like the background (margin, so transform is free) */
+  background: url('/images/beach-wave.webp') center / 100% 100% no-repeat;
+  transform-origin: top;
+  will-change: transform;
+  animation: beach-wave-wash 7s infinite;
+}
+
+/* Rushes in a little quicker than it drains back, like a real wave */
+@keyframes beach-wave-wash {
+  0% {
+    transform: scaleY(1);
+    animation-timing-function: cubic-bezier(0.33, 0, 0.3, 1);
+  }
+  38% {
+    transform: scaleY(1.12);
+    animation-timing-function: cubic-bezier(0.45, 0, 0.55, 1);
+  }
+  100% {
+    transform: scaleY(1);
+  }
+}
+
+/* Only on the landing page (the layer is removed with the page, this is just in case) */
+body:not(.beach-page) .beach-waves {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .beach-wave {
+    animation: none;
+  }
+}
+
 /* The "room was closed" toast (not scoped: it is drawn on <body>). The same dark pill as the Sticker Maker's. */
 .closed-toast {
   position: fixed;
