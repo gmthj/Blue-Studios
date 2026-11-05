@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import ShareView from '../src/views/ShareView.vue'
+import PhotoStrip from '../src/components/PhotoStrip.vue'
 import { useRoom } from '../src/composables/useRoom.js'
 import { useAuth } from '../src/composables/useAuth.js'
+import { phaseWindows } from '../src/exportProgress.js'
 
 // Component + integration tests: the Share page (one device makes the file, everyone sees it, then link and save)
 
@@ -151,14 +153,14 @@ describe('Component test: Share page, while the file is being made', () => {
     expect(mocks.goToStage).toHaveBeenCalledWith('export')
   })
 
-  it('Test2: shows the same message to everyone: "Making your MP4", what is happening, and a progress bar', async () => {
+  it('Test2: shows the same message to everyone: "Making your MP4", what is happening, and the logo filled 40%', async () => {
     setJob(job('working', { by: 'other', byName: 'Rae', progress: 0.4, label: 'Recording the video... keep this page open' }))
     const page = mountPage()
     await flushPromises()
     expect(page.text()).toContain('Making your MP4')
     expect(page.text()).toContain('Recording the video... keep this page open')
     expect(page.text()).toContain('Keep this page open until it is done')
-    expect(page.find('.progress-bar').attributes('style')).toContain('width: 40%')
+    expect(page.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('40')
   })
 
   it('Test3: does not say which device is making it', async () => {
@@ -168,11 +170,11 @@ describe('Component test: Share page, while the file is being made', () => {
     expect(page.text()).not.toContain('Rae')
   })
 
-  it('Test4: the heading follows the format: PNG, GIF or MP4', async () => {
-    setJob(job('working', { by: 'other', format: 'gif' }))
+  it('Test4: the heading follows the format: PNG or MP4', async () => {
+    setJob(job('working', { by: 'other', format: 'png' }))
     const page = mountPage()
     await flushPromises()
-    expect(page.text()).toContain('Making your GIF')
+    expect(page.text()).toContain('Making your PNG')
   })
 
   it('Test5: says "Starting..." before the device making it has said anything', async () => {
@@ -188,6 +190,23 @@ describe('Component test: Share page, while the file is being made', () => {
     await flushPromises()
     expect(mocks.runTransaction).not.toHaveBeenCalled()
     expect(mocks.buildExportFile).not.toHaveBeenCalled()
+  })
+
+  it('Test7: shows only the loading screen: no preview of the strip, so a phone is not made to scroll past it', async () => {
+    setJob(job('working', { by: 'other', progress: 0.3 }))
+    const page = mountPage()
+    await flushPromises()
+    expect(page.text()).toContain('Making your MP4')
+    expect(page.findComponent(PhotoStrip).exists()).toBe(false)
+    expect(page.text()).not.toContain('Your strip')
+  })
+
+  it('Test8: the loading screen has no box around it', async () => {
+    setJob(job('working', { by: 'other', progress: 0.3 }))
+    const page = mountPage()
+    await flushPromises()
+    expect(page.find('.loader-screen').exists()).toBe(true)
+    expect(page.find('.panel').exists()).toBe(false)
   })
 })
 
@@ -374,5 +393,58 @@ describe('Integration test: Share page, making the file', () => {
     await vi.waitFor(() => expect(mocks.buildExportFile).toHaveBeenCalledTimes(1))
     await flushPromises()
     expect(mocks.createShare).not.toHaveBeenCalled()
+  })
+
+  it('Test9: there is one bar for the whole job, and it only goes up while the file is made in stages', async () => {
+    setJob(job('pending')) // an MP4 with no music: ready, record, convert, save
+    const page = mountPage()
+    await vi.waitFor(() => expect(mocks.buildExportFile).toHaveBeenCalledTimes(1))
+    const { progress } = mocks.buildExportFile.mock.calls[0][0] // the bar the page gave to the file maker
+    const windows = phaseWindows('mp4', false)
+    const shown = () => Number(page.find('[role="progressbar"]').attributes('aria-valuenow'))
+
+    expect(page.findAll('[role="progressbar"]')).toHaveLength(1)
+    progress.report('record', 1) // recording is finished
+    await flushPromises()
+    const afterRecording = shown()
+    expect(afterRecording).toBe(Math.round(windows.record[1] * 100))
+
+    progress.report('convert', 0) // converting starts counting from 0 again: the logo does not empty
+    await flushPromises()
+    expect(shown()).toBeGreaterThanOrEqual(afterRecording)
+    expect(page.findAll('[role="progressbar"]')).toHaveLength(1)
+
+    progress.report('convert', 1)
+    await flushPromises()
+    expect(shown()).toBe(Math.round(windows.convert[1] * 100))
+  })
+
+  it('Test10: the music stage is part of the bar only when there is music', async () => {
+    setJob(job('pending'), { music: { audioPath: 'music/1234/mix.wav' } })
+    mountPage()
+    await vi.waitFor(() => expect(mocks.buildExportFile).toHaveBeenCalledTimes(1))
+    const { progress } = mocks.buildExportFile.mock.calls[0][0]
+    expect(Object.keys(progress.windows)).toContain('music')
+  })
+
+  it('Test11: the bar is full when the file is shared', async () => {
+    setJob(job('pending'))
+    mocks.buildExportFile.mockResolvedValue(FILE)
+    mountPage()
+    await vi.waitFor(() => expect(mocks.createShare).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(room.value.exportJob.status).toBe('done'))
+    expect(room.value.exportJob.progress).toBe(1)
+  })
+
+  it('Test12: while the link is being saved the logo is in the last stage, and not empty', async () => {
+    setJob(job('pending'))
+    mocks.buildExportFile.mockResolvedValue(FILE) // the file is ready...
+    mocks.createShare.mockImplementation(() => new Promise(() => {})) // ...and the upload never finishes
+    const page = mountPage()
+    await vi.waitFor(() => expect(mocks.createShare).toHaveBeenCalledTimes(1))
+    await flushPromises()
+    const saveStart = Math.round(phaseWindows('mp4', false).save[0] * 100)
+    expect(page.text()).toContain('Saving your link...')
+    expect(Number(page.find('[role="progressbar"]').attributes('aria-valuenow'))).toBeGreaterThanOrEqual(saveStart)
   })
 })
