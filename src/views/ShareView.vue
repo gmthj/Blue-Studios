@@ -11,7 +11,7 @@ import { resolveEditedVideos } from '../clips.js'
 import { roomLayout, roomFrameStyle, safeStickers } from '../stripData.js'
 import { buildExportFile } from '../exportFile.js'
 import { newShareId, createShare, getShare } from '../shares.js'
-import { saveStripFile } from '../studio.js'
+import { saveStripFile, hasSavedShare } from '../studio.js'
 import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
 import SharedStrip from '../components/SharedStrip.vue'
@@ -22,7 +22,8 @@ import AppIcon from '../components/AppIcon.vue'
 //   room.exportJob = { status, format, name, by, byName, progress, label, updatedAt, shareId, error }
 //   'pending'  waiting for a device to take it. The Export page's "Share and download" starts it.
 //   'working'  a device (by) is making it. It writes progress and updatedAt every few seconds, so everyone sees a progress bar.
-//   'done'     shareId says where it is (shares.js). Everyone then sees the strip, the QR code and the link.
+//   'done'     shareId says where it is (shares.js). Everyone then sees the strip, the QR code and the link,
+//              the file downloads on every device by itself, and accounts get it saved to My Studio by itself.
 //   'failed'   something went wrong (error). Anyone can press "Try again".
 // If the device making it disappears (updatedAt is older than STALE_MS), another device takes over.
 
@@ -170,11 +171,30 @@ watch(
     const justFinished = !firstCheck
     firstCheck = false
     share.value = id ? await getShare(id).catch((error) => console.error(error) || null) : null
-    // A happy sound when the strip has just been made (not when opening a strip that was already done)
-    if (share.value && justFinished) playSound('success')
+    if (!share.value) return
+    // Just made (not when opening a strip that was already done): a happy sound, and the file downloads by itself
+    if (justFinished) {
+      playSound('success')
+      autoDownload(share.value)
+    }
+    autoSave(share.value)
   },
   { immediate: true }
 )
+
+// Download the file without anyone pressing Download. The file is stored with "Content-Disposition: attachment"
+// (createShare in shares.js), so opening its address saves it and the page stays where it is.
+// The Download button is still there, e.g. for a browser that blocks downloads nobody clicked.
+function autoDownload(made) {
+  const link = document.createElement('a')
+  link.href = made.fileUrl
+  link.download = ''
+  link.rel = 'noopener'
+  link.style.display = 'none'
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}
 
 // What everyone sees while it is being made
 const shownProgress = computed(() => (building.value ? progress.value : (job.value && job.value.progress) || 0))
@@ -197,22 +217,50 @@ async function goToLogin() {
 // ---------- SAVE TO MY STUDIO (accounts only) ----------
 
 const saving = ref(false)
+const saved = ref(false)
 const saveMessage = ref('')
+let savingShareId = '' // the share being saved right now, so it is never saved twice at the same time
+
+// Accounts: save it to My Studio by itself, once (also after logging in from "Log in to save it")
+async function autoSave(made) {
+  if (!isAccount.value || saved.value || savingShareId === made.id) return
+  savingShareId = made.id
+  try {
+    if (await hasSavedShare(made.id)) {
+      saved.value = true
+      saveMessage.value = 'Saved to My Studio.'
+      return
+    }
+  } catch (error) {
+    console.error(error) // could not check: try to save anyway
+  } finally {
+    savingShareId = ''
+  }
+  await saveToStudio()
+}
 
 async function saveToStudio() {
+  if (saving.value || saved.value || !share.value) return
   saving.value = true
+  savingShareId = share.value.id
   saveMessage.value = ''
   try {
     const blob = await (await fetch(share.value.fileUrl)).blob() // the file is in Storage, so this works on any device
     await saveStripFile({ title: share.value.title, file: blob, format: share.value.format, shareId: share.value.id })
-    saveMessage.value = 'Saved to My Studio!'
-    playSound('success')
+    saved.value = true
+    saveMessage.value = 'Saved to My Studio.'
   } catch (error) {
     console.error(error)
-    saveMessage.value = 'Could not save. Please try again.'
+    saveMessage.value = 'Could not save it to My Studio. Please try again.'
   }
   saving.value = false
+  savingShareId = ''
 }
+
+// Logged in on this page (coming back from "Log in to save it"): save it now
+watch(isAccount, (now) => {
+  if (now && share.value) autoSave(share.value)
+})
 </script>
 
 <template>
@@ -225,11 +273,15 @@ async function saveToStudio() {
     <h1 class="page-title text-center mb-3">{{ share.title }}</h1>
     <SharedStrip :share="share">
       <!-- Accounts can keep it in My Studio. Guests would lose it, so they are asked to log in. -->
-      <button v-if="isAccount" type="button" class="btn btn-outline-secondary w-100 mt-2" :disabled="saving" @click="saveToStudio">
-        {{ saving ? 'Saving...' : 'Save to My Studio' }}
+      <!-- Saved by itself; the button is only there to try again if that failed -->
+      <router-link v-if="isAccount && saved" to="/studio" class="btn btn-outline-secondary w-100 mt-2 d-inline-flex align-items-center justify-content-center gap-2">
+        <AppIcon name="check" :size="16" /> Saved to My Studio
+      </router-link>
+      <button v-else-if="isAccount" type="button" class="btn btn-outline-secondary w-100 mt-2" :disabled="saving" @click="saveToStudio">
+        {{ saving ? 'Saving to My Studio...' : 'Save to My Studio' }}
       </button>
       <button v-else type="button" class="btn btn-outline-secondary w-100 mt-2" @click="goToLogin">Log in to save it to My Studio</button>
-      <p v-if="saveMessage" class="hint mt-2 mb-0" role="status">{{ saveMessage }}</p>
+      <p v-if="saveMessage && !saved" class="hint mt-2 mb-0" role="status">{{ saveMessage }}</p>
     </SharedStrip>
   </div>
 

@@ -296,11 +296,15 @@ export async function createScene({ layout, frameStyle, photosById, slotPhotos, 
       ctx.restore()
     }
 
-    // The frame's border (PhotoStrip draws a 4px border on a strip about 300px wide)
-    const borderWidth = (W * 4) / 300
-    ctx.strokeStyle = frameStyle.border
-    ctx.lineWidth = borderWidth
-    ctx.strokeRect(borderWidth / 2, borderWidth / 2, W - borderWidth, H - borderWidth)
+    // The frame's border (PhotoStrip draws a 4px border on a strip about 300px wide).
+    // Not for a frame with its own artwork: on screen it has no border (.strip.templated in PhotoStrip.vue), and the
+    // artwork's rounded corners would show the square border's corners as dark dots.
+    if (!frameArt) {
+      const borderWidth = (W * 4) / 300
+      ctx.strokeStyle = frameStyle.border
+      ctx.lineWidth = borderWidth
+      ctx.strokeRect(borderWidth / 2, borderWidth / 2, W - borderWidth, H - borderWidth)
+    }
 
     // Caption (a template with artwork has its own, so the screen shows none)
     if (frameStyle.caption && !frameStyle.thumbnailUrl) {

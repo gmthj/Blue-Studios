@@ -53,7 +53,7 @@ async function logOutAndGoHome() {
     White bar with the logo. Sticky: it stays at the top while the page scrolls (not in a room,
     where the camera needs all the height). On phones the links become icons, so everything fits on one line.
   -->
-  <nav v-if="!hideNav" class="app-nav" :class="{ sticky: !inRoom, 'in-room': inRoom, 'mb-4': !inRoom && !isEditor }">
+  <nav v-if="!hideNav" class="app-nav" :class="{ sticky: !inRoom, 'in-room': inRoom, 'has-account': isAccount, 'mb-4': !inRoom && !isEditor }">
     <div class="nav-inner" :class="containerClass">
       <router-link to="/" class="brand">
         <!-- The camera and film strip from the logo (public/images/bluestudios.jpeg), cut out with a see-through background -->
@@ -125,6 +125,7 @@ async function logOutAndGoHome() {
     <template v-else>
       <div v-if="showVerifyReminder" class="alert alert-warning small">
         Please confirm your email: open the link we sent to {{ user.email }}.
+        You need to confirm it before you can make your frames and stickers public in the marketplace.
         <span v-if="verificationSent">Sent again!</span>
         <button v-else class="btn btn-link btn-sm p-0 align-baseline" @click="resend">Send it again</button>
       </div>
@@ -222,6 +223,23 @@ async function logOutAndGoHome() {
 @media (max-width: 399.98px) {
   .app-nav.in-room .brand {
     display: none;
+  }
+}
+
+/* Phones, logged in: 4 to 5 icons, the picture and Log out don't fit next to the logo's name, and the page would
+   get wider than the screen. So the name goes (the logo stays) and the icons sit closer together. */
+@media (max-width: 519.98px) {
+  .app-nav.has-account .brand-text {
+    display: none;
+  }
+
+  .app-nav.has-account .nav-links {
+    gap: 2px;
+  }
+
+  .app-nav.has-account .nav-link-btn {
+    min-width: 36px;
+    padding: 0 8px;
   }
 }
 

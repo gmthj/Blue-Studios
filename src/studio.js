@@ -248,6 +248,13 @@ export async function saveStripFile({ title, file, format, shareId }) {
   return stripId
 }
 
+// Have I already saved this share's strip to My Studio? (The Share page saves it by itself, so it checks first and
+// never saves the same strip twice, even after a reload or on another device.)
+export async function hasSavedShare(shareId) {
+  const snapshot = await getDocs(query(collection(db, 'strips'), where('ownerId', '==', myUid()), where('shareId', '==', shareId)))
+  return !snapshot.empty
+}
+
 // ---------- Loading ----------
 
 // Everything of one type that belongs to me, newest first.

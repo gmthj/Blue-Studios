@@ -235,13 +235,13 @@ function unban() {
         </thead>
         <tbody>
           <tr v-for="a in shown" :key="a.uid" class="clickable" :class="{ 'table-active': picked && picked.uid === a.uid }" @click="pick(a.uid)">
-            <td class="text-break">
+            <td class="text-break cell-wide">
               <span class="d-inline-flex align-items-center gap-2">
                 <img :src="profileOf(a.uid).avatar" class="row-avatar" alt="" width="24" height="24" loading="lazy" />
                 {{ a.displayName || (a.isAccount ? '(no name)' : 'Guest') }}
               </span>
             </td>
-            <td class="text-break">{{ a.email }}</td>
+            <td class="text-break cell-wide">{{ a.email }}</td>
             <td class="text-nowrap">{{ loginLabel(a) }}</td>
             <td class="text-nowrap">
               <span v-if="a.admin" class="badge text-bg-primary">Admin</span>

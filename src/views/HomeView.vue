@@ -114,11 +114,6 @@ const activeBox = computed(() => {
 const LANDING = '/images/landing/'
 
 const STRIP_PICTURES = [
-  '2021-11-08_05-11-05_2.jpg',
-  'ahh cat.png',
-  'elmo.jpg',
-  '2021-11-08_05-11-05_3.jpg',
-  'bluestudios.jpeg',
   'cew1.jpg',
   'cew2.jpg',
   'cew3.jpg',
