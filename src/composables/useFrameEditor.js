@@ -51,6 +51,8 @@ import {
   getTextureBackgroundImage,
   getTextureBackgroundSize
 } from "../constants/frameEditorData.js"
+// The Sticker Maker's fonts, so the Text tab is the same in both editors
+import { FONTS, FONT_SAMPLE, matchesArt } from "../stickerArt.js"
 
 export const FRAME_EDITOR_KEY = Symbol("FRAME_EDITOR_KEY")
 export const TEMPLATE_EDITOR_KEY = FRAME_EDITOR_KEY
@@ -203,11 +205,15 @@ const {
 
 
 // --- Editor Navigation & Toolbar State ---
-const templateName = ref('my-frame-1')
+// Empty at the start: the top bar shows "Untitled" in grey, so it is clear it has no name yet.
+// The Save pop-up suggests a name (my-frame-1, my-frame-2...) the first time you save.
+const templateName = ref('')
+// The starter preset picked last (its card is highlighted). Picking one does not rename the template.
+const appliedPresetId = ref(null)
 const activeLayout = ref('retro-4-cut') // 'retro-4-cut' | 'polaroid-2x2' | 'film-3-cut'
 const slotShape = ref('Rounded') // 'Square' | 'Rounded' | 'Circle'
 const isMobileInitial = typeof window !== 'undefined' && window.innerWidth < 992
-const activeTool = ref('templates') // 'templates' (Presets) | 'elements' | 'text' | 'background' | 'layers'
+const activeTool = ref('templates') // 'templates' (Presets) | 'elements' | 'text' | 'background'
 const isDrawerOpen = ref(!isMobileInitial)
 const showCutouts = ref(true) // Toggle cutouts on/off
 const cutoutsLayerPosition = ref('above') // 'above' (over elements) | 'below' (behind elements)
@@ -226,7 +232,9 @@ const frameBg = ref({
 const selectedBgColor = ref('#FEFBF6')
 const borderColor = ref('#2F5BEA')
 const borderWidth = ref(6)
-const captionText = ref('Exchange reunion · 16.10.26')
+const captionText = ref('Blue Studios')
+// The caption is picked (clicked) on the strip: its bar shows over the canvas
+const isCaptionSelected = ref(false)
 const captionColor = ref('#2F5BEA')
 const isEditingCaption = ref(false)
 
@@ -506,11 +514,7 @@ const filteredElementCategories = computed(() => {
       items = items.filter(it => it.tags && it.tags.includes(tag))
     }
     if (q) {
-      items = items.filter(it => {
-        const nameMatch = it.name && it.name.toLowerCase().includes(q)
-        const tagMatch = it.tags && it.tags.some(t => t.toLowerCase().includes(q))
-        return nameMatch || tagMatch
-      })
+      items = items.filter(it => matchesArt(it, q)) // name, search words and tags (stickerArt.js)
     }
     return {
       ...cat,
@@ -663,6 +667,12 @@ function toggleDrawer(toolName) {
   }
 }
 
+// WHY: on a phone the drawer covers most of the strip, so after you add something it closes
+// and you can see (and drag) what you just added. On a laptop it stays open.
+function closeDrawerOnPhone() {
+  if (!isScreenLg.value) isDrawerOpen.value = false
+}
+
 async function closeDrawer() {
   isDrawerOpen.value = false
 }
@@ -695,6 +705,16 @@ watch(isDrawerOpen, async () => {
   refitDuringTransition(280)
 })
 
+// Like the Sticker Maker: selecting text opens the Text settings, and selecting a sticker,
+// tape or shape shows the Element settings (an upload: Uploads), so the right panel always
+// shows the thing you picked. The drawer stays open or closed as it was.
+watch(() => (selectedElementIds.value.length === 1 ? activeSelectedElement.value : null), (el) => {
+  if (!el) return
+  isCaptionSelected.value = false
+  if (el.type === 'text') activeTool.value = 'text'
+  else if (activeTool.value !== 'elements' && activeTool.value !== 'uploads') activeTool.value = el.type === 'image' ? 'uploads' : 'elements'
+})
+
 function setLayout(layout) {
   customSlots.value = null
   activeLayout.value = layout
@@ -724,7 +744,7 @@ function toggleCutoutsLayerPosition() {
 }
 
 function applyTemplate(tpl) {
-  templateName.value = tpl.name
+  appliedPresetId.value = tpl.id
   activeLayout.value = tpl.layout
   selectedBgColor.value = tpl.bg
   frameBg.value.type = tpl.bgType || 'color'
@@ -774,6 +794,7 @@ function applyTemplate(tpl) {
   selectedElementIds.value = []
   notify(`Applied template "${tpl.name}"`)
   saveHistoryState()
+  closeDrawerOnPhone()
   nextTick(() => {
     triggerFitToScreen()
   })
@@ -1082,6 +1103,7 @@ function addElement(item) {
   selectedElementId.value = id
   notify(`Added ${item.name}`)
   saveHistoryState()
+  closeDrawerOnPhone()
 }
 
 function addTextElement(preset) {
@@ -1116,6 +1138,79 @@ function addTextElement(preset) {
   selectedElementIds.value = [id]
   notify(`Added ${preset.label || 'text block'}`)
   saveHistoryState()
+  return newText
+}
+
+// ---- Text, the same way as the Sticker Maker ----
+// font: one of the Sticker Maker's fonts (stickerArt.js), or null for the default.
+// at: { x, y } in strip pixels, for a double-click (double-tap) on the strip.
+// The new box is typed into right away, on the strip, with its words selected so typing
+// replaces them.
+function addTextBox(font = null, at = null) {
+  const width = 200
+  const height = 40
+  const el = addTextElement({
+    label: 'text box',
+    text: FONT_SAMPLE, // 'Blue Studios'
+    fontFamily: font ? font.stack : undefined,
+    width: width,
+    height: height,
+  })
+  if (at) {
+    const stripWidth = stripRef.value?.offsetWidth || 280
+    el.x = Math.round(Math.max(0, Math.min(stripWidth - width, at.x - width / 2)))
+    el.y = Math.round(Math.max(0, at.y - height / 2))
+  }
+  closeDrawerOnPhone()
+  // The reactive copy, so typing updates the strip
+  const live = canvasElements.value.find(item => item.id === el.id)
+  nextTick(() => startEditingText(live))
+}
+
+// Clicking a font in the Text tab: restyle the selected text, or start a new box in that font
+function pickFont(font) {
+  if (activeTextElement.value) {
+    activeTextElement.value.fontFamily = font.stack
+    saveHistoryState()
+    closeDrawerOnPhone()
+    return
+  }
+  addTextBox(font)
+}
+
+// Double-click an empty spot on the strip (double-tap on a phone): a text box appears there.
+// WHY counted by hand: phones do not send dblclick, so two quick taps close together are
+// counted here, and the same code serves the mouse.
+let lastFrameTap = null
+let skipFrameClick = false
+function onFrameTap(event) {
+  const onStrip = event.target === stripRef.value || event.target.closest('.strip-slots-container') ||
+    event.target.closest('.frame-texture-overlay') || event.target.closest('.photostrip-border-overlay')
+  if (!onStrip || isSpacePressed.value || isHandToolActive.value) {
+    lastFrameTap = null
+    return
+  }
+  const now = Date.now()
+  const last = lastFrameTap
+  if (last && now - last.time < 350 && Math.hypot(event.clientX - last.x, event.clientY - last.y) < 24) {
+    lastFrameTap = null
+    skipFrameClick = true // the click that follows this tap must not deselect the new box
+    const rect = stripRef.value.getBoundingClientRect()
+    addTextBox(null, {
+      x: (event.clientX - rect.left) / canvasScale.value,
+      y: (event.clientY - rect.top) / canvasScale.value,
+    })
+    return
+  }
+  lastFrameTap = { time: now, x: event.clientX, y: event.clientY }
+}
+
+// The layers list: drag a layer to a new place. index 0 is the back, the last is the front.
+function moveLayerTo(id, index) {
+  const from = canvasElements.value.findIndex(item => item.id === id)
+  if (from === -1 || from === index) return
+  const [el] = canvasElements.value.splice(from, 1)
+  canvasElements.value.splice(index, 0, el)
 }
 
 // =============================================================================
@@ -1525,8 +1620,8 @@ function startMarqueeSelection(event) {
     initialSelected: [...selectedElementIds.value]
   }
 
-  window.addEventListener('mousemove', onMarqueeMouseMove)
-  window.addEventListener('mouseup', onMarqueeMouseUp)
+  window.addEventListener('pointermove', onMarqueeMouseMove)
+  window.addEventListener('pointerup', onMarqueeMouseUp)
 }
 
 function onMarqueeMouseMove(event) {
@@ -1591,8 +1686,8 @@ function onMarqueeMouseUp() {
     }, 120)
   }
   marqueeStart = null
-  window.removeEventListener('mousemove', onMarqueeMouseMove)
-  window.removeEventListener('mouseup', onMarqueeMouseUp)
+  window.removeEventListener('pointermove', onMarqueeMouseMove)
+  window.removeEventListener('pointerup', onMarqueeMouseUp)
 }
 
 // =============================================================================
@@ -2061,6 +2156,8 @@ function selectFontFamily(font) {
 function getActiveFontDisplayName() {
   if (!activeTextElement.value) return 'Font'
   const fam = activeTextElement.value.fontFamily
+  const artFont = FONTS.find(f => f.stack === fam)
+  if (artFont) return artFont.name
   for (const cat of FONT_CATEGORIES) {
     const found = cat.fonts.find(f => f.family === fam)
     if (found) return found.label.split('(')[0].trim()
@@ -2236,6 +2333,8 @@ function finishEditingText(el) {
 }
 
 function startEditingCaption() {
+  isCaptionSelected.value = true
+  selectedElementIds.value = []
   isEditingCaption.value = true
   nextTick(() => {
     captionInputRef.value?.focus()
@@ -2558,6 +2657,8 @@ async function handleFileUploadDrop(event) {
   await processUploadedFiles(Array.from(files))
 }
 
+// Each file goes into "Your uploads" (kept for next time, in both editors) and is placed on
+// the strip straight away, the same as the Sticker Maker.
 async function processUploadedFiles(files) {
   if (!files || files.length === 0) return
 
@@ -2608,6 +2709,7 @@ async function processUploadedFiles(files) {
           }
           userUploads.value.unshift(newUpload)
           await saveUploadToDB(newUpload)
+          addUploadToCanvas(newUpload) // placed straight away, the same as the Sticker Maker
           addedCount++
           resolve()
         }
@@ -2645,6 +2747,7 @@ async function processUploadedFiles(files) {
           }
           userUploads.value.unshift(newUpload)
           await saveUploadToDB(newUpload)
+          addUploadToCanvas(newUpload) // placed straight away, the same as the Sticker Maker
           addedCount++
           resolve()
         }
@@ -2712,6 +2815,7 @@ function addUploadToCanvas(item, customX = null, customY = null) {
   selectedElementId.value = id
   notify(`Placed "${item.name}" on strip`)
   saveHistoryState()
+  closeDrawerOnPhone()
 }
 
 function onAssetDragStart(item, event) {
@@ -2851,7 +2955,7 @@ function getNextDefaultTemplateName() {
   return `my-frame-${highestNum + 1}`
 }
 
-function saveFrame() {
+async function saveFrame() {
   if (!isAccount.value) {
     router.push('/login?redirect=' + encodeURIComponent(route.fullPath))
     return
@@ -3267,7 +3371,7 @@ async function deleteUserTemplate(template) {
       cloudId.value = null
       loadedTemplateOwnerId.value = null
       currentSavedFrameId.value = null
-      templateName.value = getNextDefaultTemplateName()
+      templateName.value = ''
       router.replace({ path: '/frame-editor' })
     }
 
@@ -3284,7 +3388,7 @@ async function startNewBlankFrame() {
   cloudId.value = null
   loadedTemplateOwnerId.value = null
   currentSavedFrameId.value = null
-  templateName.value = getNextDefaultTemplateName()
+  templateName.value = ''
   chosenCategories.value = ['other']
   canvasElements.value = []
   selectedElementIds.value = []
@@ -3511,9 +3615,14 @@ function onCanvasClick(event) {
   editingGroupId.value = null
   editingTextId.value = null
   isEditingCaption.value = false
+  isCaptionSelected.value = false
 }
 
 function onFrameClick(event) {
+  if (skipFrameClick) {
+    skipFrameClick = false
+    return
+  }
   if (justFinishedMarquee) {
     justFinishedMarquee = false
     return
@@ -3934,8 +4043,8 @@ onMounted(async () => {
 
     // If opening fresh without a loaded template, ensure frame title reflects the next sequence
     if (!cloudId.value && !currentSavedFrameId.value) {
-      if (!templateName.value || templateName.value === 'Retro 4-cut' || templateName.value === 'my-templates-1' || templateName.value === 'my-frame-1') {
-        templateName.value = getNextDefaultTemplateName()
+      if (templateName.value === 'Retro 4-cut' || templateName.value === 'my-templates-1' || templateName.value === 'my-frame-1') {
+        templateName.value = '' // shown as "Untitled" until it is saved with a name
       }
     }
   }
@@ -3968,6 +4077,17 @@ onBeforeUnmount(() => {
     return {
     isWorkspaceLoading,
     workspaceLoadingMessage,
+    FONTS,
+    appliedPresetId,
+    isCaptionSelected,
+    // The phone "Edit" sheet (the properties panel): the same as isMobileEditSheetOpen
+    isPropsSheetOpen: isMobileEditSheetOpen,
+    togglePropsSheet: toggleMobileEditSheet,
+    closeDrawerOnPhone,
+    addTextBox,
+    pickFont,
+    onFrameTap,
+    moveLayerTo,
     templatePresets,
     elementCategories,
     textPresets,
@@ -4240,7 +4360,6 @@ onBeforeUnmount(() => {
     getRenderedSvg,
     getShapePathD,
     getTapePattern,
-    openUploadsDB,
     loadUploadsFromDB,
     saveUploadToDB,
     deleteUploadFromDB,

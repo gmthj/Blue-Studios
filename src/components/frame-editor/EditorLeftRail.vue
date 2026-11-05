@@ -1,119 +1,63 @@
 <script setup>
 import { useFrameEditorContext } from "../../composables/useFrameEditor.js"
 
-
 const editor = useFrameEditorContext()
 const {
   activeTool,
-  canvasElements,
   isDrawerOpen,
   toggleDrawer,
-  userUploads
+  userUploads,
+  isPropsSheetOpen,
+  togglePropsSheet,
+  selectedElementIds
 } = editor
+
+// The tools, the same tiles as the Sticker Maker's rail. Layers are in the right panel now
+// (like the Sticker Maker), so they are not a tool here.
+const TOOLS = [
+  { id: 'templates', label: 'Templates', icon: 'M3 3h18v18H3z M3 9h18 M9 21V9' },
+  { id: 'elements', label: 'Elements', icon: 'M4 4h11l5 5v11H4z M15 4v5h5 M8 15c1.4-1.6 3-1.6 4.4 0' }, // the Sticker Maker's sticker icon
+  { id: 'text', label: 'Text', icon: 'M4 7V4h16v3 M9 20h6 M12 4v16' },
+  { id: 'uploads', label: 'Uploads', icon: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M17 8l-5-5-5 5 M12 3v12' },
+  // "Colour": the strip's background (a colour, a gradient or a texture). Shorter than "Background".
+  { id: 'background', label: 'Colour', icon: 'M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-.9-.6-1.4-.6-2.2 0-.9.7-1.6 1.6-1.6H17a4 4 0 0 0 4-4C21 6.6 17 3 12 3z M7.5 11h.01 M10 7.5h.01 M14.5 7.5h.01' }
+]
+const SLIDERS_ICON = 'M4 21v-7 M4 10V3 M12 21v-9 M12 8V3 M20 21v-5 M20 12V3 M1 14h6 M9 8h6 M17 16h6'
 </script>
 
 <template>
-      <!-- Left Tool Rail (Bootstrap 5) -->
-      <aside class="left-rail d-flex flex-column align-items-center bg-white border-end py-2 px-1 gap-1 flex-shrink-0" style="width: 72px;">
-        <button
-          class="btn btn-sm d-flex flex-column align-items-center justify-content-center p-2 rounded border-0 position-relative w-100"
-          :class="(activeTool === 'templates' && isDrawerOpen) ? 'text-primary bg-primary bg-opacity-10 fw-bold' : 'text-secondary'"
-          @click="toggleDrawer('templates')"
-        >
-          <div class="mb-1">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <path d="M3 9h18M9 21V9" />
-            </svg>
-          </div>
-          <span style="font-size: 0.68rem;">Templates</span>
-        </button>
+  <!-- Tool rail: each tool is a small tile, the open one is tinted blue. Clicking the open tool
+       again folds its panel away. On a phone this is the bar along the bottom of the screen. -->
+  <nav class="left-rail te-rail te-card" aria-label="Tools">
+    <button
+      v-for="tool in TOOLS"
+      :key="tool.id"
+      type="button"
+      class="te-rail-btn"
+      :class="{ active: activeTool === tool.id && isDrawerOpen }"
+      :title="activeTool === tool.id && isDrawerOpen ? 'Hide this panel' : tool.label"
+      :aria-pressed="activeTool === tool.id && isDrawerOpen"
+      @click="toggleDrawer(tool.id)"
+    >
+      <span class="te-rail-tile">
+        <svg viewBox="0 0 24 24" class="te-icon" aria-hidden="true"><path :d="tool.icon" /></svg>
+        <span v-if="tool.id === 'uploads' && userUploads.length > 0" class="te-rail-count">{{ userUploads.length }}</span>
+      </span>
+      <span>{{ tool.label }}</span>
+    </button>
 
-        <button
-          class="btn btn-sm d-flex flex-column align-items-center justify-content-center p-2 rounded border-0 position-relative w-100"
-          :class="(activeTool === 'elements' && isDrawerOpen) ? 'text-primary bg-primary bg-opacity-10 fw-bold' : 'text-secondary'"
-          @click="toggleDrawer('elements')"
-        >
-          <div class="mb-1">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M8.3 10a.7.7 0 0 1-.626-1.079L11.4 3.16a.7.7 0 0 1 1.198-.043L16.3 8.9a.7.7 0 0 1-.572 1.1H8.3z" />
-              <rect x="3" y="14" width="7" height="7" rx="1" />
-              <circle cx="17.5" cy="17.5" r="3.5" />
-            </svg>
-          </div>
-          <span style="font-size: 0.68rem;">Elements</span>
-        </button>
-
-        <button
-          class="btn btn-sm d-flex flex-column align-items-center justify-content-center p-2 rounded border-0 position-relative w-100"
-          :class="(activeTool === 'text' && isDrawerOpen) ? 'text-primary bg-primary bg-opacity-10 fw-bold' : 'text-secondary'"
-          @click="toggleDrawer('text')"
-        >
-          <div class="mb-1">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polyline points="4 7 4 4 20 4 20 7" />
-              <line x1="9" y1="20" x2="15" y2="20" />
-              <line x1="12" y1="4" x2="12" y2="20" />
-            </svg>
-          </div>
-          <span style="font-size: 0.68rem;">Text</span>
-        </button>
-
-
-
-        <button
-          class="btn btn-sm d-flex flex-column align-items-center justify-content-center p-2 rounded border-0 position-relative w-100"
-          :class="(activeTool === 'uploads' && isDrawerOpen) ? 'text-primary bg-primary bg-opacity-10 fw-bold' : 'text-secondary'"
-          @click="toggleDrawer('uploads')"
-        >
-          <div class="mb-1 position-relative">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-              <polyline points="17 8 12 3 7 8" />
-              <line x1="12" y1="3" x2="12" y2="15" />
-            </svg>
-            <span
-              v-if="userUploads.length > 0"
-              class="badge rounded-pill bg-primary position-absolute top-0 start-100 translate-middle"
-              style="font-size: 0.6rem; padding: 2px 4px; line-height: 1;"
-            >{{ userUploads.length }}</span>
-          </div>
-          <span style="font-size: 0.68rem;">Uploads</span>
-        </button>
-
-        <button
-          class="btn btn-sm d-flex flex-column align-items-center justify-content-center p-2 rounded border-0 position-relative w-100"
-          :class="(activeTool === 'background' && isDrawerOpen) ? 'text-primary bg-primary bg-opacity-10 fw-bold' : 'text-secondary'"
-          @click="toggleDrawer('background')"
-        >
-          <div class="mb-1">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <circle cx="8.5" cy="8.5" r="1.5" />
-              <polyline points="21 15 16 10 5 21" />
-            </svg>
-          </div>
-          <span style="font-size: 0.68rem;">Background</span>
-        </button>
-
-        <button
-          class="btn btn-sm d-flex flex-column align-items-center justify-content-center p-2 rounded border-0 position-relative w-100"
-          :class="(activeTool === 'layers' && isDrawerOpen) ? 'text-primary bg-primary bg-opacity-10 fw-bold' : 'text-secondary'"
-          @click="toggleDrawer('layers')"
-        >
-          <div class="mb-1 position-relative">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <polygon points="12 2 2 7 12 12 22 7 12 2" />
-              <polyline points="2 17 12 22 22 17" />
-              <polyline points="2 12 12 17 22 12" />
-            </svg>
-            <span
-              v-if="canvasElements.length > 0"
-              class="badge rounded-pill bg-primary position-absolute top-0 start-100 translate-middle"
-              style="font-size: 0.6rem; padding: 2px 4px; line-height: 1;"
-            >{{ canvasElements.length }}</span>
-          </div>
-          <span style="font-size: 0.68rem;">Layers</span>
-        </button>
-      </aside>
+    <!-- Only on phones: opens the properties sheet, with the layers list -->
+    <button
+      type="button"
+      class="te-rail-btn te-mobile-only"
+      :class="{ active: isPropsSheetOpen, 'has-dot': selectedElementIds.length > 0 && !isPropsSheetOpen }"
+      :aria-pressed="isPropsSheetOpen"
+      @click="togglePropsSheet"
+    >
+      <span class="te-rail-tile">
+        <svg viewBox="0 0 24 24" class="te-icon" aria-hidden="true"><path :d="SLIDERS_ICON" /></svg>
+      </span>
+      <span>Edit</span>
+    </button>
+  </nav>
 </template>
