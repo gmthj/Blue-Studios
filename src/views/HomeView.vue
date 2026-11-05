@@ -626,7 +626,6 @@ async function joinRoom() {
       <div class="section-head reveal">
         <p class="eyebrow">How it works</p>
         <h2 class="section-title">Get your photostrip in four steps</h2>
-        <p class="section-lead">No booth, no app to install. Everyone uses the phone or laptop they already have.</p>
       </div>
 
       <ol class="steps">
@@ -974,7 +973,10 @@ async function joinRoom() {
   margin-bottom: 28px;
   color: var(--ink); /* black, not grey: easy to read over the sea */
   font-size: clamp(1.05rem, 0.95rem + 0.4vw, 1.25rem);
+  font-weight: 500; /* medium, so the thin strokes don't get lost in the waves */
   line-height: 1.6;
+  /* A soft white glow behind the letters lifts them off the photo, with no visible box */
+  text-shadow: 0 0 12px rgba(255, 255, 255, 0.9), 0 0 4px rgba(255, 255, 255, 0.8);
   text-wrap: pretty;
 }
 
