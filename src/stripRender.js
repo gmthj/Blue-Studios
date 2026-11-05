@@ -10,7 +10,7 @@ import { getClipUrl, CLIP_SECONDS } from './clips.js'
 // Used by the Export page (see ExportView.vue).
 //
 // A "scene" holds everything already downloaded (photos, stickers, videos), so any moment can be drawn quickly:
-//   const scene = await createScene({ layout, frameStyle, photosById, slotPhotos, edits, crops, stickers, clips, editedVideos })
+//   const scene = await createScene({ layout, frameStyle, photosById, slotPhotos, edits, crops, stickers, clips, editedVideos, cornerColor })
 //   scene.tick(t)                  // start / pause the videos so they match the time t (seconds)
 //   scene.draw(ctx, W, H, t)       // draw the strip as it looks t seconds in
 //   scene.stop()                   // pause everything
@@ -82,6 +82,17 @@ function drawCover(ctx, source, sourceWidth, sourceHeight, x, y, w, h, mirrored,
   ctx.restore()
 }
 
+// Draw a picture so it fills the whole canvas, cropped in the middle if its shape is different, never stretched.
+// The same as the screen does for a template's picture (background: url(...) center / cover).
+function drawCoverFull(ctx, picture, W, H) {
+  const pictureWidth = picture.naturalWidth || picture.width
+  const pictureHeight = picture.naturalHeight || picture.height
+  const scale = Math.max(W / pictureWidth, H / pictureHeight)
+  const cropWidth = W / scale // how much of the picture fits
+  const cropHeight = H / scale
+  ctx.drawImage(picture, (pictureWidth - cropWidth) / 2, (pictureHeight - cropHeight) / 2, cropWidth, cropHeight, 0, 0, W, H)
+}
+
 // Make the slot's shape the only area that can be drawn on (the same shapes as PhotoStrip.vue)
 function clipToSlot(ctx, shape, x, y, w, h, W) {
   ctx.beginPath()
@@ -119,7 +130,9 @@ async function buildTrack(entries) {
   return { segments: segments, length: offset }
 }
 
-export async function createScene({ layout, frameStyle, photosById, slotPhotos, edits, crops, stickers, clips, editedVideos }) {
+// cornerColor: what shows where a template's picture is see-through (outside its rounded outline, in the corners).
+//   null: nothing, so it stays see-through (a PNG can be). A colour: that colour (a video cannot be see-through, so it is white).
+export async function createScene({ layout, frameStyle, photosById, slotPhotos, edits, crops, stickers, clips, editedVideos, cornerColor = '#FFFFFF' }) {
   const slots = layout.slots
 
   // Download everything first, so drawing a frame is instant
@@ -241,9 +254,18 @@ export async function createScene({ layout, frameStyle, photosById, slotPhotos, 
   // Draw the strip as it looks t seconds in
   function draw(ctx, W, H, t) {
     ctx.clearRect(0, 0, W, H)
-    ctx.fillStyle = frameStyle.background
-    ctx.fillRect(0, 0, W, H)
-    if (frameArt) ctx.drawImage(frameArt, 0, 0, W, H)
+    if (frameArt) {
+      // A template is a picture with its own outline, so nothing is painted in its colour under it: that colour would
+      // show as square corners outside the rounded outline (on screen there is none either, see PhotoStrip.vue).
+      if (cornerColor) {
+        ctx.fillStyle = cornerColor
+        ctx.fillRect(0, 0, W, H)
+      }
+      drawCoverFull(ctx, frameArt, W, H)
+    } else {
+      ctx.fillStyle = frameStyle.background // a plain frame: its colour, or a template whose picture could not be loaded
+      ctx.fillRect(0, 0, W, H)
+    }
 
     for (let i = 0; i < slots.length; i++) {
       const s = slots[i]
@@ -296,10 +318,9 @@ export async function createScene({ layout, frameStyle, photosById, slotPhotos, 
       ctx.restore()
     }
 
-    // The frame's border (PhotoStrip draws a 4px border on a strip about 300px wide).
-    // Not for a frame with its own artwork: on screen it has no border (.strip.templated in PhotoStrip.vue), and the
-    // artwork's rounded corners would show the square border's corners as dark dots.
-    if (!frameArt) {
+    // The frame's border (PhotoStrip draws a 4px border on a strip about 300px wide). A template picture has its own
+    // outline, so the screen draws no border on it (.strip.templated), and neither does the export.
+    if (!frameStyle.thumbnailUrl) {
       const borderWidth = (W * 4) / 300
       ctx.strokeStyle = frameStyle.border
       ctx.lineWidth = borderWidth
@@ -379,47 +400,4 @@ export async function recordScene(scene, { width, fps, seconds, onProgress, isCa
   await stopped
   if (cancelled) return null
   return new Blob(chunks, { type: recorder.mimeType || 'video/webm' })
-}
-
-// Play the scene on a hidden canvas in real time, and call onFrame(canvas) once for every 1 / fps seconds of it.
-// Used for the GIF: onFrame gets the finished picture of that moment (the same drawing the MP4 is recorded from).
-// The page must stay open and visible while it runs, as with recordScene. Gives back false if it was cancelled.
-export async function sampleScene(scene, { width, fps, seconds, onFrame, onProgress, isCancelled }) {
-  const W = width
-  const H = Math.round(W / scene.aspect)
-  const canvas = document.createElement('canvas')
-  canvas.width = W
-  canvas.height = H
-  const ctx = canvas.getContext('2d')
-  const total = Math.floor(seconds * fps) // how many pictures the GIF has
-  let sent = 0
-
-  const startedAt = performance.now()
-  let cancelled = false
-  await new Promise((resolve) => {
-    function frame() {
-      const t = (performance.now() - startedAt) / 1000
-      if (isCancelled && isCancelled()) {
-        cancelled = true
-        resolve()
-        return
-      }
-      scene.tick(t)
-      scene.draw(ctx, W, H, t)
-      // One picture for every 1 / fps seconds that went by (if the screen was slow, the same picture is used twice)
-      while (sent < total && t >= sent / fps) {
-        onFrame(canvas)
-        sent++
-      }
-      if (onProgress) onProgress(Math.min(1, sent / total))
-      if (sent >= total) {
-        resolve()
-      } else {
-        requestAnimationFrame(frame)
-      }
-    }
-    frame()
-  })
-  scene.stop()
-  return !cancelled
 }

@@ -102,7 +102,7 @@ const {
 
             <!-- Frame Title Field -->
             <div>
-              <label class="form-label small fw-bold text-secondary text-uppercase mb-1" for="modal-template-name">Frame Title</label>
+              <label class="form-label small fw-bold text-secondary mb-1" for="modal-template-name">Frame name</label>
               <input
                 id="modal-template-name"
                 v-model="templateName"
@@ -122,7 +122,7 @@ const {
             <!-- Category Picker (1 to 3) -->
             <div>
               <div class="d-flex justify-content-between align-items-center mb-1">
-                <label class="form-label small fw-bold text-secondary text-uppercase mb-0">Marketplace Categories</label>
+                <label class="form-label small fw-bold text-secondary mb-0">Marketplace categories</label>
                 <span class="small text-muted" style="font-size: 0.75rem;">Pick 1 to {{ MAX_CATEGORIES }}</span>
               </div>
               <div class="d-flex flex-wrap gap-1">

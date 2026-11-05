@@ -14,6 +14,7 @@ import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
 import LiveStickerPicker from '../components/LiveStickerPicker.vue'
 import AppIcon from '../components/AppIcon.vue'
+import PageTip from '../components/PageTip.vue'
 
 // The "Decorate" page (a child of RoomLayout.vue): filters and stickers.
 //   Left:   filters and adjustments for the photo tapped on the strip
@@ -125,6 +126,74 @@ function updateTrayScroll() {
   trayScrolledDown.value = el.scrollTop > 4
   trayCanScrollDown.value = el.scrollTop + el.clientHeight < el.scrollHeight - 6
 }
+
+// ---------- FIRST-TIME TIPS ----------
+// The same as the Pick page's: the first time someone opens Decorate, three small cards explain it, each one
+// pointing at the part it is about (PageTip.vue). The "?" next to Filters shows them again.
+// Remembered per browser (localStorage); if storage is blocked they just show again.
+const DECORATE_TIPS = [
+  {
+    target: 'edits',
+    title: 'Filters and adjustments',
+    text: 'Tap a photo or video on the strip, then pick a filter or move the sliders. Apply to all gives every slot the same look.',
+  },
+  {
+    target: 'strip',
+    title: 'Decorate together',
+    text: 'Everyone in the room sees the same strip.',
+  },
+  {
+    target: 'stickers',
+    title: 'Add stickers',
+    text: 'Drag a sticker onto the strip, or tap it to add it. Drag a layer by its grip to put a sticker in front or behind.',
+  },
+]
+const DECORATE_TIPS_KEY = 'decorate-tips-seen'
+const decorateTipIndex = ref(-1)
+const decorateTip = computed(() => DECORATE_TIPS[decorateTipIndex.value] || null)
+let tipOpenedTray = false // on a phone the sticker tray is a sheet: the last tip opens it, and closes it again after
+
+function showDecorateTips() {
+  decorateTipIndex.value = 0
+}
+
+function nextDecorateTip() {
+  if (decorateTipIndex.value < DECORATE_TIPS.length - 1) decorateTipIndex.value++
+  else closeDecorateTips()
+}
+
+function closeDecorateTips() {
+  decorateTipIndex.value = -1
+  try {
+    localStorage.setItem(DECORATE_TIPS_KEY, '1')
+  } catch (error) {
+    // storage blocked: the tips will show again next time
+  }
+}
+
+function seenDecorateTips() {
+  try {
+    return localStorage.getItem(DECORATE_TIPS_KEY) === '1'
+  } catch (error) {
+    return false
+  }
+}
+
+// Phones: the sticker tip sits in the tray sheet, so open the sheet for it
+watch(decorateTip, (tip) => {
+  const phone = window.matchMedia && window.matchMedia('(max-width: 991.98px)').matches
+  if (tip && tip.target === 'stickers' && phone && !trayOpen.value) {
+    trayOpen.value = true
+    tipOpenedTray = true
+  } else if ((!tip || tip.target !== 'stickers') && tipOpenedTray) {
+    trayOpen.value = false
+    tipOpenedTray = false
+  }
+})
+
+onMounted(() => {
+  if (!seenDecorateTips()) showDecorateTips()
+})
 
 onMounted(async () => {
   loadArtFonts() // the Text tab's fonts (the same 29 as the Sticker Maker)
@@ -692,8 +761,22 @@ async function saveToStudio() {
   <div class="row g-3">
     <!-- LEFT: filters and adjustments -->
     <div class="col-12 col-md-6 col-lg-3 order-2 order-lg-1">
-      <div class="panel">
-        <h2 class="section-title">Filters</h2>
+      <div class="panel side-panel" :class="{ 'tip-target': decorateTip && decorateTip.target === 'edits' }">
+        <div class="panel-head mb-2">
+          <h2 class="section-title mb-0">Filters</h2>
+          <!-- Shows the how-to tips again -->
+          <button type="button" class="tip-help" title="How to decorate the strip" aria-label="How to decorate the strip" @click="showDecorateTips">?</button>
+          <PageTip
+            v-if="decorateTip && decorateTip.target === 'edits'"
+            class="tip-under-head"
+            :title="decorateTip.title"
+            :text="decorateTip.text"
+            :step="decorateTipIndex + 1"
+            :total="DECORATE_TIPS.length"
+            @next="nextDecorateTip"
+            @skip="closeDecorateTips"
+          />
+        </div>
         <!-- Each preview is the selected photo with that filter's CSS -->
         <div class="row g-2 mb-3">
           <div v-for="f in FILTERS" :key="f.id" class="col-6">
@@ -761,7 +844,18 @@ async function saveToStudio() {
 
     <!-- MIDDLE: the strip (the same for everyone) -->
     <div class="col-12 col-lg-6 order-1 order-lg-2">
-      <div class="panel canvas-area position-relative">
+      <div class="panel canvas-area position-relative" :class="{ 'tip-target': decorateTip && decorateTip.target === 'strip' }">
+        <PageTip
+          v-if="decorateTip && decorateTip.target === 'strip'"
+          class="tip-on-strip"
+          arrow="down"
+          :title="decorateTip.title"
+          :text="decorateTip.text"
+          :step="decorateTipIndex + 1"
+          :total="DECORATE_TIPS.length"
+          @next="nextDecorateTip"
+          @skip="closeDecorateTips"
+        />
         <!-- Retyping a text, location or weather sticker (opened by double-tapping it on the strip) -->
         <div v-if="editing" class="edit-bar" role="dialog" aria-label="Change the words">
           <textarea
@@ -820,13 +914,23 @@ async function saveToStudio() {
 
     <!-- RIGHT: sticker tray, selected sticker, layers -->
     <div class="col-12 col-md-6 col-lg-3 order-3">
-      <div class="panel d-flex flex-column">
+      <div class="panel side-panel d-flex flex-column" :class="{ 'tip-target': decorateTip && decorateTip.target === 'stickers' }">
         <!-- The sticker tray. On a laptop it sits here in the panel. On a phone it is a sheet
              that slides up from the "Stickers" button and closes when a sticker is picked. -->
         <section class="tray" :class="{ open: trayOpen }" aria-label="Sticker tray">
           <div class="tray-head">
             <h2 class="section-title mb-0">Sticker tray</h2>
             <button type="button" class="tray-close" aria-label="Close the sticker tray" @click="trayOpen = false"><AppIcon name="close" :size="16" /></button>
+            <PageTip
+              v-if="decorateTip && decorateTip.target === 'stickers'"
+              class="tip-under-head"
+              :title="decorateTip.title"
+              :text="decorateTip.text"
+              :step="decorateTipIndex + 1"
+              :total="DECORATE_TIPS.length"
+              @next="nextDecorateTip"
+              @skip="closeDecorateTips"
+            />
           </div>
 
           <!-- Tabs: Default, Live, Mine -->
@@ -1049,12 +1153,97 @@ async function saveToStudio() {
 
 .room-page {
   padding-bottom: 24px;
+  /* The same sizes on Pick and Decorate (PickView.vue and DecorateView.vue keep these the same):
+     --stage-h  the most the strip can be tall
+     --panel-h  on computers, all 3 panels are exactly this tall, whatever is in them (the side panels scroll inside),
+                so nothing grows or shrinks when the frame, the photos or the stickers change */
+  --stage-h: min(76vh, 740px);
+  --panel-h: calc(var(--stage-h) + 40px); /* + the panel's padding */
+}
+
+/* Tablets and phones: the panels stack, and the strip is a bit shorter so the panels below are not far away */
+@media (max-width: 991.98px) {
+  .room-page {
+    --stage-h: min(62vh, 560px);
+  }
 }
 
 .section-title {
   font-size: 1.15rem;
   font-weight: 700;
   text-wrap: balance;
+}
+
+/* ---------- First-time tips (PageTip.vue), the same as the Pick page's ---------- */
+/* A panel heading that a tip can hang under */
+.panel-head,
+.tray-head {
+  position: relative;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+/* Under the heading, the arrow pointing up at it */
+.tip-under-head {
+  top: calc(100% + 10px);
+  left: 0;
+}
+
+/* On the strip: at the top, the arrow pointing down at it */
+.tip-on-strip {
+  top: 16px;
+  left: 16px;
+}
+
+/* The panel a tip is about gets a soft blue ring */
+.panel.tip-target {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px rgba(47, 91, 234, 0.15);
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+
+/* The round "?" that shows the tips again */
+.tip-help {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+  transition: color 150ms ease, border-color 150ms ease, transform 160ms var(--ease-out);
+}
+
+.tip-help:active {
+  transform: scale(0.97);
+}
+
+.tip-help:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tip-help:hover {
+    color: var(--brand);
+    border-color: var(--brand);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tip-help:active {
+    transform: none;
+  }
 }
 
 .hint {
@@ -1084,9 +1273,12 @@ async function saveToStudio() {
 .canvas-area {
   /* The same space for every frame: the strip is never taller than --stage-h (see PhotoStrip.vue),
      and the area is always at least that tall, so it does not grow or shrink when a different frame is chosen */
-  --stage-h: min(72vh, 680px);
+  container: stage / inline-size;
   background: var(--soft);
-  min-height: calc(var(--stage-h) + 32px); /* + the panel's padding */
+  min-height: calc(var(--stage-h) + 40px); /* + the panel's padding */
+  /* The strip is as wide as on the Pick page, where the reposition card (184px), the zoom buttons (44px)
+     and the gaps (2 x 12px) sit beside it */
+  --strip-cap: calc(100% - 252px);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -1615,7 +1807,6 @@ async function saveToStudio() {
 /* Tablets and phones: the panels stack, so the long lists get shorter scroll areas */
 @media (max-width: 991.98px) {
   .canvas-area {
-    --stage-h: min(62vh, 560px); /* a bit shorter, so the panels below are not far away */
     padding-top: 20px;
     padding-bottom: 20px;
   }
@@ -1717,8 +1908,30 @@ async function saveToStudio() {
 /* Phones: a little less padding so the content gets the room */
 @media (max-width: 575.98px) {
   .panel {
-    padding: 12px;
-    border-radius: 12px;
+    padding: 16px; /* the same as the Pick page */
+  }
+}
+
+/* A narrow middle panel: on the Pick page the zoom buttons (44px + a 12px gap) are beside the strip, and the
+   reposition card goes under it */
+@container stage (max-width: 520px) {
+  .canvas-area > * {
+    --strip-cap: calc(100% - 56px);
+  }
+}
+
+/* Computers: all 3 panels exactly --panel-h tall, like the Pick page. The side panels scroll inside. */
+@media (min-width: 992px) {
+  .canvas-area {
+    height: var(--panel-h);
+  }
+
+  .side-panel {
+    height: var(--panel-h);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
   }
 }
 </style>

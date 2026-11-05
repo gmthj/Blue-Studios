@@ -41,6 +41,8 @@ export const test = base.extend({
     await page.addInitScript(() => {
       localStorage.setItem('callStartMinimised', 'true')
       localStorage.setItem('callDock', JSON.stringify({ x: 8, y: 64, right: true, bottom: false }))
+      // The Pick page's first-time tips (PickView.vue) would sit over the gallery the tests drag from
+      localStorage.setItem('pick-tips-seen', '1')
     })
     await use(page)
   },

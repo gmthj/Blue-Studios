@@ -7,20 +7,18 @@ import { db } from '../firebase.js'
 import { useRoom, stageIndex } from '../composables/useRoom.js'
 import { resolveEditedVideos } from '../clips.js'
 import { roomLayout, roomFrameStyle, safeStickers } from '../stripData.js'
-import { FORMATS, exportOptions, stripContents, hasGifSticker } from '../exportRules.js'
+import { chooseExportFormat, stripContents, hasGifSticker } from '../exportRules.js'
 import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
 import AppIcon from '../components/AppIcon.vue'
 
-// The "Export" page (a child of RoomLayout.vue): the room chooses HOW to export the strip and what to call it.
-// Nothing is made here. "Share and download" moves everyone to the Share page, where the file is made.
-// What is chosen is saved on the room, so everyone sees the same choice, live:
-//   room.exportFormat  'png' | 'gif' | 'mp4'
+// The "Export" page (a child of RoomLayout.vue): the room names the strip, and "Share and download" moves everyone on.
+// Nothing is made here, and nobody chooses the format: the strip decides it (PNG for a still strip with no music,
+// MP4 for everything else, see chooseExportFormat in exportRules.js). The Share page makes the file.
+// The name is saved on the room, so everyone sees it as it is typed, live:
 //   room.exportName    the strip's name (shown on the Share page and in My Studio)
-// Which formats can be chosen is decided by exportRules.js (e.g. no PNG if the strip has a video).
 
 const { code, room, photos, clips, roomRef } = useRoom()
-// (the room's saved format and name are used by the Share page too, see ShareView.vue)
 
 // ---------- THE STRIP (read only here, made on the Pick and Decorate pages) ----------
 
@@ -41,14 +39,14 @@ const photosById = computed(() => {
   return map
 })
 
-// ---------- WHICH FORMATS CAN BE CHOSEN ----------
+// ---------- WHICH FORMAT THE STRIP IS EXPORTED AS ----------
 
 const contents = computed(() =>
   stripContents({ layout: layout.value, slotPhotos: slotPhotos.value, photosById: photosById.value, clips: clips.value, editedVideos: editedVideos.value })
 )
 const hasMusic = computed(() => Boolean(room.value.music && room.value.music.audioPath)) // the mix saved on the Music page
 
-// Looking at the stickers takes a moment (each one is checked to see if it is a GIF), so the cards wait for it
+// Looking at the stickers takes a moment (each one is checked to see if it is a GIF), so the button waits for it
 const gifSticker = ref(false)
 const checking = ref(true)
 watch(
@@ -64,28 +62,10 @@ watch(
   { immediate: true }
 )
 
-const options = computed(() =>
-  exportOptions({ complete: contents.value.complete, hasVideo: contents.value.hasVideo, hasMusic: hasMusic.value, hasGifSticker: gifSticker.value })
+// 'png' or 'mp4' (null while the strip is not finished)
+const chosenFormat = computed(() =>
+  chooseExportFormat({ complete: contents.value.complete, hasVideo: contents.value.hasVideo, hasMusic: hasMusic.value, hasGifSticker: gifSticker.value })
 )
-
-const FORMAT_INFO = {
-  png: { name: 'PNG', blurb: 'A still picture of your strip' },
-  gif: { name: 'GIF', blurb: 'A looping animation, no sound' },
-  mp4: { name: 'MP4', blurb: 'A video with your music' },
-}
-
-// The chosen format: what the room saved, if it can still be used. If not (or nothing was chosen yet), the best one
-// that can be: MP4, then GIF, then PNG. null if nothing can be chosen (the strip is not finished).
-const chosenFormat = computed(() => {
-  const saved = room.value.exportFormat
-  if (saved && options.value[saved] && options.value[saved].available) return saved
-  return ['mp4', 'gif', 'png'].find((format) => options.value[format].available) || null
-})
-
-async function chooseFormat(format) {
-  if (checking.value || !options.value[format].available) return
-  await updateDoc(roomRef(), { exportFormat: format })
-}
 
 // ---------- THE NAME ----------
 
@@ -141,7 +121,6 @@ async function shareAndDownload() {
       if (data.stage === 'share') return // someone was first: we follow them (RoomLayout moves us)
       const changes = {
         stage: 'share',
-        exportFormat: format,
         exportName: name,
         exportJob: { status: 'pending', format: format, name: name, progress: 0, updatedAt: Date.now() },
       }
@@ -161,11 +140,40 @@ async function shareAndDownload() {
   <!-- The bar at the top with the 7 steps (this page is step 6, Export) -->
   <StageBar current="export" />
 
-  <div class="row g-3">
-    <!-- LEFT: the final strip, with its videos playing -->
-    <div class="col-12 col-lg-4 order-2 order-lg-1">
-      <div class="panel">
-        <h2 class="section-title">Your strip</h2>
+  <!-- gx-lg-5: a wide space (3rem) between the strip and the name section; gy-4: more room between them when they are stacked on a phone -->
+  <div class="row g-3 gx-md-4 gx-lg-5 gy-4 justify-content-center">
+    <!-- The form: the name, then Share and download. On a phone it comes before the strip.
+         The strip and the form are two columns of the usual width, together in the middle of the page. -->
+    <div class="col-12 col-md-6 col-lg-4 order-1 order-md-2 export-col form-col">
+      <!-- no box around it: the name, the button and the hint sit straight on the page -->
+      <div class="form-block">
+        <h2 class="section-title big-title">Name your photostrip</h2>
+        <label for="strip-name" class="field-label">Everyone in the room sees this as you type</label>
+        <input
+          id="strip-name"
+          v-model="nameDraft"
+          type="text"
+          class="form-control form-control-lg name-input"
+          maxlength="40"
+          :placeholder="suggestedName"
+          @input="onNameInput"
+          @blur="typing && saveName()"
+        />
+        <p class="hint mt-2 mb-0">It is the title on the Share page, and in My Studio if you save it there.</p>
+
+        <button type="button" class="btn btn-primary btn-lg share-button w-100 mt-4" :disabled="!canShare" @click="shareAndDownload">
+          {{ sharing ? 'Opening...' : 'Share and download' }}
+          <AppIcon v-if="!sharing" name="arrow-right" :size="18" />
+        </button>
+        <p v-if="!chosenFormat && !checking" class="hint text-center mt-2 mb-0">Finish the strip first: every slot needs a photo or video.</p>
+      </div>
+    </div>
+
+    <!-- The final strip, with its videos playing: next to the form on a wide screen, below it on a phone -->
+    <div class="col-12 col-md-6 col-lg-4 order-2 order-md-1 export-col strip-col">
+      <div class="panel big-panel strip-panel">
+        <h2 class="section-title big-title">Your strip</h2>
+        <div class="strip-stage">
         <!-- mode="view": only shows the strip (no dragging or editing). The videos play and repeat in their slots. -->
         <PhotoStrip
           mode="view"
@@ -179,71 +187,7 @@ async function shareAndDownload() {
           :clips="clips"
           :edited-videos="editedVideos"
         />
-      </div>
-    </div>
-
-    <!-- MIDDLE: the format -->
-    <div class="col-12 col-lg-4 order-1 order-lg-2">
-      <div class="panel">
-        <h2 class="section-title">Export</h2>
-        <h3 id="format-label" class="group-label mt-0">Format</h3>
-
-        <!-- One card per format. A card that cannot be chosen is blurred, with the reason on top of it. -->
-        <div class="d-grid gap-2" role="radiogroup" aria-labelledby="format-label">
-          <div v-for="format in FORMATS" :key="format" class="format-wrap">
-            <div
-              class="format-card"
-              :class="{ selected: chosenFormat === format, locked: checking || !options[format].available }"
-              role="radio"
-              :aria-checked="chosenFormat === format"
-              :aria-disabled="checking || !options[format].available"
-              :tabindex="checking || !options[format].available ? -1 : 0"
-              @click="chooseFormat(format)"
-              @keydown.enter="chooseFormat(format)"
-              @keydown.space.prevent="chooseFormat(format)"
-            >
-              <div>
-                <div class="format-name">{{ FORMAT_INFO[format].name }}</div>
-                <div class="format-blurb">{{ FORMAT_INFO[format].blurb }}</div>
-              </div>
-              <span class="radio-dot"></span>
-            </div>
-            <span v-if="!checking && !options[format].available" class="lock-reason">{{ options[format].reason }}</span>
-          </div>
         </div>
-
-        <!-- PNG and GIF cannot carry the music: say so, and point to MP4 if it can be chosen -->
-        <p v-if="chosenFormat && options[chosenFormat].musicLost" class="music-note" role="status">
-          <AppIcon name="music" :size="16" />
-          <span>
-            Your music won't be included in a {{ FORMAT_INFO[chosenFormat].name }}.
-            <template v-if="options.mp4.available">Choose MP4 to keep it.</template>
-          </span>
-        </p>
-      </div>
-    </div>
-
-    <!-- RIGHT: the name, and on to the Share page -->
-    <div class="col-12 col-lg-4 order-3">
-      <div class="panel">
-        <h2 class="section-title">Name your photostrip</h2>
-        <label for="strip-name" class="field-label">Everyone in the room sees this as you type</label>
-        <input
-          id="strip-name"
-          v-model="nameDraft"
-          type="text"
-          class="form-control"
-          maxlength="40"
-          :placeholder="suggestedName"
-          @input="onNameInput"
-          @blur="typing && saveName()"
-        />
-        <p class="hint mt-2">It is the title on the Share page, and in My Studio if you save it there.</p>
-
-        <button type="button" class="btn btn-primary w-100 mt-2" :disabled="!canShare" @click="shareAndDownload">
-          {{ sharing ? 'Opening...' : 'Share and download' }}
-        </button>
-        <p v-if="!chosenFormat && !checking" class="hint text-center mt-2 mb-0">Finish the strip first: every slot needs a photo or video.</p>
       </div>
     </div>
   </div>
@@ -251,148 +195,102 @@ async function shareAndDownload() {
 </template>
 
 <style scoped>
-/* Styles follow design.md: the colours are the app-page variables (--brand, --ink, --muted, --line, --soft),
-   the cards (.panel) and labels (.group-label) come from pages.css, hover only with a mouse,
-   and movement is switched off for people who ask for reduced motion (at the bottom). */
+/* Styles follow design.md: the colours are the app-page variables (--brand, --ink, --muted, --line, --soft)
+   and the cards (.panel) come from pages.css. */
 .room-page {
   padding-bottom: 24px;
 }
 
 .hint {
   margin: 0 0 8px;
-  font-size: 0.82rem;
+  font-size: 0.738rem;
   color: var(--muted);
   text-wrap: pretty;
 }
 
 .field-label {
   display: block;
-  margin-bottom: 6px;
-  font-size: 0.85rem;
+  margin-bottom: 8px;
+  font-size: 0.855rem;
   font-weight: 700;
 }
 
-.divider {
-  margin: 20px 0 16px;
-  border-color: var(--line);
-  opacity: 1;
+/* Bigger cards, so the page does not look empty: a roomy padding that is smaller on a phone */
+.room-page .big-panel {
+  padding: clamp(18px, 2.4vw, 24px);
 }
 
-/* wraps a format card, so the reason can sit on top of it without being blurred too */
-.format-wrap {
-  position: relative;
+.big-title {
+  font-size: clamp(1.08rem, 0.945rem + 0.45vw, 1.26rem);
+  margin-bottom: 14px;
 }
 
-.format-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+/* The name box: tall, with big letters (the phone zooms in on a small box when you tap it) */
+.name-input {
   padding: 12px 14px;
-  border: 1px solid var(--line);
+  font-size: 0.945rem;
   border-radius: 12px;
-  background: #ffffff;
-  cursor: pointer;
-  transition: border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease,
-    transform 160ms var(--ease-out);
 }
 
-.format-card:active:not(.locked) {
-  transform: scale(0.97);
-}
-
-.format-card:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 2px;
-}
-
-/* The chosen format: a blue line and a soft blue background */
-.format-card.selected {
-  border-color: var(--brand);
-  background: var(--brand-tint);
-  box-shadow: 0 0 0 1px var(--brand);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .format-card:not(.locked):not(.selected):hover {
-    border-color: var(--brand);
-  }
-}
-
-.format-name {
-  font-weight: 700;
-}
-
-.format-blurb {
-  font-size: 0.82rem;
-  color: var(--muted);
-}
-
-/* Cannot be chosen: blurred and faded */
-.format-card.locked {
-  filter: blur(2.5px);
-  opacity: 0.55;
-  cursor: not-allowed;
-  user-select: none;
-}
-
-/* The round button on the right of a card: filled when chosen */
-.radio-dot {
-  flex: none;
-  width: 18px;
-  height: 18px;
-  border: 2px solid var(--line);
-  border-radius: 50%;
-  background: #ffffff;
-  transition: border-color 150ms ease;
-}
-
-.selected .radio-dot {
-  border-color: var(--brand);
-  background: radial-gradient(var(--brand) 45%, #ffffff 50%);
-}
-
-/* The reason a card is blurred, in the middle of it, sharp. Lets taps through to the card. */
-.lock-reason {
-  position: absolute;
-  inset: 0;
+/* the big button (Bootstrap's btn-lg is 1.25rem): 10% smaller like the rest of the text here */
+.share-button {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 14px;
-  text-align: center;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--ink);
-  text-wrap: balance;
-  pointer-events: none;
-}
-
-/* "Your music won't be included": the amber "waiting" colours from design.md */
-.music-note {
-  display: flex;
-  align-items: flex-start;
   gap: 8px;
-  margin: 16px 0 0;
-  padding: 10px 12px;
-  border-radius: 10px;
-  font-size: 0.85rem;
-  color: #A15C07;
-  background: #FEF3C7;
-  text-wrap: pretty;
+  min-height: 52px; /* a big, easy target for a thumb */
+  font-size: 1.125rem;
 }
 
-.music-note :deep(svg) {
-  margin-top: 2px;
+/* On a phone and a small tablet there is one column: keep it a comfortable width and in the middle, not stretched */
+@media (max-width: 767.98px) {
+  .export-col {
+    max-width: 560px;
+    margin-left: auto;
+    margin-right: auto;
+  }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .format-card {
-    transition: none;
-  }
+/* The strip's card is as tall as the form next to it, and the strip is in the middle of it */
+.strip-col {
+  display: flex;
+}
 
-  .format-card:active:not(.locked) {
-    transform: none;
+.strip-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.strip-stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.strip-stage > :deep(*) {
+  flex: 1;
+}
+
+/* Side by side: the strip is a little shorter than the usual 82% of the screen (--stage-h is the height PhotoStrip may use),
+   so its card is about as tall as the form next to it and does not run off the bottom of the screen.
+   On a phone the strip is under the form, so it keeps the usual size. */
+@media (min-width: 768px) {
+  .strip-stage {
+    --stage-h: max(420px, calc(100vh - 230px));
   }
+}
+
+/* The form is in the middle of the column (top to bottom), next to the taller strip */
+.form-col {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* The name section has no box, so it only needs a little room at the sides, and its title is not boxed in either */
+.form-block {
+  padding: 0 4px;
 }
 </style>

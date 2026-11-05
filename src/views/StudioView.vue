@@ -462,6 +462,8 @@ function formatDate(time) {
 
 .strip-preview {
   height: 220px;
+  /* white behind a saved strip: a PNG can be see-through in its corners and an MP4 has white ones, and both then look the same */
+  background: #ffffff;
 }
 
 /* a strip that opens its share page: the picture is a link */
