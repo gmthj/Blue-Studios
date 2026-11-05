@@ -692,7 +692,7 @@ async function saveToStudio() {
   <div class="row g-3">
     <!-- LEFT: filters and adjustments -->
     <div class="col-12 col-md-6 col-lg-3 order-2 order-lg-1">
-      <div class="panel">
+      <div class="panel side-panel">
         <h2 class="section-title">Filters</h2>
         <!-- Each preview is the selected photo with that filter's CSS -->
         <div class="row g-2 mb-3">
@@ -820,7 +820,7 @@ async function saveToStudio() {
 
     <!-- RIGHT: sticker tray, selected sticker, layers -->
     <div class="col-12 col-md-6 col-lg-3 order-3">
-      <div class="panel d-flex flex-column">
+      <div class="panel side-panel d-flex flex-column">
         <!-- The sticker tray. On a laptop it sits here in the panel. On a phone it is a sheet
              that slides up from the "Stickers" button and closes when a sticker is picked. -->
         <section class="tray" :class="{ open: trayOpen }" aria-label="Sticker tray">
@@ -1049,6 +1049,19 @@ async function saveToStudio() {
 
 .room-page {
   padding-bottom: 24px;
+  /* The same sizes on Pick and Decorate (PickView.vue and DecorateView.vue keep these the same):
+     --stage-h  the most the strip can be tall
+     --panel-h  on computers, all 3 panels are exactly this tall, whatever is in them (the side panels scroll inside),
+                so nothing grows or shrinks when the frame, the photos or the stickers change */
+  --stage-h: min(76vh, 740px);
+  --panel-h: calc(var(--stage-h) + 40px); /* + the panel's padding */
+}
+
+/* Tablets and phones: the panels stack, and the strip is a bit shorter so the panels below are not far away */
+@media (max-width: 991.98px) {
+  .room-page {
+    --stage-h: min(62vh, 560px);
+  }
 }
 
 .section-title {
@@ -1084,9 +1097,12 @@ async function saveToStudio() {
 .canvas-area {
   /* The same space for every frame: the strip is never taller than --stage-h (see PhotoStrip.vue),
      and the area is always at least that tall, so it does not grow or shrink when a different frame is chosen */
-  --stage-h: min(72vh, 680px);
+  container: stage / inline-size;
   background: var(--soft);
-  min-height: calc(var(--stage-h) + 32px); /* + the panel's padding */
+  min-height: calc(var(--stage-h) + 40px); /* + the panel's padding */
+  /* The strip is as wide as on the Pick page, where the reposition card (184px), the zoom buttons (44px)
+     and the gaps (2 x 12px) sit beside it */
+  --strip-cap: calc(100% - 252px);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -1615,7 +1631,6 @@ async function saveToStudio() {
 /* Tablets and phones: the panels stack, so the long lists get shorter scroll areas */
 @media (max-width: 991.98px) {
   .canvas-area {
-    --stage-h: min(62vh, 560px); /* a bit shorter, so the panels below are not far away */
     padding-top: 20px;
     padding-bottom: 20px;
   }
@@ -1717,8 +1732,30 @@ async function saveToStudio() {
 /* Phones: a little less padding so the content gets the room */
 @media (max-width: 575.98px) {
   .panel {
-    padding: 12px;
-    border-radius: 12px;
+    padding: 16px; /* the same as the Pick page */
+  }
+}
+
+/* A narrow middle panel: on the Pick page the zoom buttons (44px + a 12px gap) are beside the strip, and the
+   reposition card goes under it */
+@container stage (max-width: 520px) {
+  .canvas-area > * {
+    --strip-cap: calc(100% - 56px);
+  }
+}
+
+/* Computers: all 3 panels exactly --panel-h tall, like the Pick page. The side panels scroll inside. */
+@media (min-width: 992px) {
+  .canvas-area {
+    height: var(--panel-h);
+  }
+
+  .side-panel {
+    height: var(--panel-h);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--line) transparent;
   }
 }
 </style>

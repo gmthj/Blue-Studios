@@ -1,11 +1,12 @@
 <script setup>
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { doc, getDoc, setDoc } from 'firebase/firestore'
+import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { getGuestName, saveGuestName } from '../guest.js'
 import { getUid, useAuth } from '../composables/useAuth.js'
-import { isRoomFull, MAX_PEOPLE } from '../room.js'
+import { isRoomFull, isActive, MAX_PEOPLE } from '../room.js'
+import { recentRooms, forgetRoom } from '../recentRooms.js'
 import { LAYOUTS } from '../stripData.js'
 import { getItem } from '../marketplace.js'
 import AppIcon from '../components/AppIcon.vue'
@@ -72,6 +73,19 @@ function dropStartTemplate() {
 
 // Shown after a room is closed (RoomLayout.vue sends everyone to /?closed=1234)
 const closedCode = route.query.closed || ''
+
+// It pops up at the bottom as a small toast and goes away by itself after a few seconds
+const showClosedToast = ref(!!closedCode)
+let closedToastTimer = null
+onMounted(() => {
+  if (showClosedToast.value) closedToastTimer = setTimeout(hideClosedToast, 4000)
+})
+
+// The cross on the toast, or after 4 seconds
+function hideClosedToast() {
+  clearTimeout(closedToastTimer)
+  showClosedToast.value = false
+}
 
 // True when exactly 4 digits are typed. /^[0-9]{4}$/ means: start, 4 digits (0-9), end.
 const codeComplete = computed(() => {
@@ -181,6 +195,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   clearInterval(stripTimer)
+  clearTimeout(closedToastTimer)
 })
 
 const FEATURES = [
@@ -259,6 +274,56 @@ async function createRoom() {
     errorMessage.value = 'Could not create room. Check your internet connection.'
   }
   loading.value = false
+}
+
+// ---------- GO BACK INTO A ROOM ----------
+// Rooms this device was in during the last day (recentRooms.js) that are still open: each one gets a card
+// above the room card, "Go back into room 4821?", with Rejoin and Not now. Closed or deleted rooms are forgotten.
+const rejoinable = ref([]) // [{ code, people }], newest first
+
+// Is this room still open? Returns its details, or null (and forgets it) if it is closed or gone
+async function checkRoom(item) {
+  if (item.code === closedCode) {
+    forgetRoom(item.code)
+    return null
+  }
+  try {
+    const roomSnap = await getDoc(doc(db, 'rooms', item.code))
+    if (!roomSnap.exists() || roomSnap.data().closed) {
+      forgetRoom(item.code)
+      return null
+    }
+    // Who is in it now (not counting me: I may still show for a few seconds after leaving)
+    const members = await getDocs(collection(db, 'rooms', item.code, 'members'))
+    const now = Date.now()
+    let people = 0
+    members.forEach((member) => {
+      if (member.id !== getUid() && isActive(member.data(), now)) people = people + 1
+    })
+    return { code: item.code, people: people }
+  } catch (error) {
+    console.warn('Could not check room ' + item.code + ':', error)
+    return null
+  }
+}
+
+async function checkRecentRooms() {
+  const checked = await Promise.all(recentRooms().slice(0, 3).map(checkRoom))
+  rejoinable.value = checked.filter(Boolean)
+}
+onMounted(checkRecentRooms)
+
+// Rejoin: the same as typing the code and pressing Join (so the name, closed and full checks all run),
+// and the code boxes fill in, so it is clear what happened
+function rejoinRoom(code) {
+  joinCode.value = code
+  joinRoom()
+}
+
+// "Not now": take it off this device's list, so the card goes away
+function forgetRejoin(code) {
+  forgetRoom(code)
+  rejoinable.value = rejoinable.value.filter((item) => item.code !== code)
 }
 
 async function joinRoom() {
@@ -344,7 +409,49 @@ async function joinRoom() {
       </div>
 
       <div class="room-col">
-        <div v-if="closedCode" class="alert alert-info">Room {{ closedCode }} was closed.</div>
+        <!-- "Room 4821 was closed.": a toast at the bottom that goes away by itself -->
+        <Teleport to="body">
+          <Transition name="closed-toast">
+            <div v-if="showClosedToast" class="closed-toast" role="status">
+              <span>Room {{ closedCode }} was closed.</span>
+              <button type="button" class="closed-toast-close" aria-label="Close" title="Close" @click="hideClosedToast">
+                <AppIcon name="close" :size="14" />
+              </button>
+            </div>
+          </Transition>
+        </Teleport>
+
+        <!-- Rooms this device was in that are still open: a card for each, laid out like the app's popups
+             (icon tile, question, then Not now / Rejoin), in the home page's glass style -->
+        <TransitionGroup name="rejoin" tag="div">
+          <section
+            v-for="item in rejoinable"
+            :key="item.code"
+            class="rejoin-card glass"
+            :aria-labelledby="'rejoin-title-' + item.code"
+            :data-test="'rejoin-' + item.code"
+          >
+            <div class="rejoin-head">
+              <span class="rejoin-icon" aria-hidden="true"><AppIcon name="users" :size="20" /></span>
+              <div class="rejoin-text">
+                <h2 :id="'rejoin-title-' + item.code" class="rejoin-title">Go back into room {{ item.code }}?</h2>
+                <p class="rejoin-meta">{{ item.people }}/{{ MAX_PEOPLE }} in the room</p>
+              </div>
+            </div>
+            <div class="rejoin-actions">
+              <button type="button" class="btn btn-outline-secondary btn-sm" @click="forgetRejoin(item.code)">Not now</button>
+              <button
+                type="button"
+                class="btn btn-primary btn-sm rejoin-btn"
+                :disabled="loading"
+                @click="rejoinRoom(item.code)"
+              >
+                <span v-if="loading && action === 'join' && joinCode === item.code" class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+                Rejoin room {{ item.code }}
+              </button>
+            </div>
+          </section>
+        </TransitionGroup>
 
         <div class="room-card glass">
           <div class="card-name">
@@ -688,6 +795,103 @@ async function joinRoom() {
 .room-card {
   padding: 20px;
   border-radius: 20px;
+}
+
+/* ---------- REJOIN: rooms this device was in that are still open ---------- */
+/* Laid out like the app's popups (AppDialog.vue): icon tile and question, buttons on the right below */
+.rejoin-card {
+  margin-bottom: 12px;
+  padding: 18px 20px;
+  border-radius: 20px;
+  transition: opacity 350ms var(--ease-out), transform 350ms var(--ease-out);
+}
+
+/* Slides in gently when the rooms have been checked */
+@starting-style {
+  .rejoin-card {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* "Not now": fades and shrinks away */
+.rejoin-leave-active {
+  transition: opacity 200ms ease, transform 200ms var(--ease-out);
+}
+
+.rejoin-leave-to {
+  opacity: 0;
+  transform: scale(0.97);
+}
+
+.rejoin-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+/* The soft blue icon tile, the same as the popups' */
+.rejoin-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 12px;
+  color: var(--brand);
+  background: var(--brand-tint);
+}
+
+.rejoin-text {
+  min-width: 0;
+}
+
+.rejoin-title {
+  margin: 0;
+  padding-top: 2px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.rejoin-meta {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.rejoin-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.rejoin-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* Narrow phones: full-width buttons, Rejoin on top (like the popups) */
+@media (max-width: 400px) {
+  .rejoin-actions {
+    flex-direction: column-reverse;
+  }
+
+  .rejoin-btn {
+    justify-content: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rejoin-card,
+  .rejoin-leave-active {
+    transition: none;
+  }
 }
 
 @media (min-width: 576px) {
@@ -1152,6 +1356,81 @@ async function joinRoom() {
   .code-boxes.invalid,
   .name-input.invalid {
     animation-name: code-flash;
+  }
+}
+</style>
+
+<style>
+/* The "room was closed" toast (not scoped: it is drawn on <body>). The same dark pill as the Sticker Maker's. */
+.closed-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 1060;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 32px);
+  padding: 6px 6px 6px 18px;
+  border-radius: 999px;
+  background: var(--ink, #14172B);
+  color: #ffffff;
+  font-family: 'Plus Jakarta Sans', var(--bs-body-font-family);
+  font-size: 0.875rem;
+  font-weight: 600;
+  box-shadow: 0 12px 32px rgba(20, 23, 43, 0.2);
+  transform: translateX(-50%);
+}
+
+/* The cross: a round 32px button, easy to hit */
+.closed-toast-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #B9BECC;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.closed-toast-close:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 1px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .closed-toast-close:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+  }
+}
+
+.closed-toast-enter-active,
+.closed-toast-leave-active {
+  transition: opacity 300ms cubic-bezier(0.23, 1, 0.32, 1), transform 300ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.closed-toast-enter-from,
+.closed-toast-leave-to {
+  opacity: 0;
+  transform: translate(-50%, 12px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .closed-toast-enter-active,
+  .closed-toast-leave-active {
+    transition: opacity 200ms ease;
+  }
+
+  .closed-toast-enter-from,
+  .closed-toast-leave-to {
+    transform: translateX(-50%);
   }
 }
 </style>
