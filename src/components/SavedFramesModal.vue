@@ -20,7 +20,7 @@
             <div>
               <h5 id="saved-frames-title" class="modal-title fw-bold text-dark fs-5 mb-0">Saved Frames Folder</h5>
               <p class="text-muted small mb-0">
-                Double-click any template to resume editing in the workspace.
+                Double-click any frame to resume editing in the workspace.
               </p>
             </div>
           </div>
@@ -34,7 +34,7 @@
               class="d-none"
               @change="handleFileInputChange"
             />
-            <button class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2 px-3 py-1" title="Upload template or frame image from computer" @click="triggerFileInput">
+            <button class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2 px-3 py-1" title="Upload a frame image or file from your computer" @click="triggerFileInput">
               <AppIcon name="upload" :size="15" :stroke-width="2" />
               <span>Upload from Computer</span>
             </button>
@@ -55,7 +55,7 @@
             <input
               v-model="searchQuery"
               type="text"
-              placeholder="Search saved templates..."
+              placeholder="Search saved frames..."
               class="form-control border-start-0 ps-1"
             />
             <button v-if="searchQuery" class="btn btn-outline-secondary border-start-0" type="button" @click="searchQuery = ''">×</button>
@@ -77,26 +77,26 @@
           <!-- Drag-over drop overlay -->
           <div v-if="isDraggingOver" class="modal-drop-overlay">
             <div class="text-center p-4 bg-white rounded-4 shadow-lg border border-primary border-2">
-              <div class="fs-1 mb-2">📥</div>
+              <div class="mb-2 text-primary"><AppIcon name="download" :size="28" /></div>
               <h6 class="fw-bold text-primary mb-1">Drop to upload frame</h6>
-              <p class="text-muted small mb-0">Supports PNG, JPG, WEBP, SVG, and JSON template files</p>
+              <p class="text-muted small mb-0">Supports PNG, JPG, WEBP, SVG, and JSON frame files</p>
             </div>
           </div>
 
           <!-- Empty State -->
           <div v-if="filteredFrames.length === 0" class="text-center py-5">
-            <div class="fs-1 mb-2">📁</div>
-            <h6 class="fw-bold text-dark mb-1">{{ searchQuery ? 'No matching templates' : 'No saved frames yet' }}</h6>
+            <div class="mb-2 text-muted"><IconFolder :size="28" /></div>
+            <h6 class="fw-bold text-dark mb-1">{{ searchQuery ? 'No matching frames' : 'No saved frames yet' }}</h6>
             <p class="text-muted small mb-3 mx-auto" style="max-width: 380px;">
               {{
                 searchQuery
                   ? 'Try a different search term.'
-                  : 'Save frames from the top bar or upload custom frame images / templates from your computer.'
+                  : 'Save frames from the top bar or upload custom frame images or frame files from your computer.'
               }}
             </p>
             <div class="d-flex align-items-center justify-content-center gap-2 flex-wrap">
               <button v-if="!searchQuery" class="btn btn-primary px-4 btn-sm" @click="$emit('save-current')">
-                💾 Save Current Workspace Frame
+                <AppIcon name="save" :size="14" /> Save current frame
               </button>
               <button class="btn btn-outline-secondary px-3 btn-sm d-flex align-items-center gap-2" @click="triggerFileInput">
                 <AppIcon name="upload" :size="15" :stroke-width="2" />
@@ -175,7 +175,7 @@
                       <button
                         class="btn btn-sm btn-danger py-0 px-2"
                         style="font-size: 0.72rem; line-height: 1.5;"
-                        title="Permanently delete template"
+                        title="Permanently delete frame"
                         @click.stop="handleConfirmDelete(frame)"
                       >
                         Delete?
@@ -196,7 +196,7 @@
                       v-else
                       class="btn btn-sm btn-outline-danger py-0 px-2 d-flex align-items-center gap-1"
                       style="font-size: 0.72rem;"
-                      title="Delete template"
+                      title="Delete frame"
                       @click.stop="confirmingDeleteId = frame.id"
                     >
                       <IconTrash :size="12" :stroke-width="2" />
@@ -212,7 +212,7 @@
         <!-- Modal Footer -->
         <div class="modal-footer px-4 py-3 bg-white border-top d-flex justify-content-between align-items-center">
           <span class="small text-muted mb-0">
-            💡 <strong>Tip:</strong> Drag and drop any saved <code>.png</code> file from your computer directly onto the workspace to open it!
+            <strong>Tip:</strong> Drag and drop any saved <code>.png</code> file from your computer directly onto the workspace to open it!
           </span>
           <button type="button" class="btn btn-primary btn-sm px-4" @click="$emit('close')">Done</button>
         </div>

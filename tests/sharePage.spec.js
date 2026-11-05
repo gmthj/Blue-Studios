@@ -1,8 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import ShareView from '../src/views/ShareView.vue'
+import PhotoStrip from '../src/components/PhotoStrip.vue'
 import { useRoom } from '../src/composables/useRoom.js'
 import { useAuth } from '../src/composables/useAuth.js'
+import { phaseWindows } from '../src/exportProgress.js'
 
 // Component + integration tests: the Share page (one device makes the file, everyone sees it, then link and save)
 
@@ -20,6 +22,7 @@ const mocks = vi.hoisted(() => ({
   createShare: vi.fn(),
   getShare: vi.fn(),
   saveStripFile: vi.fn(),
+  hasSavedShare: vi.fn(),
   toDataURL: vi.fn(),
 }))
 
@@ -55,7 +58,7 @@ vi.mock('../src/shares.js', async (importOriginal) => ({
   createShare: mocks.createShare,
   getShare: mocks.getShare,
 }))
-vi.mock('../src/studio.js', async (importOriginal) => ({ ...(await importOriginal()), saveStripFile: mocks.saveStripFile }))
+vi.mock('../src/studio.js', async (importOriginal) => ({ ...(await importOriginal()), saveStripFile: mocks.saveStripFile, hasSavedShare: mocks.hasSavedShare }))
 // The QR code (with the logo in the middle) is drawn on a canvas, which the test browser does not have:
 // a fake qrWithLogo that only remembers what it was asked to encode
 vi.mock('../src/utils/qrWithLogo.js', () => ({ qrWithLogo: mocks.toDataURL }))
@@ -97,14 +100,14 @@ function setJob(exportJob, extra = {}) {
 
 const mounted = []
 function mountPage() {
-  const page = mount(ShareView, { global: { stubs: { StageBar: true, PhotoStrip: true } } })
+  const page = mount(ShareView, { global: { stubs: { StageBar: true, PhotoStrip: true, RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' } } } })
   mounted.push(page)
   return page
 }
 const buttonNamed = (page, text) => page.findAll('button').find((b) => b.text() === text)
 
 beforeEach(() => {
-  for (const name of ['updateDoc', 'runTransaction', 'txUpdate', 'goToStage', 'exitRoom', 'push', 'buildExportFile', 'createShare', 'getShare', 'saveStripFile', 'toDataURL']) {
+  for (const name of ['updateDoc', 'runTransaction', 'txUpdate', 'goToStage', 'exitRoom', 'push', 'buildExportFile', 'createShare', 'getShare', 'saveStripFile', 'hasSavedShare', 'toDataURL']) {
     mocks[name].mockReset()
   }
   mocks.updateDoc.mockImplementation(async (ref, changes) => applyChanges(changes))
@@ -123,6 +126,8 @@ beforeEach(() => {
   mocks.createShare.mockResolvedValue({ id: 'newid' })
   mocks.getShare.mockResolvedValue(SHARE)
   mocks.saveStripFile.mockResolvedValue('strip1')
+  mocks.hasSavedShare.mockResolvedValue(false)
+  vi.stubGlobal('fetch', vi.fn(async () => ({ blob: async () => 'THE-BLOB' })))
   mocks.toDataURL.mockResolvedValue('data:image/png;base64,FAKEQR')
   isAccount.value = false
   setJob(null)
@@ -151,14 +156,14 @@ describe('Component test: Share page, while the file is being made', () => {
     expect(mocks.goToStage).toHaveBeenCalledWith('export')
   })
 
-  it('Test2: shows the same message to everyone: "Making your MP4", what is happening, and a progress bar', async () => {
+  it('Test2: shows the same message to everyone: "Making your MP4", what is happening, and the logo filled 40%', async () => {
     setJob(job('working', { by: 'other', byName: 'Rae', progress: 0.4, label: 'Recording the video... keep this page open' }))
     const page = mountPage()
     await flushPromises()
     expect(page.text()).toContain('Making your MP4')
     expect(page.text()).toContain('Recording the video... keep this page open')
     expect(page.text()).toContain('Keep this page open until it is done')
-    expect(page.find('.progress-bar').attributes('style')).toContain('width: 40%')
+    expect(page.find('[role="progressbar"]').attributes('aria-valuenow')).toBe('40')
   })
 
   it('Test3: does not say which device is making it', async () => {
@@ -168,11 +173,11 @@ describe('Component test: Share page, while the file is being made', () => {
     expect(page.text()).not.toContain('Rae')
   })
 
-  it('Test4: the heading follows the format: PNG, GIF or MP4', async () => {
-    setJob(job('working', { by: 'other', format: 'gif' }))
+  it('Test4: the heading follows the format: PNG or MP4', async () => {
+    setJob(job('working', { by: 'other', format: 'png' }))
     const page = mountPage()
     await flushPromises()
-    expect(page.text()).toContain('Making your GIF')
+    expect(page.text()).toContain('Making your PNG')
   })
 
   it('Test5: says "Starting..." before the device making it has said anything', async () => {
@@ -188,6 +193,23 @@ describe('Component test: Share page, while the file is being made', () => {
     await flushPromises()
     expect(mocks.runTransaction).not.toHaveBeenCalled()
     expect(mocks.buildExportFile).not.toHaveBeenCalled()
+  })
+
+  it('Test7: shows only the loading screen: no preview of the strip, so a phone is not made to scroll past it', async () => {
+    setJob(job('working', { by: 'other', progress: 0.3 }))
+    const page = mountPage()
+    await flushPromises()
+    expect(page.text()).toContain('Making your MP4')
+    expect(page.findComponent(PhotoStrip).exists()).toBe(false)
+    expect(page.text()).not.toContain('Your strip')
+  })
+
+  it('Test8: the loading screen has no box around it', async () => {
+    setJob(job('working', { by: 'other', progress: 0.3 }))
+    const page = mountPage()
+    await flushPromises()
+    expect(page.find('.loader-screen').exists()).toBe(true)
+    expect(page.find('.panel').exists()).toBe(false)
   })
 })
 
@@ -226,43 +248,67 @@ describe('Component test: Share page, when the strip is ready', () => {
     expect(page.find('img[alt^="QR code"]').exists()).toBe(true)
   })
 
-  it('Test2: an account can save it to My Studio', async () => {
+  it('Test2: an account gets it saved to My Studio by itself, without pressing anything', async () => {
     isAccount.value = true
     const page = mountPage()
     await flushPromises()
-    expect(buttonNamed(page, 'Save to My Studio')).toBeDefined()
+    expect(fetch).toHaveBeenCalledWith(SHARE.fileUrl)
+    expect(mocks.saveStripFile).toHaveBeenCalledWith({ title: 'Our strip', file: 'THE-BLOB', format: 'mp4', shareId: 'abc123' })
+    expect(page.find('a[href="/studio"]').text()).toBe('Saved to My Studio')
     expect(page.text()).not.toContain('Log in to save')
   })
 
-  it('Test3: a guest is asked to log in instead, and cannot save', async () => {
+  it('Test3: a guest is asked to log in instead, and nothing is saved', async () => {
     const page = mountPage()
     await flushPromises()
     expect(buttonNamed(page, 'Log in to save it to My Studio')).toBeDefined()
     expect(buttonNamed(page, 'Save to My Studio')).toBeUndefined()
+    expect(mocks.saveStripFile).not.toHaveBeenCalled()
   })
 
-  it('Test4: saving keeps a copy of the file, with its name, format and share, in My Studio', async () => {
+  it('Test4: a strip already in My Studio is not saved twice', async () => {
     isAccount.value = true
-    vi.stubGlobal('fetch', vi.fn(async () => ({ blob: async () => 'THE-BLOB' })))
+    mocks.hasSavedShare.mockResolvedValue(true)
     const page = mountPage()
     await flushPromises()
-    await buttonNamed(page, 'Save to My Studio').trigger('click')
-    await flushPromises()
-    expect(fetch).toHaveBeenCalledWith(SHARE.fileUrl)
-    expect(mocks.saveStripFile).toHaveBeenCalledWith({ title: 'Our strip', file: 'THE-BLOB', format: 'mp4', shareId: 'abc123' })
-    expect(page.text()).toContain('Saved to My Studio!')
+    expect(mocks.hasSavedShare).toHaveBeenCalledWith('abc123')
+    expect(mocks.saveStripFile).not.toHaveBeenCalled()
+    expect(page.text()).toContain('Saved to My Studio')
   })
 
-  it('Test5: if saving fails it says so and nothing breaks', async () => {
+  it('Test5: if saving fails it says so, and the button tries again', async () => {
     isAccount.value = true
-    vi.stubGlobal('fetch', vi.fn(async () => ({ blob: async () => 'THE-BLOB' })))
-    mocks.saveStripFile.mockRejectedValue(new Error('permission-denied'))
+    mocks.saveStripFile.mockRejectedValueOnce(new Error('permission-denied'))
     const page = mountPage()
     await flushPromises()
+    expect(page.text()).toContain('Could not save it to My Studio. Please try again.')
     await buttonNamed(page, 'Save to My Studio').trigger('click')
     await flushPromises()
-    expect(page.text()).toContain('Could not save. Please try again.')
-    expect(page.text()).not.toContain('Saved to My Studio!')
+    expect(mocks.saveStripFile).toHaveBeenCalledTimes(2)
+    expect(page.find('a[href="/studio"]').text()).toBe('Saved to My Studio')
+  })
+
+  it('Test5b: the file downloads by itself when it has just been made, but not when opening one that was already done', async () => {
+    const clicks = []
+    const realClick = HTMLAnchorElement.prototype.click
+    HTMLAnchorElement.prototype.click = function () { clicks.push(this.href) }
+    try {
+      // Already done when the page opened: no download
+      const first = mountPage()
+      await flushPromises()
+      expect(clicks).toEqual([])
+      first.unmount()
+
+      // Watched it finish: it downloads
+      setJob(job('working', { by: 'other' }))
+      mountPage()
+      await flushPromises()
+      setJob(job('done', { shareId: 'abc123', progress: 1 }))
+      await flushPromises()
+      expect(clicks).toEqual([SHARE.fileUrl])
+    } finally {
+      HTMLAnchorElement.prototype.click = realClick
+    }
   })
 
   it('Test6: the login button leaves the room first, then goes to login and comes back to this page', async () => {
@@ -374,5 +420,58 @@ describe('Integration test: Share page, making the file', () => {
     await vi.waitFor(() => expect(mocks.buildExportFile).toHaveBeenCalledTimes(1))
     await flushPromises()
     expect(mocks.createShare).not.toHaveBeenCalled()
+  })
+
+  it('Test9: there is one bar for the whole job, and it only goes up while the file is made in stages', async () => {
+    setJob(job('pending')) // an MP4 with no music: ready, record, convert, save
+    const page = mountPage()
+    await vi.waitFor(() => expect(mocks.buildExportFile).toHaveBeenCalledTimes(1))
+    const { progress } = mocks.buildExportFile.mock.calls[0][0] // the bar the page gave to the file maker
+    const windows = phaseWindows('mp4', false)
+    const shown = () => Number(page.find('[role="progressbar"]').attributes('aria-valuenow'))
+
+    expect(page.findAll('[role="progressbar"]')).toHaveLength(1)
+    progress.report('record', 1) // recording is finished
+    await flushPromises()
+    const afterRecording = shown()
+    expect(afterRecording).toBe(Math.round(windows.record[1] * 100))
+
+    progress.report('convert', 0) // converting starts counting from 0 again: the logo does not empty
+    await flushPromises()
+    expect(shown()).toBeGreaterThanOrEqual(afterRecording)
+    expect(page.findAll('[role="progressbar"]')).toHaveLength(1)
+
+    progress.report('convert', 1)
+    await flushPromises()
+    expect(shown()).toBe(Math.round(windows.convert[1] * 100))
+  })
+
+  it('Test10: the music stage is part of the bar only when there is music', async () => {
+    setJob(job('pending'), { music: { audioPath: 'music/1234/mix.wav' } })
+    mountPage()
+    await vi.waitFor(() => expect(mocks.buildExportFile).toHaveBeenCalledTimes(1))
+    const { progress } = mocks.buildExportFile.mock.calls[0][0]
+    expect(Object.keys(progress.windows)).toContain('music')
+  })
+
+  it('Test11: the bar is full when the file is shared', async () => {
+    setJob(job('pending'))
+    mocks.buildExportFile.mockResolvedValue(FILE)
+    mountPage()
+    await vi.waitFor(() => expect(mocks.createShare).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(room.value.exportJob.status).toBe('done'))
+    expect(room.value.exportJob.progress).toBe(1)
+  })
+
+  it('Test12: while the link is being saved the logo is in the last stage, and not empty', async () => {
+    setJob(job('pending'))
+    mocks.buildExportFile.mockResolvedValue(FILE) // the file is ready...
+    mocks.createShare.mockImplementation(() => new Promise(() => {})) // ...and the upload never finishes
+    const page = mountPage()
+    await vi.waitFor(() => expect(mocks.createShare).toHaveBeenCalledTimes(1))
+    await flushPromises()
+    const saveStart = Math.round(phaseWindows('mp4', false).save[0] * 100)
+    expect(page.text()).toContain('Saving your link...')
+    expect(Number(page.find('[role="progressbar"]').attributes('aria-valuenow'))).toBeGreaterThanOrEqual(saveStart)
   })
 })

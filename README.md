@@ -3,7 +3,7 @@
 
 > Take a photostrip together, from anywhere. Built with Vue 3, Vue Router, Bootstrap 5, Firebase, Agora and Vercel.
 
-Friends join one room from their own phones and laptops (a 4-digit code or a QR code), video call, and take photos together on one synchronised countdown. Then they make the photostrip together: pick the photos and the frame, cut a video, decorate it with stickers, mix a soundtrack, and export it as a PNG, GIF or MP4 with a link and QR code to share. Accounts keep their strips, templates and stickers in **My Studio** and share templates and stickers in the **Marketplace**. Moderators have an **Admin** page.
+Friends join one room from their own phones and laptops (a 4-digit code or a QR code), video call, and take photos together on one synchronised countdown. Then they make the photostrip together: pick the photos and the frame, cut a video, decorate it with stickers, mix a soundtrack, and export it as a PNG, GIF or MP4 with a link and QR code to share. Accounts keep their strips, frames and stickers in **My Studio** and share frames and stickers in the **Marketplace**. Moderators have an **Admin** page.
 
 This README sets the project up from scratch, step by step: a Vue 3 frontend, a Firebase backend (Auth, Firestore, Storage), Vercel serverless functions, and three test suites. Follow the steps below in order.
 
@@ -47,7 +47,7 @@ This is a shared demo: please don't enter any real personal information, expect 
 | [Node.js](https://nodejs.org/) LTS (v24 is used), with npm | everything | `node -v` |
 | [Git](https://git-scm.com/) | getting the code | `git --version` |
 | Firebase CLI: `npm install -g firebase-tools` | deploying the security rules, the rules and end-to-end tests | `firebase --version` |
-| Vercel CLI: `npm install -g vercel` | running the app **with** its `api/` functions (video call, admin) | `vercel --version` |
+| Vercel CLI: `npm install -g vercel` (optional) | `vercel env pull` / `vercel logs`, or running exactly like Vercel with `vercel dev`; `npm run dev` already runs the `api/` functions | `vercel --version` |
 | Java 21 or later (e.g. [Adoptium Temurin](https://adoptium.net/)) | **only** for the rules and end-to-end tests on your own laptop (the Firestore emulator runs on Java) | `java -version` |
 | Free [Firebase](https://console.firebase.google.com/), [Agora](https://console.agora.io/) and [Vercel](https://vercel.com/) accounts | your own copy (step 2) | |
 
@@ -101,11 +101,11 @@ The app makes its collections by itself as people use it:
 | `strips` | Finished strips saved to My Studio (always private) |
 | `shares` | A finished strip opened by its link, `/s/{id}` |
 | `reports`, `adminLog` | Marketplace reports, and everything moderators did |
-| `stickerCategories` | An account's own folders of stickers and templates |
+| `stickerCategories` | An account's own folders of stickers and frames |
 
 **Don't edit the rules in the Firebase console**: the next deploy overwrites them. Edit `firestore.rules` / `storage.rules`, test them (step 7), then deploy.
 
-Last, run `npm run set-cors` (after step 5, it needs the service account key). It applies [`storage.cors.json`](storage.cors.json), which lets the website draw Storage images on a canvas and download template files.
+Last, run `npm run set-cors` (after step 5, it needs the service account key). It applies [`storage.cors.json`](storage.cors.json), which lets the website draw Storage images on a canvas and download frame files.
 
 ## 4. Configure Firebase Auth
 
@@ -155,15 +155,17 @@ Paste the result after `FIREBASE_SERVICE_ACCOUNT=`, then **delete the downloaded
 
 ## 6. Run the app
 
-**Full app, including the video call and admin (recommended).** The Vercel CLI runs the website **and** the `api/` functions:
-
 ```bash
-vercel login     # "Continue with GitHub", approve in the browser
-vercel link      # link to your Vercel project (team: the existing "blue-studios" project)
-vercel dev       # reads .env, opens http://localhost:3000
+npm run dev      # the website AND the api/ functions, open http://localhost:5173
 ```
 
-**Website only (faster to start):** `npm run dev`, then open `http://localhost:5173`. Everything works except what needs `api/`: the video call shows "Live video unavailable", and the admin page can't load accounts or ban anyone.
+That's the full app, video call and admin included. A small plugin in [`vite.config.js`](vite.config.js) runs `api/<name>.js` for each request to `/api/<name>`, the way Vercel would:
+
+- It reads the server secrets (`AGORA_APP_CERTIFICATE`, `FIREBASE_SERVICE_ACCOUNT`...) from `.env`, only on your laptop's side. The browser still only gets the `VITE_` variables.
+- Editing a file in `api/` applies to the next request, no restart needed. Errors in a function are printed in the `npm run dev` terminal.
+- **It uses the real Firebase project and API keys**, like the live site: rooms you make, bans and deletes are real.
+- The daily cleanup cron doesn't run locally. To try it, put a `CRON_SECRET` in `.env` and call `http://localhost:5173/api/cleanup?dryRun=1` with the header `Authorization: Bearer <CRON_SECRET>`.
+- It only adds the Vercel extras our functions use (`req.query`, `req.body`, `res.status()`, `res.json()`, `res.send()`). If a new function needs another one (for example `req.cookies`), add it to the plugin, or check with `vercel dev`, which runs exactly like Vercel (`vercel login`, `vercel link` to the "blue-studios" project, then `vercel dev`, on port 3000).
 
 You'll land on the home page. Type a name and press **Create a new room** to start shooting, or click **Sign up** to make an account.
 
@@ -219,7 +221,7 @@ npx playwright show-report              # the HTML report of the last run, with 
 | `e2e/pages.spec.js` | The home page, the name and room code checks, wrong addresses, and guests being sent to log in for account-only pages |
 | `e2e/auth.spec.js` | Signing up, logging in and out, wrong passwords, going back to the page that asked, editing my profile |
 | `e2e/studio.spec.js` | My Studio: empty sections, publishing to the Marketplace, unconfirmed emails, hidden items, deleting |
-| `e2e/marketplace.spec.js` | Browsing and searching, private and hidden items, saving, reporting, "Use template" |
+| `e2e/marketplace.spec.js` | Browsing and searching, private and hidden items, saving, reporting, "Use frame" |
 | `e2e/admin.spec.js` | The admin page: reports, hiding items, banning an account, closing a room |
 | `e2e/createRoom.spec.js` | Creating a room |
 | `e2e/room.spec.js` | Two people in a room (join by code, shared photos, following the host, closing), leaving, and a strip from Shoot to its public share page |
@@ -227,7 +229,7 @@ npx playwright show-report              # the HTML report of the last run, with 
 | `e2e/makers.spec.js` | The Frame Editor and the Sticker Maker saving to My Studio |
 | `e2e/support/fixtures.js` | Shared helpers (`createAccount`, `logIn`, `seedTemplate`, `seedReport`, `createRoom`, `makeStrip`...) reused across spec files |
 
-`support/fixtures.js` is worth reading first, as it shows the pattern the rest of the suite follows: keep common flows (making an account, logging in, taking 4 photos) in one place and call them from each test, instead of repeating the same clicks everywhere. It sets up data straight in the emulators with the Firebase Admin SDK, and answers the `/api/*` functions (which the test server doesn't run) with "not available", unless a test answers one itself. Import `test` and `expect` from it, not from `@playwright/test`.
+`support/fixtures.js` is worth reading first, as it shows the pattern the rest of the suite follows: keep common flows (making an account, logging in, taking 4 photos) in one place and call them from each test, instead of repeating the same clicks everywhere. It sets up data straight in the emulators with the Firebase Admin SDK, and answers the `/api/*` functions with "not available" inside the browser, before they reach the test server (which would run them with the real keys from `.env`), unless a test answers one itself. Import `test` and `expect` from it, not from `@playwright/test`.
 
 The emulators use the real security rules, copied by [`e2e/emulator/prepare.mjs`](e2e/emulator/prepare.mjs) with one change: links to our files may also start with the Storage emulator's address.
 
@@ -260,7 +262,7 @@ src/
 ├── components/           # Reusable UI pieces (PhotoStrip, StageBar, VideoCallCard, MarketplaceCard, ...)
 │   ├── admin/            # The admin page's tabs: Overview, Reports, Items, Accounts, Rooms, Log
 │   └── frame-editor/     # The Frame Editor's panels
-├── studio.js             # My Studio: save / list / publish / delete templates, stickers and strips
+├── studio.js             # My Studio: save / list / publish / delete frames, stickers and strips
 ├── marketplace.js        # Marketplace: browse, search, save, report
 ├── admin.js              # Moderator actions (calls /api/admin for accounts)
 ├── roomCleanup.js        # The room cleanup rules (shared with api/cleanup.js)
@@ -310,7 +312,7 @@ stickerCategories/{id}       { ownerId, name, type, itemIds, createdAt, updatedA
    - **Heartbeat:** every 15 seconds each device updates its `lastSeen`. A member not seen for 45 seconds (closed the tab) is no longer shown or counted.
    - **Room limit:** at most 6 people at once (`isRoomFull` in [`room.js`](src/room.js)). Someone already in the room (refreshing) is always let back in.
 3. **Video call:** each device gets a token from `/api/token`, joins that Agora channel and publishes its camera. Everyone starts **muted**: the microphone only opens on "Unmute". The call window floats over every room page; drag it anywhere, or minimise it.
-4. **Countdown and capture:** see [Concepts to look at](#concepts-to-look-at). Each device draws its camera frame on a canvas and saves a small JPEG to `photos` with the shot number. A white flash covers the moment, so every screen is lit when every device takes its photo (the `FLASH_*` settings in `RoomView.vue`).
+4. **Countdown and capture:** see [Concepts to look at](#concepts-to-look-at). Each device draws its camera frame on a canvas and saves a small JPEG to `photos` with the shot number. A white flash covers the moment, so every screen is lit when every device takes its photo (the `FLASH_*` settings in `ShootView.vue`).
 5. **Shared gallery:** every device listens to `photos`, grouped by shot.
 6. **Switch camera:** with more than one camera, a button cycles through them. It swaps the new camera into the track already being sent (`replaceTrack`), so others never see you leave and rejoin.
 7. **The strip, together:** everything about the strip is saved in the room document, so everyone sees the same one. **Pick** saves the layout, the frame and which photo is in which slot (each slot on its own, `'stripSlots.2'`, so two people changing different slots don't overwrite each other). **Decorate** saves each photo's filter and the stickers. **Video**, **Music** and **Export** work the same way, and **Share** builds the file on one device and gives everyone its link and QR code.
@@ -351,7 +353,7 @@ import { saveTemplate, saveSticker, loadTemplateProject, CATEGORIES } from '../s
 const { isAccount } = useAuth()   // only accounts can save: show "Log in to save" to guests
 
 // Frame Editor: thumbnail is a PNG Blob, projectData is the editor's project object
-const id = await saveTemplate({ name, slotCount, categories, thumbnail, projectData })   // a new template
+const id = await saveTemplate({ name, slotCount, categories, thumbnail, projectData })   // a new frame
 await saveTemplate({ id, name, slotCount, categories, thumbnail, projectData })          // update it later
 const projectData = await loadTemplateProject(template)                                  // open it again
 
@@ -363,7 +365,7 @@ Pages that draw Storage images on a canvas need the bucket's CORS setting (`npm 
 
 ### Marketplace
 
-`/marketplace` shows public templates and stickers that no admin has hidden, to anyone, guests too. The tab, category and sort (newest or most saved) are in the URL, e.g. `/marketplace?type=stickers&category=cute&sort=popular`, so links and the back button keep them. It loads 24 items at a time ("Load more" uses a Firestore `startAfter` cursor).
+`/marketplace` shows public frames and stickers that no admin has hidden, to anyone, guests too. The tab, category and sort (newest or most saved) are in the URL, e.g. `/marketplace?type=stickers&category=cute&sort=popular`, so links and the back button keep them. It loads 24 items at a time ("Load more" uses a Firestore `startAfter` cursor).
 
 - **Saving is by reference:** saving writes a bookmark `users/{uid}/saved/{itemId}` and adds 1 to the item's `saveCount` in the same **batch** (both happen or neither). If the owner makes it private or deletes it, it shows as "No longer available" in My Studio.
 - **Reports:** accounts can report an item once (`reports/{itemId_uid}`, with a reason and optional details), for the admins to review.
@@ -377,9 +379,9 @@ The admin page (`/admin`) has six tabs:
 
 | Tab | What it does |
 | --- | --- |
-| Overview | How many accounts (and banned), rooms (and open), templates, stickers, saved strips and open reports, plus the latest moderator actions |
+| Overview | How many accounts (and banned), rooms (and open), frames, stickers, saved strips and open reports, plus the latest moderator actions |
 | Reports | Reported items grouped by item. **Hide item** takes it out of the Marketplace and closes its reports; **Dismiss** closes them |
-| Items | Every template and sticker (public, private, hidden), with search and filters; hide or unhide |
+| Items | Every frame and sticker (public, private, hidden), with search and filters; hide or unhide |
 | Accounts | Every login, accounts and guests (from Firebase Auth through `/api/admin`); see what they made, ban or unban (a reason is required) |
 | Rooms | The newest 200 rooms with who is in each, and what the daily cleanup will do to it. Open one to delete a photo, close it, **keep** it, or delete it |
 | Log | Everything moderators did |
@@ -387,7 +389,7 @@ The admin page (`/admin`) has six tabs:
 **What a ban does** ([`api/admin.js`](api/admin.js), on the server, because only the Admin SDK can switch off a login):
 1. Turns off the account's login and logs it out on every device (`revokeRefreshTokens`).
 2. Sets `users/{uid}.banned = true`, which the rules check, so even an unexpired login token can't create or change anything.
-3. Hides all their templates and stickers, and writes the ban to `adminLog`.
+3. Hides all their frames and stickers, and writes the ban to `adminLog`.
 
 Admins can't ban themselves, other admins, or guests. Unbanning turns the login back on; their items stay hidden until an admin unhides them.
 
@@ -420,7 +422,7 @@ A short version for markers. The details are in the comments of [`firestore.rule
 - **Rules:** Firestore and Storage are **deny by default**. Every collection, room field, room list and Storage folder has its own rule that checks who is writing, which fields, their types, allowed values and sizes. Some highlights:
   - **Rooms:** anyone signed in can look up one room by its code, but not list them. Members change a room only in small, checked steps, only while it is open. `hostId`, `createdAt` and `shotNumber` can't be changed by members, and nobody can delete a room (the server does that).
   - **Photos and clips:** only room members can see them, and you can only add your own.
-  - **Templates and stickers:** only accounts that aren't banned can save them, as themselves, with their files in their own Storage folder. Only accounts with a **confirmed email** can make one public. Only admins can hide one.
+  - **Frames and stickers:** only accounts that aren't banned can save them, as themselves, with their files in their own Storage folder. Only accounts with a **confirmed email** can make one public. Only admins can hide one.
   - **Saved items:** `saveCount` must go up by exactly 1 in the same batch as the bookmark, so it can't be faked.
   - **Reports:** once per account per item; only the reporter and admins can read one.
   - **Admin log:** only admins can add to it, as themselves, and nobody can change or delete an entry.
@@ -436,6 +438,7 @@ A short version for markers. The details are in the comments of [`firestore.rule
 ### Notes for developers
 
 - `package.json` has `"overrides": { "jwks-rsa": { "jose": "^5.10.0" } }`. **Don't remove it.** `firebase-admin` uses `jwks-rsa`, which loads `jose` with `require()`, but `jose` 6 only works with `import`, and Vercel's server can't `require()` it (the API crashes with `ERR_REQUIRE_ESM`). See [Use of AI](#use-of-ai).
+- The `localApi` plugin and the `ssr.optimizeDeps` setting in [`vite.config.js`](vite.config.js) are for `npm run dev` only and don't change the build. Keep `noDiscovery: true`: without it, the first call to `/api/` makes Vite pre-bundle `firebase-admin` and reload the page (in a room, the call drops).
 - `.vue` files are ordered `<script setup>`, `<template>`, `<style scoped>`. Pages wrapped in `<div class="app-page">` get the shared look from [`src/styles/pages.css`](src/styles/pages.css).
 
 

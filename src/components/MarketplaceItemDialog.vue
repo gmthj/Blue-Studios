@@ -189,7 +189,7 @@ function formatDate(time) {
         <div class="info">
           <span class="type-pill">
             <AppIcon :name="item.type === 'templates' ? 'layout' : 'sparkle'" :size="14" />
-            {{ item.type === 'templates' ? 'Template' : 'Sticker' }}
+            {{ item.type === 'templates' ? 'Frame' : 'Sticker' }}
           </span>
           <h2 id="item-dialog-title" class="item-title">{{ item.name }}</h2>
 
@@ -236,7 +236,7 @@ function formatDate(time) {
               :to="templateRoomLink(item.id)"
               class="btn btn-primary d-inline-flex align-items-center justify-content-center gap-2"
             >
-              <AppIcon name="camera" :size="16" /> Use template
+              <AppIcon name="camera" :size="16" /> Use frame
             </router-link>
 
             <!-- Someone else's item, and I have an account -->
@@ -270,7 +270,7 @@ function formatDate(time) {
               <AppIcon name="edit" :size="16" /> Open in Frame Editor
             </router-link>
           </div>
-          <p v-if="!isAccount" class="small text-muted mt-2 mb-0">Free account. Your saved templates and stickers show up in My Studio.</p>
+          <p v-if="!isAccount" class="small text-muted mt-2 mb-0">Free account. Your saved frames and stickers show up in My Studio.</p>
 
           <!-- Report (accounts, not my own item) -->
           <div v-if="isAccount && !isMine" class="mt-3">

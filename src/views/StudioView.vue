@@ -181,7 +181,7 @@ function formatDate(time) {
           <div class="card-body d-flex flex-column">
             <span class="shortcut-icon"><AppIcon name="layout" :size="20" /></span>
             <h2 class="shortcut-title">Make a frame</h2>
-            <p class="shortcut-text flex-grow-1">Build a strip template with drag and drop slots.</p>
+            <p class="shortcut-text flex-grow-1">Build a strip frame with drag and drop slots.</p>
             <router-link v-if="hasFrameEditor" to="/frame-editor" class="btn btn-primary">
               <AppIcon name="plus" :size="16" /> New frame
             </router-link>
@@ -254,12 +254,12 @@ function formatDate(time) {
       <!-- Templates -->
       <section class="mb-5">
         <h2 class="section-title">
-          <AppIcon name="layout" :size="18" /> My templates
+          <AppIcon name="layout" :size="18" /> My frames
           <span v-if="templates.length" class="section-count">{{ templates.length }}</span>
         </h2>
         <div v-if="templates.length === 0" class="empty-state">
           <span class="empty-icon"><AppIcon name="layout" :size="22" /></span>
-          No templates yet. Design one in the template editor.
+          No frames yet. Design one in the frame maker.
         </div>
         <div v-else class="row g-3">
           <div v-for="template in templates" :key="template.id" class="col-12 col-sm-6 col-lg-4">
@@ -389,7 +389,7 @@ function formatDate(time) {
         </h2>
         <div v-if="saved.length === 0" class="empty-state">
           <span class="empty-icon"><AppIcon name="bookmark" :size="22" /></span>
-          <span>Nothing saved yet. <router-link to="/marketplace">Browse the marketplace</router-link> and save templates and stickers you like.</span>
+          <span>Nothing saved yet. <router-link to="/marketplace">Browse the marketplace</router-link> and save frames and stickers you like.</span>
         </div>
         <div v-else class="row g-3">
           <div v-for="savedItem in saved" :key="savedItem.id" class="col-6 col-md-3 col-xl-2 d-flex flex-column">
@@ -462,6 +462,8 @@ function formatDate(time) {
 
 .strip-preview {
   height: 220px;
+  /* white behind a saved strip: a PNG can be see-through in its corners and an MP4 has white ones, and both then look the same */
+  background: #ffffff;
 }
 
 /* a strip that opens its share page: the picture is a link */

@@ -765,3 +765,9 @@
   padding: 2px 10px;
   font-size: 0.78rem;
 }
+
+/* Admin tables: names, emails and reasons keep at least this width, so on a phone the table scrolls sideways
+   (it is inside .table-responsive) instead of squeezing them to a letter or two per line */
+.app-page .cell-wide {
+  min-width: 160px;
+}

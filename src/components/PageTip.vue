@@ -5,7 +5,7 @@ import { ref, watch, onMounted, nextTick } from 'vue'
 // Sticker Maker (Rae's): a dark card with a little arrow pointing at the part it explains,
 // "1 of 3", Skip, and Next (Got it on the last one).
 // The page decides where it sits (put it inside a position: relative box and place it with a class),
-// and remembers that the tips were seen (see the Pick page, StripView.vue).
+// and remembers that the tips were seen (see the Pick page, PickView.vue).
 // Usage: <PageTip :title="tip.title" :text="tip.text" :phone="tip.phone" :step="1" :total="3" arrow="up" @next="..." @skip="..." />
 
 const props = defineProps({

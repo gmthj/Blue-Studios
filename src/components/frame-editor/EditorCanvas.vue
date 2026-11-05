@@ -1,6 +1,8 @@
 <script setup>
 import { onMounted, nextTick } from 'vue'
 import { useFrameEditorContext } from "../../composables/useFrameEditor.js"
+import AppIcon from "../AppIcon.vue"
+import EditorSelectionBar from "./EditorSelectionBar.vue"
 import CanvasRulerOverlay from "../CanvasRulerOverlay.vue"
 
 const editor = useFrameEditorContext()
@@ -63,6 +65,8 @@ const {
   onCollectiveDblClick,
   onElementDblClick,
   onFrameClick,
+  onFrameTap,
+  isCaptionSelected,
   onStartDragGuideFromRuler,
   onStartMoveExistingGuide,
   onWorkspaceMouseDown,
@@ -130,23 +134,9 @@ onMounted(() => {
         @wheel.prevent="onWorkspaceWheel"
         @click="onCanvasClick"
       >
-        <!-- Mobile Floating Stage Pills (Layout Name & Zoom/Fit Badge) -->
-        <div class="canvas-stage-pills d-lg-none position-absolute top-0 start-0 end-0 d-flex justify-content-between p-2 pointer-events-none" style="z-index: 100;">
-          <div class="badge bg-white text-dark shadow-sm border px-2 py-1 fw-medium pointer-events-auto d-flex align-items-center gap-1" style="font-size: 0.72rem;">
-            <span>{{ currentLayoutDef.name }}</span>
-            <span class="text-muted" style="font-size: 0.65rem;">({{ currentSlots.length }} slots)</span>
-          </div>
+        <!-- The text / element bar along the top of the canvas (like the Sticker Maker's text bar) -->
+        <EditorSelectionBar />
 
-          <button
-            type="button"
-            class="badge bg-white text-secondary shadow-sm border px-2 py-1 fw-medium pointer-events-auto btn btn-sm border-0"
-            style="font-size: 0.72rem;"
-            title="Reset Zoom & Fit to Screen"
-            @click.stop="fitToScreen(canvasWorkspaceRef, stripRef)"
-          >
-            {{ zoomPercentage }}
-          </button>
-        </div>
         <!-- Canvas Marquee / Rubberband Selection Box -->
         <div
           v-if="isMarqueeActive && marqueeBoxStyle"
@@ -180,6 +170,7 @@ onMounted(() => {
             :class="'layout-' + currentLayoutDef.id"
             :style="getFrameStyle()"
             @click.stop="onFrameClick"
+            @pointerup="onFrameTap"
             @contextmenu.prevent.stop="openContextMenu($event, null)"
             @dragover.prevent
             @drop="onCanvasDrop"
@@ -244,10 +235,12 @@ onMounted(() => {
             <!-- Photostrip Caption / Footer (Double-click to edit) -->
             <div
               class="strip-caption"
-              :class="{ 'is-empty': !captionText || !captionText.trim() }"
               :style="{ color: captionColor }"
-              title="Double-click to edit caption"
-              @dblclick="startEditingCaption"
+              :class="{ 'is-empty': !captionText || !captionText.trim(), 'is-picked': isCaptionSelected }"
+              title="Click to edit the caption"
+              @mousedown.stop
+              @touchstart.stop
+              @click.stop="startEditingCaption"
             >
               <input
                 v-if="isEditingCaption"
@@ -453,20 +446,6 @@ onMounted(() => {
                     @touchend.stop
                     @pointerdown.stop
                   >
-                    <!-- Quick Edit Text Button if text type -->
-                    <button
-                      v-if="el.type === 'text'"
-                      class="floating-tool-btn text-edit-btn"
-                      title="Edit Text (or Double-Click)"
-                      @click.stop="startEditingText(el)"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                      </svg>
-                      <span>Edit</span>
-                    </button>
-                    <div v-if="el.type === 'text'" class="floating-divider"></div>
 
                     <!-- Ungroup Button if this single element is in a group -->
                     <button
@@ -512,25 +491,25 @@ onMounted(() => {
                         @touchend.stop
                         @pointerdown.stop
                       >
-                        <div class="popover-header d-none d-lg-block">Layer Ordering</div>
+                        <div class="popover-header d-none d-lg-block">Layer ordering</div>
                         <button class="popover-item" @click="bringForward(el.id)">
-                          <span class="item-icon d-none d-lg-inline-block">▲</span>
-                          <span class="item-label">Bring Forward</span>
+                          <span class="item-icon d-none d-lg-inline-block"><AppIcon name="chevron-up" :size="14" /></span>
+                          <span class="item-label">Bring forward</span>
                           <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.bringForward }}</span>
                         </button>
                         <button class="popover-item" @click="bringToFront(el.id)">
-                          <span class="item-icon d-none d-lg-inline-block">⇪▲</span>
-                          <span class="item-label">Bring to Front</span>
+                          <span class="item-icon d-none d-lg-inline-block"><svg viewBox="0 0 24 24" class="te-icon" style="width: 14px; height: 14px;" aria-hidden="true"><path d="M6 11l6-6 6 6 M6 18l6-6 6 6" /></svg></span>
+                          <span class="item-label">Bring to front</span>
                           <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.bringToFront }}</span>
                         </button>
                         <button class="popover-item" @click="sendBackward(el.id)">
-                          <span class="item-icon d-none d-lg-inline-block">▼</span>
-                          <span class="item-label">Send Backward</span>
+                          <span class="item-icon d-none d-lg-inline-block"><AppIcon name="chevron-down" :size="14" /></span>
+                          <span class="item-label">Send backward</span>
                           <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.sendBackward }}</span>
                         </button>
                         <button class="popover-item" @click="sendToBack(el.id)">
-                          <span class="item-icon d-none d-lg-inline-block">⇪▼</span>
-                          <span class="item-label">Send to Back</span>
+                          <span class="item-icon d-none d-lg-inline-block"><svg viewBox="0 0 24 24" class="te-icon" style="width: 14px; height: 14px;" aria-hidden="true"><path d="M6 6l6 6 6-6 M6 13l6 6 6-6" /></svg></span>
+                          <span class="item-label">Send to back</span>
                           <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.sendToBack }}</span>
                         </button>
                       </div>
@@ -578,22 +557,22 @@ onMounted(() => {
                     <div
                       class="resize-handle handle-nw"
                       title="Resize"
-                      @mousedown.stop="startResize(el, 'nw', $event)"
+                      @mousedown.stop @touchstart.stop @pointerdown.stop="startResize(el, 'nw', $event)"
                     ></div>
                     <div
                       class="resize-handle handle-ne"
                       title="Resize"
-                      @mousedown.stop="startResize(el, 'ne', $event)"
+                      @mousedown.stop @touchstart.stop @pointerdown.stop="startResize(el, 'ne', $event)"
                     ></div>
                     <div
                       class="resize-handle handle-sw"
                       title="Resize"
-                      @mousedown.stop="startResize(el, 'sw', $event)"
+                      @mousedown.stop @touchstart.stop @pointerdown.stop="startResize(el, 'sw', $event)"
                     ></div>
                     <div
                       class="resize-handle handle-se"
                       title="Resize"
-                      @mousedown.stop="startResize(el, 'se', $event)"
+                      @mousedown.stop @touchstart.stop @pointerdown.stop="startResize(el, 'se', $event)"
                     ></div>
 
                     <!-- Rotate Handle Stem & Knob (bottom center) -->
@@ -601,7 +580,7 @@ onMounted(() => {
                     <div
                       class="element-rotate-handle"
                       title="Drag to rotate"
-                      @mousedown.stop="startRotate(el, $event)"
+                      @mousedown.stop @touchstart.stop @pointerdown.stop="startRotate(el, $event)"
                     >
                       <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#2F5BEA" stroke-width="2.6">
                         <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.19" />
@@ -701,15 +680,15 @@ onMounted(() => {
                     @touchend.stop
                     @pointerdown.stop
                   >
-                    <div class="popover-header d-none d-lg-block">Layer Ordering</div>
+                    <div class="popover-header d-none d-lg-block">Layer ordering</div>
                     <button class="popover-item" @click="bringToFrontSelected">
-                      <span class="item-icon d-none d-lg-inline-block">⇪▲</span>
-                      <span class="item-label">Bring to Front</span>
+                      <span class="item-icon d-none d-lg-inline-block"><svg viewBox="0 0 24 24" class="te-icon" style="width: 14px; height: 14px;" aria-hidden="true"><path d="M6 11l6-6 6 6 M6 18l6-6 6 6" /></svg></span>
+                      <span class="item-label">Bring to front</span>
                       <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.bringToFront }}</span>
                     </button>
                     <button class="popover-item" @click="sendToBackSelected">
-                      <span class="item-icon d-none d-lg-inline-block">⇪▼</span>
-                      <span class="item-label">Send to Back</span>
+                      <span class="item-icon d-none d-lg-inline-block"><svg viewBox="0 0 24 24" class="te-icon" style="width: 14px; height: 14px;" aria-hidden="true"><path d="M6 6l6 6 6-6 M6 13l6 6 6-6" /></svg></span>
+                      <span class="item-label">Send to back</span>
                       <span class="item-shortcut d-none d-lg-inline-block">{{ shortcuts.sendToBack }}</span>
                     </button>
                   </div>
@@ -735,14 +714,14 @@ onMounted(() => {
               </div>
 
               <!-- Collective 4-Corner Resize Handles -->
-              <div class="resize-handle handle-nw" title="Scale Selection" @mousedown.stop="startCollectiveResize('nw', $event)"></div>
-              <div class="resize-handle handle-ne" title="Scale Selection" @mousedown.stop="startCollectiveResize('ne', $event)"></div>
-              <div class="resize-handle handle-sw" title="Scale Selection" @mousedown.stop="startCollectiveResize('sw', $event)"></div>
-              <div class="resize-handle handle-se" title="Scale Selection" @mousedown.stop="startCollectiveResize('se', $event)"></div>
+              <div class="resize-handle handle-nw" title="Scale Selection" @mousedown.stop @touchstart.stop @pointerdown.stop="startCollectiveResize('nw', $event)"></div>
+              <div class="resize-handle handle-ne" title="Scale Selection" @mousedown.stop @touchstart.stop @pointerdown.stop="startCollectiveResize('ne', $event)"></div>
+              <div class="resize-handle handle-sw" title="Scale Selection" @mousedown.stop @touchstart.stop @pointerdown.stop="startCollectiveResize('sw', $event)"></div>
+              <div class="resize-handle handle-se" title="Scale Selection" @mousedown.stop @touchstart.stop @pointerdown.stop="startCollectiveResize('se', $event)"></div>
 
               <!-- Collective Rotate Handle Stem & Knob -->
               <div class="rotate-stem"></div>
-              <div class="element-rotate-handle" title="Rotate Selection" @mousedown.stop="startCollectiveRotate($event)">
+              <div class="element-rotate-handle" title="Rotate Selection" @mousedown.stop @touchstart.stop @pointerdown.stop="startCollectiveRotate($event)">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#2F5BEA" stroke-width="2.6">
                   <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.19" />
                 </svg>
@@ -786,7 +765,7 @@ onMounted(() => {
                   :y1="g.y1"
                   :x2="g.x"
                   :y2="g.y2"
-                  stroke="#FF007A"
+                  stroke="#F04438"
                   stroke-width="1.5"
                   :stroke-dasharray="g.type === 'edge' ? '4 3' : 'none'"
                   stroke-linecap="round"
@@ -797,7 +776,7 @@ onMounted(() => {
                   :y1="g.y"
                   :x2="g.x2"
                   :y2="g.y"
-                  stroke="#FF007A"
+                  stroke="#F04438"
                   stroke-width="1.5"
                   :stroke-dasharray="g.type === 'edge' ? '4 3' : 'none'"
                   stroke-linecap="round"
@@ -809,7 +788,7 @@ onMounted(() => {
                   :cx="g.x"
                   :cy="dragTarget ? dragTarget.y + (dragTarget.height || 36) / 2 : (g.y1 + g.y2) / 2"
                   r="3.5"
-                  fill="#FF007A"
+                  fill="#F04438"
                   stroke="#ffffff"
                   stroke-width="1.5"
                 />
@@ -818,7 +797,7 @@ onMounted(() => {
                   :cx="dragTarget ? dragTarget.x + (dragTarget.width || 36) / 2 : (g.x1 + g.x2) / 2"
                   :cy="g.y"
                   r="3.5"
-                  fill="#FF007A"
+                  fill="#F04438"
                   stroke="#ffffff"
                   stroke-width="1.5"
                 />

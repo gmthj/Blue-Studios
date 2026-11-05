@@ -1,5 +1,6 @@
 <script setup>
 import { useFrameEditorContext } from "../../composables/useFrameEditor.js"
+import AppIcon from "../AppIcon.vue"
 
 
 const editor = useFrameEditorContext()
@@ -48,7 +49,7 @@ const {
             <rect x="14" y="14" width="7" height="7" />
             <rect x="3" y="14" width="7" height="7" />
           </svg>
-          <span class="context-label">Group Elements</span>
+          <span class="context-label">Group elements</span>
           <span class="context-shortcut d-none d-lg-inline-block">{{ shortcuts.group }}</span>
         </button>
         <button v-if="canUngroupSelected" class="context-item" @click="ungroupSelectedElements(); closeContextMenu()">
@@ -62,23 +63,23 @@ const {
         <div v-if="canGroupSelected || canUngroupSelected" class="context-divider"></div>
 
         <button class="context-item" @click="bringForward(); closeContextMenu()">
-          <span class="context-icon d-none d-lg-inline-block">▲</span>
-          <span class="context-label">Bring Forward</span>
+          <span class="context-icon"><AppIcon name="chevron-up" :size="14" /></span>
+          <span class="context-label">Bring forward</span>
           <span class="context-shortcut d-none d-lg-inline-block">{{ shortcuts.bringForward }}</span>
         </button>
         <button class="context-item" @click="bringToFrontSelected(); closeContextMenu()">
-          <span class="context-icon d-none d-lg-inline-block">⇪▲</span>
-          <span class="context-label">Bring to Front</span>
+          <span class="context-icon"><svg viewBox="0 0 24 24" class="te-icon" style="width: 14px; height: 14px;" aria-hidden="true"><path d="M6 11l6-6 6 6 M6 18l6-6 6 6" /></svg></span>
+          <span class="context-label">Bring to front</span>
           <span class="context-shortcut d-none d-lg-inline-block">{{ shortcuts.bringToFront }}</span>
         </button>
         <button class="context-item" @click="sendBackward(); closeContextMenu()">
-          <span class="context-icon d-none d-lg-inline-block">▼</span>
-          <span class="context-label">Send Backward</span>
+          <span class="context-icon"><AppIcon name="chevron-down" :size="14" /></span>
+          <span class="context-label">Send backward</span>
           <span class="context-shortcut d-none d-lg-inline-block">{{ shortcuts.sendBackward }}</span>
         </button>
         <button class="context-item" @click="sendToBackSelected(); closeContextMenu()">
-          <span class="context-icon d-none d-lg-inline-block">⇪▼</span>
-          <span class="context-label">Send to Back</span>
+          <span class="context-icon"><svg viewBox="0 0 24 24" class="te-icon" style="width: 14px; height: 14px;" aria-hidden="true"><path d="M6 6l6 6 6-6 M6 13l6 6 6-6" /></svg></span>
+          <span class="context-label">Send to back</span>
           <span class="context-shortcut d-none d-lg-inline-block">{{ shortcuts.sendToBack }}</span>
         </button>
         <div class="context-divider"></div>
@@ -91,7 +92,7 @@ const {
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
           </svg>
-          <span class="context-label">Edit Text</span>
+          <span class="context-label">Edit text</span>
           <span class="context-shortcut d-none d-lg-inline-block">dbl-click</span>
         </button>
         <button class="context-item" @click="duplicateSelectedElements(); closeContextMenu()">

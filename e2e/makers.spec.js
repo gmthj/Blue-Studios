@@ -35,7 +35,7 @@ test.describe('Frame Editor', () => {
     const account = await createAccount()
     await logIn(page, account, '/frame-editor?template=' + original.id)
     // Their frame is loaded: its name is the frame title
-    await expect(page.getByPlaceholder('my-templates-1')).toHaveValue(original.name, { timeout: 20000 })
+    await expect(page.getByPlaceholder('my-frame-1')).toHaveValue(original.name, { timeout: 20000 })
 
     await page.getByRole('button', { name: 'Save Frame' }).click()
     await page.getByRole('button', { name: 'Cute', exact: true }).click()

@@ -7,7 +7,7 @@ import AppIcon from './AppIcon.vue'
 // Back is on the left, the main way forward on the right, and shortcuts that jump over steps (quick export,
 // edit video...) are the small links between them. The pages' own Next / Back buttons are gone.
 // Shown once by RoomLayout.vue. It leaves room for itself: RoomLayout.vue pads the page by its height
-// (the CSS variable --stage-nav-h, set below) and RoomView.vue takes it off the camera page's height.
+// (the CSS variable --stage-nav-h, set below) and ShootView.vue takes it off the camera page's height.
 //
 // Per step (kind: back = left, skip = a link in the middle, next = the blue button on the right):
 //   Shoot    > Make photostrip
@@ -250,31 +250,44 @@ onBeforeUnmount(() => {
   flex-wrap: wrap;
   align-items: center;
   justify-content: center;
-  gap: 2px 8px;
+  gap: 6px 8px;
   min-width: 0;
 }
 
+/* Shortcuts: grey outline pills. A step quieter than the blue forward button (outline, not filled) and a little
+   shorter than it, so the main way forward still stands out. */
 .sn-link {
-  height: 30px;
-  padding: 0 10px;
-  border: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 14px;
+  border: 1px solid #D6DAE4;
   border-radius: 999px;
-  color: var(--muted);
-  background: transparent;
+  color: #4A4F5E;
+  background: #ffffff;
   font: inherit;
   font-size: 0.82rem;
   font-weight: 600;
   white-space: nowrap;
   -webkit-tap-highlight-color: transparent;
-  transition: background-color 150ms ease, color 150ms ease;
+  transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 160ms var(--ease-out);
+}
+
+.sn-link:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 /* Hover only with a mouse: on phones a tap would leave it stuck in its hover colour */
 @media (hover: hover) and (pointer: fine) {
-  .sn-back:hover:not(:disabled),
-  .sn-link:hover:not(:disabled) {
+  .sn-back:hover:not(:disabled) {
     color: var(--brand);
     background: var(--brand-tint);
+  }
+
+  .sn-link:hover:not(:disabled) {
+    color: var(--ink);
+    border-color: #B9BFCC;
+    background: #F4F6FA;
   }
 
   .sn-next:hover:not(:disabled) {
@@ -286,7 +299,7 @@ onBeforeUnmount(() => {
    forward button sits next to it, so the forward button gets the width */
 @media (max-width: 575.98px) {
   .stage-nav {
-    padding-top: 4px;
+    padding-top: 8px;
     padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
   }
 
@@ -300,14 +313,16 @@ onBeforeUnmount(() => {
     flex-basis: 100%;
   }
 
-  /* Tighter links, so there is little space above and below the shortcuts */
+  /* Slightly smaller pills on their own row, with a little space under them before the main buttons */
   .sn-link {
-    height: 24px;
+    height: 28px;
+    padding: 0 12px;
+    font-size: 0.78rem;
   }
 
   .sn-mid + .sn-next,
   .sn-back {
-    margin-top: 2px;
+    margin-top: 8px;
   }
 
   .sn-back.has-next {
@@ -358,7 +373,8 @@ onBeforeUnmount(() => {
     transition: none;
   }
 
-  .sn-btn:active:not(:disabled) {
+  .sn-btn:active:not(:disabled),
+  .sn-link:active:not(:disabled) {
     transform: none;
   }
 }

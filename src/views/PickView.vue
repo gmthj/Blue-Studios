@@ -1106,7 +1106,7 @@ watch(
 /* ---------- Page and panels ---------- */
 .room-page {
   padding-bottom: 24px;
-  /* The same sizes on Pick and Decorate (StripView.vue and DecorateView.vue keep these the same):
+  /* The same sizes on Pick and Decorate (PickView.vue and DecorateView.vue keep these the same):
      --stage-h  the most the strip can be tall
      --panel-h  on computers, all 3 panels are exactly this tall, whatever is in them (the side panels scroll inside),
                 so nothing grows or shrinks when the frame, the photos or the stickers change */
@@ -1668,7 +1668,9 @@ watch(
 
   .reposition-card {
     position: sticky;
-    bottom: 12px;
+    /* Sticks just above the docked Back / Next bar (RoomStageNav.vue sets its height as --stage-nav-h),
+       not the bottom of the screen, where that bar would cover the card's buttons */
+    bottom: calc(var(--stage-nav-h, 56px) + 12px);
     z-index: 30;
     max-width: 320px;
     margin: 0 auto;

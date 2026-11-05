@@ -11,6 +11,8 @@
 //   import { STICKERS, SHAPES, TAPES, EMOJI, FONTS } from '../stickerArt.js'
 //
 // WHAT is inside: 12 drawings, 4 shapes, 4 washi tapes, 15 emoji, 29 fonts.
+// The Frame Editor (constants/frameEditorData.js) and Decorate (stickerTray.js) build their
+// sticker lists from this file too, so a sticker looks, and is named, the same everywhere.
 // This file imports NOTHING, so it can never drag Firebase or a page's data into
 // another page. That is the whole reason it is safe for all three of us to share.
 // ============================================================
@@ -41,6 +43,32 @@ function viewBoxRatio(svg) {
 // keeps working. encodeURIComponent is enough — base64 would only make it unreadable.
 function svgToDataUrl(svg) {
   return 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(withIntrinsicSize(svg))
+}
+
+
+// The colours a drawing uses (its fill and stroke colours), so a page can offer to change them.
+// WHY only fill/stroke attributes: that is how every drawing in this file is coloured.
+export function svgColors(svg) {
+  const found = []
+  const regex = /(?:fill|stroke)\s*=\s*["']([^"']+)["']/gi
+  let match
+  while ((match = regex.exec(svg || '')) !== null) {
+    const value = match[1].trim()
+    const lower = value.toLowerCase()
+    if (['none', 'transparent', 'currentcolor', 'inherit'].includes(lower) || lower.startsWith('url(')) continue
+    if (!lower.startsWith('#') && !lower.startsWith('rgb')) continue
+    if (!found.some((c) => c.toLowerCase() === lower)) found.push(value)
+  }
+  return found
+}
+
+// The drawing as a data URL with some of its colours swapped. colorMap: { old colour: new colour }
+export function recolorSvgUrl(svg, colorMap = {}) {
+  const swapped = String(svg).replace(/((?:fill|stroke)\s*=\s*["'])([^"']+)(["'])/gi, (all, start, value, end) => {
+    const key = Object.keys(colorMap).find((c) => c.toLowerCase() === value.trim().toLowerCase())
+    return key ? start + colorMap[key] + end : all
+  })
+  return svgToDataUrl(swapped)
 }
 
 
@@ -222,52 +250,52 @@ function tapeSvg(rgba, patternColor, w, h) {
 // from this list, so his editor needs no other change.
 const ART_SOURCE = [
   // ---- 12 drawings ----
-  { id: 'daisy',          key: 'daisy',         name: 'Daisy Blossom',    kind: 'sticker', tags: ['Y2K', 'Doodles'],          svg: SVG_TEMPLATES.daisy },
-  { id: 'sparkle-star',   key: 'sparkleStar',   name: 'Cyber Sparkle',    kind: 'sticker', tags: ['Y2K', 'Doodles'],          svg: SVG_TEMPLATES.sparkleStar },
-  { id: 'ribbon-bow',     key: 'ribbonBow',     name: 'Ribbon Bow',       kind: 'sticker', tags: ['Y2K', 'Cute Animals'],     svg: SVG_TEMPLATES.ribbonBow },
-  { id: 'cherries',       key: 'cherries',      name: 'Twin Cherries',    kind: 'sticker', tags: ['Y2K', 'Doodles'],          svg: SVG_TEMPLATES.cherries },
-  { id: 'smiley',         key: 'smiley',        name: 'Smiley Badge',     kind: 'sticker', tags: ['Y2K', 'Doodles'],          svg: SVG_TEMPLATES.smiley },
-  { id: 'butterfly',      key: 'butterfly',     name: 'Pastel Butterfly', kind: 'sticker', tags: ['Cute Animals', 'Y2K'],     svg: SVG_TEMPLATES.butterfly },
-  { id: 'retro-camera',   key: 'retroCamera',   name: 'Vintage Camera',   kind: 'sticker', tags: ['Film & Vintage'],          svg: SVG_TEMPLATES.retroCamera },
-  { id: 'polaroid-frame', key: 'polaroidFrame', name: 'Mini Frame',       kind: 'sticker', tags: ['Frames'],                  svg: SVG_TEMPLATES.polaroidFrame },
-  { id: 'sparkle-heart',  key: 'sparkleHeart',  name: 'Sparkle Heart',    kind: 'sticker', tags: ['Y2K', 'Doodles'],          svg: SVG_TEMPLATES.sparkleHeart },
-  { id: 'starburst',      key: 'starburst',     name: 'Y2K Starburst',    kind: 'sticker', tags: ['Y2K', 'Doodles'],          svg: SVG_TEMPLATES.starburst },
-  { id: 'cloud-cute',     key: 'cloudCute',     name: 'Fluffy Cloud',     kind: 'sticker', tags: ['Doodles', 'Cute Animals'], svg: SVG_TEMPLATES.cloudCute },
-  { id: 'vinyl-record',   key: 'vinylRecord',   name: 'Vinyl Disc',       kind: 'sticker', tags: ['Film & Vintage'],          svg: SVG_TEMPLATES.vinylRecord },
+  { id: 'daisy',          key: 'daisy',         name: 'Flower', keywords: 'flower daisy blossom petal spring pink',    kind: 'sticker', tags: ['Y2K', 'Doodles'],          svg: SVG_TEMPLATES.daisy },
+  { id: 'sparkle-star',   key: 'sparkleStar',   name: 'Sparkle Star', keywords: 'sparkle star twinkle shine glitter',    kind: 'sticker', tags: ['Y2K', 'Doodles'],          svg: SVG_TEMPLATES.sparkleStar },
+  { id: 'ribbon-bow',     key: 'ribbonBow',     name: 'Ribbon Bow', keywords: 'ribbon bow gift cute pink',       kind: 'sticker', tags: ['Y2K', 'Cute Animals'],     svg: SVG_TEMPLATES.ribbonBow },
+  { id: 'cherries',       key: 'cherries',      name: 'Cherries', keywords: 'cherry cherries fruit red',    kind: 'sticker', tags: ['Y2K', 'Doodles'],          svg: SVG_TEMPLATES.cherries },
+  { id: 'smiley',         key: 'smiley',        name: 'Smiley Face', keywords: 'smiley smile happy face emoji yellow',     kind: 'sticker', tags: ['Y2K', 'Doodles'],          svg: SVG_TEMPLATES.smiley },
+  { id: 'butterfly',      key: 'butterfly',     name: 'Butterfly', keywords: 'butterfly insect wings pastel', kind: 'sticker', tags: ['Cute Animals', 'Y2K'],     svg: SVG_TEMPLATES.butterfly },
+  { id: 'retro-camera',   key: 'retroCamera',   name: 'Camera', keywords: 'camera photo vintage retro',   kind: 'sticker', tags: ['Film & Vintage'],          svg: SVG_TEMPLATES.retroCamera },
+  { id: 'polaroid-frame', key: 'polaroidFrame', name: 'Photo Frame', keywords: 'frame photo polaroid picture',       kind: 'sticker', tags: ['Frames'],                  svg: SVG_TEMPLATES.polaroidFrame },
+  { id: 'sparkle-heart',  key: 'sparkleHeart',  name: 'Heart', keywords: 'heart love sparkle pink',    kind: 'sticker', tags: ['Y2K', 'Doodles'],          svg: SVG_TEMPLATES.sparkleHeart },
+  { id: 'starburst',      key: 'starburst',     name: 'Starburst', keywords: 'star burst y2k yellow',    kind: 'sticker', tags: ['Y2K', 'Doodles'],          svg: SVG_TEMPLATES.starburst },
+  { id: 'cloud-cute',     key: 'cloudCute',     name: 'Cloud', keywords: 'cloud sky weather cute',     kind: 'sticker', tags: ['Doodles', 'Cute Animals'], svg: SVG_TEMPLATES.cloudCute },
+  { id: 'vinyl-record',   key: 'vinylRecord',   name: 'Vinyl Record', keywords: 'vinyl record music disc',       kind: 'sticker', tags: ['Film & Vintage'],          svg: SVG_TEMPLATES.vinylRecord },
 
   // ---- 4 shapes ----
   // WHY kind 'shape': same reason as the tape — his file stores a recipe and paints it,
   // so it is drawn once here and shared instead of each page re-implementing the drawing.
-  { id: 'shape-star',    key: 'star',    name: 'Golden Star', kind: 'shape', tags: ['Doodles', 'Y2K'],          svg: wrapShape(shapeSvg('star',    '#FACC15', '#0F172A', 2)) },
-  { id: 'shape-heart',   key: 'heart',   name: 'Sweetheart',  kind: 'shape', tags: ['Doodles', 'Cute Animals'], svg: wrapShape(shapeSvg('heart',   '#F472B6', '#DB2777', 2)) },
-  { id: 'shape-circle',  key: 'circle',  name: 'Color Dot',   kind: 'shape', tags: ['Doodles'],                 svg: wrapShape(shapeSvg('circle',  '#2F5BEA', '#1E40AF', 2)) },
-  { id: 'shape-diamond', key: 'diamond', name: 'Gem Diamond', kind: 'shape', tags: ['Doodles', 'Y2K'],          svg: wrapShape(shapeSvg('diamond', '#38BDF8', '#0284C7', 2)) },
+  { id: 'shape-star',    key: 'star',    name: 'Star', keywords: 'star shape yellow', kind: 'shape', tags: ['Doodles', 'Y2K'],          shape: { type: 'star', color: '#FACC15', strokeColor: '#0F172A', strokeWidth: 2 }, svg: wrapShape(shapeSvg('star',    '#FACC15', '#0F172A', 2)) },
+  { id: 'shape-heart',   key: 'heart',   name: 'Heart Shape', keywords: 'heart shape love',  kind: 'shape', tags: ['Doodles', 'Cute Animals'], shape: { type: 'heart', color: '#F472B6', strokeColor: '#DB2777', strokeWidth: 2 }, svg: wrapShape(shapeSvg('heart',   '#F472B6', '#DB2777', 2)) },
+  { id: 'shape-circle',  key: 'circle',  name: 'Circle', keywords: 'circle dot round shape',   kind: 'shape', tags: ['Doodles'],                 shape: { type: 'circle', color: '#2F5BEA', strokeColor: '#1E40AF', strokeWidth: 2 }, svg: wrapShape(shapeSvg('circle',  '#2F5BEA', '#1E40AF', 2)) },
+  { id: 'shape-diamond', key: 'diamond', name: 'Diamond', keywords: 'diamond gem shape', kind: 'shape', tags: ['Doodles', 'Y2K'],          shape: { type: 'diamond', color: '#38BDF8', strokeColor: '#0284C7', strokeWidth: 2 }, svg: wrapShape(shapeSvg('diamond', '#38BDF8', '#0284C7', 2)) },
 
   // ---- 4 washi tapes ----
-  { id: 'tape-yellow', key: 'tapeYellow', name: 'Yellow Tape', kind: 'tape', tags: ['Washi & Pins'], svg: tapeSvg('rgba(253, 224, 71, 0.85)', '#FFFF', 90, 20) },
-  { id: 'tape-pink',   key: 'tapePink',   name: 'Pink Tape',   kind: 'tape', tags: ['Washi & Pins'], svg: tapeSvg('rgba(244, 114, 182, 0.85)', '#FFFF', 90, 20) },
-  { id: 'tape-sky',    key: 'tapeSky',    name: 'Sky Tape',    kind: 'tape', tags: ['Washi & Pins'], svg: tapeSvg('rgba(96, 165, 250, 0.85)', '#FFFF', 90, 20) },
-  { id: 'tape-mint',   key: 'tapeMint',   name: 'Mint Tape',   kind: 'tape', tags: ['Washi & Pins'], svg: tapeSvg('rgba(52, 211, 153, 0.85)', '#FFFF', 90, 20) },
+  { id: 'tape-yellow', key: 'tapeYellow', name: 'Yellow Washi Tape', keywords: 'washi tape yellow', kind: 'tape', tags: ['Washi & Pins'], svg: tapeSvg('rgba(253, 224, 71, 0.85)', '#FFFF', 90, 20) },
+  { id: 'tape-pink',   key: 'tapePink',   name: 'Pink Washi Tape', keywords: 'washi tape pink',   kind: 'tape', tags: ['Washi & Pins'], svg: tapeSvg('rgba(244, 114, 182, 0.85)', '#FFFF', 90, 20) },
+  { id: 'tape-sky',    key: 'tapeSky',    name: 'Blue Washi Tape', keywords: 'washi tape blue sky',    kind: 'tape', tags: ['Washi & Pins'], svg: tapeSvg('rgba(96, 165, 250, 0.85)', '#FFFF', 90, 20) },
+  { id: 'tape-mint',   key: 'tapeMint',   name: 'Green Washi Tape', keywords: 'washi tape green mint',   kind: 'tape', tags: ['Washi & Pins'], svg: tapeSvg('rgba(52, 211, 153, 0.85)', '#FFFF', 90, 20) },
 
   // ---- 15 emoji ----
   // WHY kind 'emoji': an emoji is a character, not a picture, so there is no SVG to store.
   // "content" is the character itself. The Sticker Maker adds it as a TEXT layer and
   // Joash's editor already draws it as text — one list, two ways of showing it.
-  { id: 'emoji-pin',      key: 'pushPin',      name: 'Push Pin',       kind: 'emoji', tags: ['Washi & Pins'],   content: '📌' },
-  { id: 'emoji-clip',     key: 'paperclip',    name: 'Paperclip',      kind: 'emoji', tags: ['Washi & Pins'],   content: '📎' },
-  { id: 'emoji-sparkles', key: 'sparkles',     name: 'Sparkles',       kind: 'emoji', tags: ['Doodles', 'Y2K'], content: '✨' },
-  { id: 'emoji-star',     key: 'starEmoji',    name: 'Star',           kind: 'emoji', tags: ['Doodles', 'Y2K'], content: '⭐' },
-  { id: 'emoji-heart',    key: 'heartEmoji',   name: 'Heart',          kind: 'emoji', tags: ['Doodles', 'Cute Animals'], content: '💖' },
-  { id: 'emoji-ribbon',   key: 'ribbonEmoji',  name: 'Ribbon',         kind: 'emoji', tags: ['Cute Animals', 'Y2K'], content: '🎀' },
-  { id: 'emoji-camera',   key: 'cameraEmoji',  name: 'Camera',         kind: 'emoji', tags: ['Film & Vintage'], content: '📷' },
-  { id: 'emoji-film',     key: 'filmEmoji',    name: 'Film Strip',     kind: 'emoji', tags: ['Film & Vintage'], content: '🎞️' },
-  { id: 'emoji-blossom',  key: 'blossomEmoji', name: 'Cherry Blossom', kind: 'emoji', tags: ['Doodles'],        content: '🌸' },
-  { id: 'emoji-shades',   key: 'shadesEmoji',  name: 'Y2K Shades',     kind: 'emoji', tags: ['Y2K'],            content: '🕶️' },
-  { id: 'emoji-bolt',     key: 'boltEmoji',    name: 'Lightning',      kind: 'emoji', tags: ['Y2K', 'Doodles'], content: '⚡' },
-  { id: 'emoji-bunny',    key: 'bunnyEmoji',   name: 'Cute Bunny',     kind: 'emoji', tags: ['Cute Animals'],   content: '🐰' },
-  { id: 'emoji-kitty',    key: 'kittyEmoji',   name: 'White Kitty',    kind: 'emoji', tags: ['Cute Animals'],   content: '🐱' },
-  { id: 'emoji-teddy',    key: 'teddyEmoji',   name: 'Teddy Bear',     kind: 'emoji', tags: ['Cute Animals'],   content: '🧸' },
-  { id: 'emoji-peace',    key: 'peaceEmoji',   name: 'Peace Sign',     kind: 'emoji', tags: ['Y2K'],            content: '✌️' },
+  { id: 'emoji-pin',      key: 'pushPin',      name: 'Push Pin', keywords: 'pin push pin red',       kind: 'emoji', tags: ['Washi & Pins'],   content: '📌' },
+  { id: 'emoji-clip',     key: 'paperclip',    name: 'Paperclip', keywords: 'paperclip clip office',      kind: 'emoji', tags: ['Washi & Pins'],   content: '📎' },
+  { id: 'emoji-sparkles', key: 'sparkles',     name: 'Sparkles', keywords: 'sparkles sparkle shine',       kind: 'emoji', tags: ['Doodles', 'Y2K'], content: '✨' },
+  { id: 'emoji-star',     key: 'starEmoji',    name: 'Star', keywords: 'star yellow',           kind: 'emoji', tags: ['Doodles', 'Y2K'], content: '⭐' },
+  { id: 'emoji-heart',    key: 'heartEmoji',   name: 'Heart', keywords: 'heart love pink',          kind: 'emoji', tags: ['Doodles', 'Cute Animals'], content: '💖' },
+  { id: 'emoji-ribbon',   key: 'ribbonEmoji',  name: 'Ribbon', keywords: 'ribbon bow',         kind: 'emoji', tags: ['Cute Animals', 'Y2K'], content: '🎀' },
+  { id: 'emoji-camera',   key: 'cameraEmoji',  name: 'Camera', keywords: 'camera photo',         kind: 'emoji', tags: ['Film & Vintage'], content: '📷' },
+  { id: 'emoji-film',     key: 'filmEmoji',    name: 'Film Strip', keywords: 'film strip movie',     kind: 'emoji', tags: ['Film & Vintage'], content: '🎞️' },
+  { id: 'emoji-blossom',  key: 'blossomEmoji', name: 'Flower', keywords: 'flower cherry blossom sakura pink spring', kind: 'emoji', tags: ['Doodles'],        content: '🌸' },
+  { id: 'emoji-shades',   key: 'shadesEmoji',  name: 'Sunglasses', keywords: 'sunglasses shades cool y2k',     kind: 'emoji', tags: ['Y2K'],            content: '🕶️' },
+  { id: 'emoji-bolt',     key: 'boltEmoji',    name: 'Lightning', keywords: 'lightning bolt flash',      kind: 'emoji', tags: ['Y2K', 'Doodles'], content: '⚡' },
+  { id: 'emoji-bunny',    key: 'bunnyEmoji',   name: 'Bunny', keywords: 'bunny rabbit animal',     kind: 'emoji', tags: ['Cute Animals'],   content: '🐰' },
+  { id: 'emoji-kitty',    key: 'kittyEmoji',   name: 'Cat', keywords: 'cat kitty kitten animal',    kind: 'emoji', tags: ['Cute Animals'],   content: '🐱' },
+  { id: 'emoji-teddy',    key: 'teddyEmoji',   name: 'Teddy Bear', keywords: 'teddy bear toy animal',     kind: 'emoji', tags: ['Cute Animals'],   content: '🧸' },
+  { id: 'emoji-peace',    key: 'peaceEmoji',   name: 'Peace Sign', keywords: 'peace sign hand v',     kind: 'emoji', tags: ['Y2K'],            content: '✌️' },
 ]
 
 // WHY the guard: emoji have no svg, so they get no url and no ratio. Without this check
@@ -288,6 +316,18 @@ export const EMOJI    = ART.filter((item) => item.kind === 'emoji')
 // WHY: lets Joash rebuild his SVG_TEMPLATES in one line, and lets any page look up a
 // single item by its original name without looping.
 export const ART_BY_KEY = Object.fromEntries(ART.map((item) => [item.key, item]))
+
+// The 12 drawings by name (daisy, sparkleStar...), for the Frame Editor's presets
+export { SVG_TEMPLATES }
+
+// One search rule for every page: the name, the search words and the tags.
+// WHY search words: people type "flower", not "daisy"; "cat", not "kitty".
+export function matchesArt(item, query) {
+  const q = String(query || '').trim().toLowerCase()
+  if (!q) return true
+  const text = [item.name, item.keywords, ...(item.tags || [])].join(' ').toLowerCase()
+  return q.split(/\s+/).every((word) => text.includes(word))
+}
 
 
 // ============================================================

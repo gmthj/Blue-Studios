@@ -51,6 +51,8 @@ import {
   getTextureBackgroundImage,
   getTextureBackgroundSize
 } from "../constants/frameEditorData.js"
+// The Sticker Maker's fonts, so the Text tab is the same in both editors
+import { FONTS, FONT_SAMPLE, matchesArt } from "../stickerArt.js"
 
 export const FRAME_EDITOR_KEY = Symbol("FRAME_EDITOR_KEY")
 export const TEMPLATE_EDITOR_KEY = FRAME_EDITOR_KEY
@@ -141,7 +143,7 @@ const getInitialTemplateQuery = () => {
 const initialTemplateParam = getInitialTemplateQuery()
 const isWorkspaceLoading = ref(Boolean(initialTemplateParam || route?.query?.template))
 const workspaceLoadingMessage = ref(
-  (initialTemplateParam || route?.query?.template) ? 'Loading saved template...' : ''
+  (initialTemplateParam || route?.query?.template) ? 'Loading saved frame...' : ''
 )
 
 const isOwner = computed(() => {
@@ -203,11 +205,15 @@ const {
 
 
 // --- Editor Navigation & Toolbar State ---
-const templateName = ref('my-templates-1')
+// Empty at the start: the top bar shows "Untitled" in grey, so it is clear it has no name yet.
+// The Save pop-up suggests a name (my-frame-1, my-frame-2...) the first time you save.
+const templateName = ref('')
+// The starter preset picked last (its card is highlighted). Picking one does not rename the template.
+const appliedPresetId = ref(null)
 const activeLayout = ref('retro-4-cut') // 'retro-4-cut' | 'polaroid-2x2' | 'film-3-cut'
 const slotShape = ref('Rounded') // 'Square' | 'Rounded' | 'Circle'
 const isMobileInitial = typeof window !== 'undefined' && window.innerWidth < 992
-const activeTool = ref('templates') // 'templates' (Presets) | 'elements' | 'text' | 'background' | 'layers'
+const activeTool = ref('templates') // 'templates' (Presets) | 'elements' | 'text' | 'background'
 const isDrawerOpen = ref(!isMobileInitial)
 const showCutouts = ref(true) // Toggle cutouts on/off
 const cutoutsLayerPosition = ref('above') // 'above' (over elements) | 'below' (behind elements)
@@ -226,7 +232,9 @@ const frameBg = ref({
 const selectedBgColor = ref('#FEFBF6')
 const borderColor = ref('#2F5BEA')
 const borderWidth = ref(6)
-const captionText = ref('Exchange reunion · 16.10.26')
+const captionText = ref('Blue Studios')
+// The caption is picked (clicked) on the strip: its bar shows over the canvas
+const isCaptionSelected = ref(false)
 const captionColor = ref('#2F5BEA')
 const isEditingCaption = ref(false)
 
@@ -506,11 +514,7 @@ const filteredElementCategories = computed(() => {
       items = items.filter(it => it.tags && it.tags.includes(tag))
     }
     if (q) {
-      items = items.filter(it => {
-        const nameMatch = it.name && it.name.toLowerCase().includes(q)
-        const tagMatch = it.tags && it.tags.some(t => t.toLowerCase().includes(q))
-        return nameMatch || tagMatch
-      })
+      items = items.filter(it => matchesArt(it, q)) // name, search words and tags (stickerArt.js)
     }
     return {
       ...cat,
@@ -663,6 +667,12 @@ function toggleDrawer(toolName) {
   }
 }
 
+// WHY: on a phone the drawer covers most of the strip, so after you add something it closes
+// and you can see (and drag) what you just added. On a laptop it stays open.
+function closeDrawerOnPhone() {
+  if (!isScreenLg.value) isDrawerOpen.value = false
+}
+
 async function closeDrawer() {
   isDrawerOpen.value = false
 }
@@ -695,6 +705,16 @@ watch(isDrawerOpen, async () => {
   refitDuringTransition(280)
 })
 
+// Like the Sticker Maker: selecting text opens the Text settings, and selecting a sticker,
+// tape or shape shows the Element settings (an upload: Uploads), so the right panel always
+// shows the thing you picked. The drawer stays open or closed as it was.
+watch(() => (selectedElementIds.value.length === 1 ? activeSelectedElement.value : null), (el) => {
+  if (!el) return
+  isCaptionSelected.value = false
+  if (el.type === 'text') activeTool.value = 'text'
+  else if (activeTool.value !== 'elements' && activeTool.value !== 'uploads') activeTool.value = el.type === 'image' ? 'uploads' : 'elements'
+})
+
 function setLayout(layout) {
   customSlots.value = null
   activeLayout.value = layout
@@ -724,7 +744,7 @@ function toggleCutoutsLayerPosition() {
 }
 
 function applyTemplate(tpl) {
-  templateName.value = tpl.name
+  appliedPresetId.value = tpl.id
   activeLayout.value = tpl.layout
   selectedBgColor.value = tpl.bg
   frameBg.value.type = tpl.bgType || 'color'
@@ -774,6 +794,7 @@ function applyTemplate(tpl) {
   selectedElementIds.value = []
   notify(`Applied template "${tpl.name}"`)
   saveHistoryState()
+  closeDrawerOnPhone()
   nextTick(() => {
     triggerFitToScreen()
   })
@@ -1082,6 +1103,7 @@ function addElement(item) {
   selectedElementId.value = id
   notify(`Added ${item.name}`)
   saveHistoryState()
+  closeDrawerOnPhone()
 }
 
 function addTextElement(preset) {
@@ -1116,6 +1138,79 @@ function addTextElement(preset) {
   selectedElementIds.value = [id]
   notify(`Added ${preset.label || 'text block'}`)
   saveHistoryState()
+  return newText
+}
+
+// ---- Text, the same way as the Sticker Maker ----
+// font: one of the Sticker Maker's fonts (stickerArt.js), or null for the default.
+// at: { x, y } in strip pixels, for a double-click (double-tap) on the strip.
+// The new box is typed into right away, on the strip, with its words selected so typing
+// replaces them.
+function addTextBox(font = null, at = null) {
+  const width = 200
+  const height = 40
+  const el = addTextElement({
+    label: 'text box',
+    text: FONT_SAMPLE, // 'Blue Studios'
+    fontFamily: font ? font.stack : undefined,
+    width: width,
+    height: height,
+  })
+  if (at) {
+    const stripWidth = stripRef.value?.offsetWidth || 280
+    el.x = Math.round(Math.max(0, Math.min(stripWidth - width, at.x - width / 2)))
+    el.y = Math.round(Math.max(0, at.y - height / 2))
+  }
+  closeDrawerOnPhone()
+  // The reactive copy, so typing updates the strip
+  const live = canvasElements.value.find(item => item.id === el.id)
+  nextTick(() => startEditingText(live))
+}
+
+// Clicking a font in the Text tab: restyle the selected text, or start a new box in that font
+function pickFont(font) {
+  if (activeTextElement.value) {
+    activeTextElement.value.fontFamily = font.stack
+    saveHistoryState()
+    closeDrawerOnPhone()
+    return
+  }
+  addTextBox(font)
+}
+
+// Double-click an empty spot on the strip (double-tap on a phone): a text box appears there.
+// WHY counted by hand: phones do not send dblclick, so two quick taps close together are
+// counted here, and the same code serves the mouse.
+let lastFrameTap = null
+let skipFrameClick = false
+function onFrameTap(event) {
+  const onStrip = event.target === stripRef.value || event.target.closest('.strip-slots-container') ||
+    event.target.closest('.frame-texture-overlay') || event.target.closest('.photostrip-border-overlay')
+  if (!onStrip || isSpacePressed.value || isHandToolActive.value) {
+    lastFrameTap = null
+    return
+  }
+  const now = Date.now()
+  const last = lastFrameTap
+  if (last && now - last.time < 350 && Math.hypot(event.clientX - last.x, event.clientY - last.y) < 24) {
+    lastFrameTap = null
+    skipFrameClick = true // the click that follows this tap must not deselect the new box
+    const rect = stripRef.value.getBoundingClientRect()
+    addTextBox(null, {
+      x: (event.clientX - rect.left) / canvasScale.value,
+      y: (event.clientY - rect.top) / canvasScale.value,
+    })
+    return
+  }
+  lastFrameTap = { time: now, x: event.clientX, y: event.clientY }
+}
+
+// The layers list: drag a layer to a new place. index 0 is the back, the last is the front.
+function moveLayerTo(id, index) {
+  const from = canvasElements.value.findIndex(item => item.id === id)
+  if (from === -1 || from === index) return
+  const [el] = canvasElements.value.splice(from, 1)
+  canvasElements.value.splice(index, 0, el)
 }
 
 // =============================================================================
@@ -1339,6 +1434,20 @@ function onCollectiveDblClick(event) {
   }
 }
 
+// Resize and rotate handles use pointer events, so they work with a mouse, a pen and a finger.
+// preventDefault on pointerdown also stops the browser's copied mousedown, which would start a drag of the element.
+function listenToPointer(onMove, onUp) {
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp)
+  window.addEventListener('pointercancel', onUp)
+}
+
+function stopListeningToPointer(onMove, onUp) {
+  window.removeEventListener('pointermove', onMove)
+  window.removeEventListener('pointerup', onUp)
+  window.removeEventListener('pointercancel', onUp)
+}
+
 function startCollectiveResize(handle, event) {
   if (event.button !== 0) return
   event.preventDefault()
@@ -1362,8 +1471,7 @@ function startCollectiveResize(handle, event) {
     }))
   }
 
-  window.addEventListener('mousemove', onCollectiveResizeMove)
-  window.addEventListener('mouseup', onCollectiveResizeUp)
+  listenToPointer(onCollectiveResizeMove, onCollectiveResizeUp)
 }
 
 function onCollectiveResizeMove(event) {
@@ -1398,7 +1506,7 @@ function onCollectiveResizeMove(event) {
     const relY = initial.y - initialBounds.minY
     item.x = Math.round(initialBounds.minX + relX * scale)
     item.y = Math.round(initialBounds.minY + relY * scale)
-    if (item.type === 'tape' || item.type === 'shape') {
+    if (item.type === 'tape' || item.type === 'shape' || item.type === 'image' || (item.type === 'sticker' && item.isSvg)) {
       item.width = Math.max(16, Math.round(initial.width * scale))
       item.height = Math.max(10, Math.round(initial.height * scale))
     } else if (item.type === 'sticker' || item.type === 'text') {
@@ -1412,8 +1520,7 @@ function onCollectiveResizeUp() {
     isCollectiveResizing.value = false
     saveHistoryState()
   }
-  window.removeEventListener('mousemove', onCollectiveResizeMove)
-  window.removeEventListener('mouseup', onCollectiveResizeUp)
+  stopListeningToPointer(onCollectiveResizeMove, onCollectiveResizeUp)
 }
 
 function startCollectiveRotate(event) {
@@ -1444,8 +1551,7 @@ function startCollectiveRotate(event) {
     }))
   }
 
-  window.addEventListener('mousemove', onCollectiveRotateMove)
-  window.addEventListener('mouseup', onCollectiveRotateUp)
+  listenToPointer(onCollectiveRotateMove, onCollectiveRotateUp)
 }
 
 function onCollectiveRotateMove(event) {
@@ -1481,8 +1587,7 @@ function onCollectiveRotateUp() {
     isCollectiveRotating.value = false
     saveHistoryState()
   }
-  window.removeEventListener('mousemove', onCollectiveRotateMove)
-  window.removeEventListener('mouseup', onCollectiveRotateUp)
+  stopListeningToPointer(onCollectiveRotateMove, onCollectiveRotateUp)
 }
 
 // =============================================================================
@@ -1515,8 +1620,8 @@ function startMarqueeSelection(event) {
     initialSelected: [...selectedElementIds.value]
   }
 
-  window.addEventListener('mousemove', onMarqueeMouseMove)
-  window.addEventListener('mouseup', onMarqueeMouseUp)
+  window.addEventListener('pointermove', onMarqueeMouseMove)
+  window.addEventListener('pointerup', onMarqueeMouseUp)
 }
 
 function onMarqueeMouseMove(event) {
@@ -1581,56 +1686,70 @@ function onMarqueeMouseUp() {
     }, 120)
   }
   marqueeStart = null
-  window.removeEventListener('mousemove', onMarqueeMouseMove)
-  window.removeEventListener('mouseup', onMarqueeMouseUp)
+  window.removeEventListener('pointermove', onMarqueeMouseMove)
+  window.removeEventListener('pointerup', onMarqueeMouseUp)
 }
 
 // =============================================================================
 // 12. Precision Transformations (Single Resize, Rotate, Nudge)
 // =============================================================================
 function startResize(el, handle, event) {
+  if (event.button !== undefined && event.button !== 0) return
   event.stopPropagation()
   event.preventDefault()
+  if (el.isLocked) return
   isResizing.value = true
   resizeTarget.value = el
   resizeData.value = {
     startX: event.clientX,
     startY: event.clientY,
+    startElX: el.x || 0,
+    startElY: el.y || 0,
     startW: el.width || 36,
     startH: el.height || 36,
     startFontSize: el.fontSize || 24,
+    hasSize: Boolean(el.width && el.height), // emoji and text are sized by their font, so their box size isn't known here
     handle: handle
   }
-  window.addEventListener('mousemove', onResizeMove)
-  window.addEventListener('mouseup', onResizeUp)
+  listenToPointer(onResizeMove, onResizeUp)
 }
 
 function onResizeMove(event) {
   if (!isResizing.value || !resizeTarget.value) return
   const el = resizeTarget.value
-  const { startX, startY, startW, startH, startFontSize, handle } = resizeData.value
+  const { startX, startY, startElX, startElY, startW, startH, startFontSize, hasSize, handle } = resizeData.value
+  // How far the pointer moved, in canvas pixels, turned so that "outwards from the corner" is positive
   let dx = (event.clientX - startX) / canvasScale.value
   let dy = (event.clientY - startY) / canvasScale.value
+  if (handle.includes('w')) dx = -dx
+  if (handle.includes('n')) dy = -dy
 
-  if (handle === 'nw') {
-    dx = -dx
-    dy = -dy
-  } else if (handle === 'ne') {
-    dy = -dy
-  } else if (handle === 'sw') {
-    dx = -dx
-  }
-
+  let newW
+  let newH
   if (el.type === 'sticker' || el.type === 'text' || el.type === 'image') {
-    const delta = (dx + dy) / 2
-    const scale = Math.max(0.25, (startW + delta) / startW)
-    if (el.fontSize) el.fontSize = Math.max(12, Math.min(84, Math.round(startFontSize * scale)))
-    el.width = Math.max(18, Math.min(500, Math.round(startW * scale)))
-    el.height = Math.max(18, Math.min(500, Math.round(startH * scale)))
+    // Keep the shape: one scale for both sides. Follow whichever direction the pointer moved most,
+    // so dragging straight sideways works as well as dragging diagonally.
+    const scaleX = (startW + dx) / startW
+    const scaleY = (startH + dy) / startH
+    let scale = Math.abs(scaleX - 1) > Math.abs(scaleY - 1) ? scaleX : scaleY
+    // The same limits for both sides, so the picture never gets squashed when one side hits a limit
+    const minScale = Math.max(18 / startW, 18 / startH, 0.1)
+    const maxScale = Math.max(minScale, Math.min(800 / startW, 800 / startH))
+    scale = Math.max(minScale, Math.min(maxScale, scale))
+    if (el.fontSize) el.fontSize = Math.max(8, Math.min(200, Math.round(startFontSize * scale)))
+    newW = Math.round(startW * scale)
+    newH = Math.round(startH * scale)
   } else {
-    el.width = Math.max(25, Math.min(260, Math.round(startW + dx)))
-    el.height = Math.max(10, Math.min(180, Math.round(startH + dy)))
+    newW = Math.max(25, Math.min(400, Math.round(startW + dx)))
+    newH = Math.max(10, Math.min(300, Math.round(startH + dy)))
   }
+  el.width = newW
+  el.height = newH
+
+  // The corner on the other side stays where it is: dragging a left or top handle moves the element too
+  if (!hasSize) return
+  if (handle.includes('w')) el.x = Math.round(startElX + (startW - newW))
+  if (handle.includes('n')) el.y = Math.round(startElY + (startH - newH))
 }
 
 function onResizeUp() {
@@ -1639,8 +1758,7 @@ function onResizeUp() {
     resizeTarget.value = null
     saveHistoryState()
   }
-  window.removeEventListener('mousemove', onResizeMove)
-  window.removeEventListener('mouseup', onResizeUp)
+  stopListeningToPointer(onResizeMove, onResizeUp)
 }
 
 function startRotate(el, event) {
@@ -1665,8 +1783,7 @@ function startRotate(el, event) {
 
   rotateInitialRotation.value = el.rotation || 0
 
-  window.addEventListener('mousemove', onRotateMove)
-  window.addEventListener('mouseup', onRotateUp)
+  listenToPointer(onRotateMove, onRotateUp)
 }
 
 function onRotateMove(event) {
@@ -1693,8 +1810,7 @@ function onRotateUp() {
     rotateTarget.value = null
     saveHistoryState()
   }
-  window.removeEventListener('mousemove', onRotateMove)
-  window.removeEventListener('mouseup', onRotateUp)
+  stopListeningToPointer(onRotateMove, onRotateUp)
 }
 
 let nudgeDebounceTimer = null
@@ -2040,6 +2156,8 @@ function selectFontFamily(font) {
 function getActiveFontDisplayName() {
   if (!activeTextElement.value) return 'Font'
   const fam = activeTextElement.value.fontFamily
+  const artFont = FONTS.find(f => f.stack === fam)
+  if (artFont) return artFont.name
   for (const cat of FONT_CATEGORIES) {
     const found = cat.fonts.find(f => f.family === fam)
     if (found) return found.label.split('(')[0].trim()
@@ -2215,6 +2333,8 @@ function finishEditingText(el) {
 }
 
 function startEditingCaption() {
+  isCaptionSelected.value = true
+  selectedElementIds.value = []
   isEditingCaption.value = true
   nextTick(() => {
     captionInputRef.value?.focus()
@@ -2276,7 +2396,7 @@ function getVectorSwatches(el) {
       key: orig,
       orig: orig,
       current: el.colorMap?.[orig] || orig,
-      label: `Layer Color ${idx + 1}`
+      label: `Colour ${idx + 1}`
     }))
   }
   if (el.type === 'shape') {
@@ -2537,6 +2657,8 @@ async function handleFileUploadDrop(event) {
   await processUploadedFiles(Array.from(files))
 }
 
+// Each file goes into "Your uploads" (kept for next time, in both editors) and is placed on
+// the strip straight away, the same as the Sticker Maker.
 async function processUploadedFiles(files) {
   if (!files || files.length === 0) return
 
@@ -2587,6 +2709,7 @@ async function processUploadedFiles(files) {
           }
           userUploads.value.unshift(newUpload)
           await saveUploadToDB(newUpload)
+          addUploadToCanvas(newUpload) // placed straight away, the same as the Sticker Maker
           addedCount++
           resolve()
         }
@@ -2624,6 +2747,7 @@ async function processUploadedFiles(files) {
           }
           userUploads.value.unshift(newUpload)
           await saveUploadToDB(newUpload)
+          addUploadToCanvas(newUpload) // placed straight away, the same as the Sticker Maker
           addedCount++
           resolve()
         }
@@ -2691,6 +2815,7 @@ function addUploadToCanvas(item, customX = null, customY = null) {
   selectedElementId.value = id
   notify(`Placed "${item.name}" on strip`)
   saveHistoryState()
+  closeDrawerOnPhone()
 }
 
 function onAssetDragStart(item, event) {
@@ -2736,7 +2861,7 @@ async function onCanvasDrop(event) {
       if (project && (project.canvasElements || project.templateName || project.slotCount)) {
         applySnapshot(project)
         currentSavedFrameId.value = project.id || `frame_${Date.now()}`
-        notify(`Loaded template "${project.templateName || 'Template'}" from file!`)
+        notify(`Loaded frame "${project.templateName || 'Frame'}" from file!`)
         return
       }
     }
@@ -2818,7 +2943,7 @@ function getNextDefaultTemplateName() {
 
   for (const item of sources) {
     const name = (item.name || item.templateName || '').trim()
-    const match = name.match(/^my-templates-(\d+)$/i) || name.match(/^my-template-(\d+)$/i)
+    const match = name.match(/^my-frames?-(\d+)$/i) || name.match(/^my-templates?-(\d+)$/i)
     if (match) {
       const num = parseInt(match[1], 10)
       if (!isNaN(num) && num > highestNum) {
@@ -2827,10 +2952,10 @@ function getNextDefaultTemplateName() {
     }
   }
 
-  return `my-templates-${highestNum + 1}`
+  return `my-frame-${highestNum + 1}`
 }
 
-function saveFrame() {
+async function saveFrame() {
   if (!isAccount.value) {
     router.push('/login?redirect=' + encodeURIComponent(route.fullPath))
     return
@@ -3006,7 +3131,7 @@ const allUserTemplates = computed(() => {
     list.push({
       id: t.id,
       cloudId: t.id,
-      name: t.name || 'Untitled Template',
+      name: t.name || 'Untitled Frame',
       slotCount: t.slotCount || 4,
       updatedAt: t.updatedAt || t.createdAt || Date.now(),
       cardUrl: t.cardUrl || null,
@@ -3133,7 +3258,7 @@ async function confirmSwitchWithoutSaving() {
 async function loadTemplateWorkspace(targetTemplate) {
   if (!targetTemplate) return
   isWorkspaceLoading.value = true
-  workspaceLoadingMessage.value = `Loading "${targetTemplate.name || 'template'}"...`
+  workspaceLoadingMessage.value = `Loading "${targetTemplate.name || 'frame'}"...`
   try {
     notify(`Loading "${targetTemplate.name}"...`)
     let project = targetTemplate.projectData
@@ -3182,11 +3307,11 @@ async function loadTemplateWorkspace(targetTemplate) {
       pendingSwitchTemplate.value = null
       notify(`Loaded "${targetTemplate.name}"!`)
     } else {
-      notify('Could not load template data.')
+      notify('Could not load frame data.')
     }
   } catch (err) {
     console.error('Error switching to template workspace:', err)
-    notify('Failed to load template')
+    notify('Failed to load frame')
   } finally {
     isWorkspaceLoading.value = false
   }
@@ -3194,10 +3319,10 @@ async function loadTemplateWorkspace(targetTemplate) {
 
 async function deleteUserTemplate(template) {
   if (!template) return false
-  const name = template.name || 'this template'
+  const name = template.name || 'this frame'
   const sure = await askConfirm({
     title: `Delete "${name}"?`,
-    message: 'This cannot be undone. This template will be permanently removed.',
+    message: 'This cannot be undone. This frame will be permanently removed.',
     confirmLabel: 'Delete',
     danger: true,
     icon: 'trash'
@@ -3246,7 +3371,7 @@ async function deleteUserTemplate(template) {
       cloudId.value = null
       loadedTemplateOwnerId.value = null
       currentSavedFrameId.value = null
-      templateName.value = getNextDefaultTemplateName()
+      templateName.value = ''
       router.replace({ path: '/frame-editor' })
     }
 
@@ -3254,7 +3379,7 @@ async function deleteUserTemplate(template) {
     return true
   } catch (err) {
     console.error('Failed to delete template:', err)
-    notify('Could not delete template')
+    notify('Could not delete frame')
     return false
   }
 }
@@ -3263,7 +3388,7 @@ async function startNewBlankFrame() {
   cloudId.value = null
   loadedTemplateOwnerId.value = null
   currentSavedFrameId.value = null
-  templateName.value = getNextDefaultTemplateName()
+  templateName.value = ''
   chosenCategories.value = ['other']
   canvasElements.value = []
   selectedElementIds.value = []
@@ -3281,7 +3406,7 @@ async function startNewBlankFrame() {
 function openSavedFrame(frameRecord) {
   if (!frameRecord || !frameRecord.projectData) return
   isWorkspaceLoading.value = true
-  workspaceLoadingMessage.value = `Opening "${frameRecord.name || 'template'}"...`
+  workspaceLoadingMessage.value = `Opening "${frameRecord.name || 'frame'}"...`
   try {
     applySnapshot(frameRecord.projectData)
     currentSavedFrameId.value = frameRecord.id
@@ -3298,7 +3423,7 @@ function openSavedFrame(frameRecord) {
         isWorkspaceLoading.value = false
       }, 100)
     })
-    notify(`Loaded "${frameRecord.name || 'Template'}"!`)
+    notify(`Loaded "${frameRecord.name || 'Frame'}"!`)
   } catch (err) {
     console.error('Failed to open saved frame:', err)
     isWorkspaceLoading.value = false
@@ -3308,7 +3433,7 @@ function openSavedFrame(frameRecord) {
 async function loadTemplateFromQuery(templateId) {
   if (!templateId) return
   isWorkspaceLoading.value = true
-  workspaceLoadingMessage.value = 'Loading saved template...'
+  workspaceLoadingMessage.value = 'Loading saved frame...'
   try {
     let projectData = null
     let template = null
@@ -3351,13 +3476,13 @@ async function loadTemplateFromQuery(templateId) {
       await nextTick()
       triggerFitToScreen()
       await new Promise((r) => setTimeout(r, 120))
-      notify(`Loaded template "${template?.name || templateName.value}"!`)
+      notify(`Loaded frame "${template?.name || templateName.value}"!`)
     } else {
-      notify('Template not found or private.')
+      notify('Frame not found or private.')
     }
   } catch (err) {
     console.error('Error loading template from cloud:', err)
-    notify('Could not load template from cloud.')
+    notify('Could not load frame from the cloud.')
   } finally {
     isWorkspaceLoading.value = false
   }
@@ -3370,7 +3495,7 @@ async function deleteFrame(id) {
     if (currentSavedFrameId.value === id) {
       currentSavedFrameId.value = null
     }
-    notify('Template removed from saved folder')
+    notify('Frame removed from saved folder')
   } catch (err) {
     console.error('Failed to delete frame:', err)
     notify('Could not delete frame')
@@ -3380,8 +3505,8 @@ async function deleteFrame(id) {
 async function confirmDeleteFrame(frame) {
   if (!frame) return
   const sure = await askConfirm({
-    title: `Delete "${frame.name || 'this template'}"?`,
-    message: 'This will remove the template from your saved browser frames.',
+    title: `Delete "${frame.name || 'this frame'}"?`,
+    message: 'This will remove the frame from your saved browser frames.',
     confirmLabel: 'Delete',
     danger: true,
     icon: 'trash'
@@ -3490,9 +3615,14 @@ function onCanvasClick(event) {
   editingGroupId.value = null
   editingTextId.value = null
   isEditingCaption.value = false
+  isCaptionSelected.value = false
 }
 
 function onFrameClick(event) {
+  if (skipFrameClick) {
+    skipFrameClick = false
+    return
+  }
   if (justFinishedMarquee) {
     justFinishedMarquee = false
     return
@@ -3878,7 +4008,7 @@ onMounted(async () => {
 
   if (templateToLoad) {
     isWorkspaceLoading.value = true
-    workspaceLoadingMessage.value = 'Loading saved template...'
+    workspaceLoadingMessage.value = 'Loading saved frame...'
 
     // Prioritize loading the target template, running uploads & saved frames loads in parallel
     await Promise.all([
@@ -3913,8 +4043,8 @@ onMounted(async () => {
 
     // If opening fresh without a loaded template, ensure frame title reflects the next sequence
     if (!cloudId.value && !currentSavedFrameId.value) {
-      if (!templateName.value || templateName.value === 'Retro 4-cut' || templateName.value === 'my-templates-1') {
-        templateName.value = getNextDefaultTemplateName()
+      if (templateName.value === 'Retro 4-cut' || templateName.value === 'my-templates-1' || templateName.value === 'my-frame-1') {
+        templateName.value = '' // shown as "Untitled" until it is saved with a name
       }
     }
   }
@@ -3934,10 +4064,12 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', updateScreenSize)
   window.removeEventListener('mousemove', onMouseMove)
   window.removeEventListener('mouseup', onMouseUp)
-  window.removeEventListener('mousemove', onResizeMove)
-  window.removeEventListener('mouseup', onResizeUp)
-  window.removeEventListener('mousemove', onRotateMove)
-  window.removeEventListener('mouseup', onRotateUp)
+  window.removeEventListener('touchmove', onTouchMove)
+  window.removeEventListener('touchend', onTouchEnd)
+  stopListeningToPointer(onResizeMove, onResizeUp)
+  stopListeningToPointer(onRotateMove, onRotateUp)
+  stopListeningToPointer(onCollectiveResizeMove, onCollectiveResizeUp)
+  stopListeningToPointer(onCollectiveRotateMove, onCollectiveRotateUp)
 })
 
 
@@ -3945,6 +4077,17 @@ onBeforeUnmount(() => {
     return {
     isWorkspaceLoading,
     workspaceLoadingMessage,
+    FONTS,
+    appliedPresetId,
+    isCaptionSelected,
+    // The phone "Edit" sheet (the properties panel): the same as isMobileEditSheetOpen
+    isPropsSheetOpen: isMobileEditSheetOpen,
+    togglePropsSheet: toggleMobileEditSheet,
+    closeDrawerOnPhone,
+    addTextBox,
+    pickFont,
+    onFrameTap,
+    moveLayerTo,
     templatePresets,
     elementCategories,
     textPresets,
@@ -4217,7 +4360,6 @@ onBeforeUnmount(() => {
     getRenderedSvg,
     getShapePathD,
     getTapePattern,
-    openUploadsDB,
     loadUploadsFromDB,
     saveUploadToDB,
     deleteUploadFromDB,

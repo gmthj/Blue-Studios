@@ -4,7 +4,7 @@ import { ref } from 'vue'
 //
 // Fullscreen does two things:
 //   1. asks the browser to go fullscreen (hides the browser's address bar), where the browser allows it
-//   2. hides the Blue Studios header (App.vue) and gives the camera page the space (RoomView.vue)
+//   2. hides the Blue Studios header (App.vue) and gives the camera page the space (ShootView.vue)
 // iPhones do not let websites go fullscreen, so there only step 2 happens. That still frees ~80px.
 //
 // Usage:

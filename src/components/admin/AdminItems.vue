@@ -90,8 +90,8 @@ function unhide(item) {
     </div>
     <div class="col-6 col-md-3 col-lg-2">
       <select v-model="type" class="form-select form-select-sm" aria-label="Type">
-        <option value="all">Templates and stickers</option>
-        <option value="templates">Templates</option>
+        <option value="all">Frames and stickers</option>
+        <option value="templates">Frames</option>
         <option value="stickers">Stickers</option>
       </select>
     </div>
@@ -129,7 +129,7 @@ function unhide(item) {
           <div class="card-body p-2 d-flex flex-column">
             <p class="small fw-semibold text-truncate mb-0" :title="item.name">{{ item.name }}</p>
             <p class="small mb-1">
-              <span class="badge text-bg-light border">{{ item.type === 'templates' ? 'Template' : 'Sticker' }}</span>
+              <span class="badge text-bg-light border">{{ item.type === 'templates' ? 'Frame' : 'Sticker' }}</span>
               <span v-if="stateOf(item) === 'hidden'" class="badge text-bg-warning ms-1">Hidden</span>
               <span v-else-if="stateOf(item) === 'public'" class="badge text-bg-success ms-1">Public</span>
               <span v-else class="badge text-bg-secondary ms-1">Private</span>

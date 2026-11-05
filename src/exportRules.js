@@ -1,19 +1,16 @@
 import { isTrustedStickerSrc } from './stripData.js'
 
-// Which export formats a strip is allowed to have (the Export page's format cards).
+// Which format a strip is exported as. Nobody chooses: the strip decides (see chooseExportFormat below).
 //
-//   PNG  only a still strip: no video and no GIF sticker in it
-//   GIF  a strip that moves: it has a video or a GIF sticker
-//   MP4  a strip with music (the mix made on the Music page)
-//   PNG and GIF cannot carry music, so with music they still work, but say the music will not be included.
+//   PNG  a still strip with no music: nothing moves and there is no sound
+//   MP4  everything else. A video or a moving (GIF) sticker needs a video file, and so does music.
+//        With music the MP4 has the sound. Without music it is a silent MP4, which loops when it is played (like a GIF).
 //   Nothing can be exported until every slot has a photo or a video.
-
-export const FORMATS = ['png', 'gif', 'mp4']
 
 // ---------- WHAT IS IN THE STRIP ----------
 
 // Is every slot filled, and does the strip have a video? A slot holds the id of a photo, a clip or a saved edit
-// (see StripView.vue), so each id is looked up in all three.
+// (see PickView.vue), so each id is looked up in all three.
 //   slotPhotos: { 0: 'id', 1: 'id', ... }. photosById: { id: photo }. clips: the room's clips. editedVideos: { id: edit } (see resolveEditedVideos).
 export function stripContents({ layout, slotPhotos, photosById, clips, editedVideos }) {
   let complete = true
@@ -67,33 +64,11 @@ export async function hasGifSticker(stickers) {
   return false
 }
 
-// ---------- THE FORMAT CARDS ----------
+// ---------- THE FORMAT ----------
 
-// What each format card should do.
-//   complete, hasVideo, hasMusic, hasGifSticker: yes / no, see above
-// Gives { png, gif, mp4 }, each { available, reason, musicLost }:
-//   available  false: the card is blurred and cannot be picked
-//   reason     why it cannot be picked (shown on the blurred card), or '' if it can
-//   musicLost  true: it can be picked, but the music will not be in the file (show a message)
-export function exportOptions({ complete, hasVideo, hasMusic, hasGifSticker }) {
-  const moves = hasVideo || hasGifSticker // does anything in the strip move?
-
-  // The rule for each format, and what to say when the rule says no
-  const rules = {
-    png: { allowed: !moves, why: hasVideo ? 'Your strip has video: choose GIF or MP4' : 'Your strip has a moving sticker: choose GIF or MP4' },
-    gif: { allowed: moves, why: 'Nothing in your strip moves: choose PNG' },
-    mp4: { allowed: hasMusic, why: 'Add music on the Music page to export an MP4' },
-  }
-
-  const options = {}
-  for (const format of FORMATS) {
-    const rule = rules[format]
-    const available = complete && rule.allowed
-    options[format] = {
-      available: available,
-      reason: !complete ? 'Fill every slot of the strip first' : rule.allowed ? '' : rule.why,
-      musicLost: available && hasMusic && format !== 'mp4', // PNG and GIF cannot carry the music
-    }
-  }
-  return options
+// The format the strip is exported as: 'png', 'mp4', or null while the strip is not finished.
+//   complete: every slot has a photo or a video. hasVideo, hasMusic, hasGifSticker: yes / no, see above.
+export function chooseExportFormat({ complete, hasVideo, hasMusic, hasGifSticker }) {
+  if (!complete) return null
+  return hasVideo || hasGifSticker || hasMusic ? 'mp4' : 'png'
 }

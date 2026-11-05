@@ -1,0 +1,694 @@
+/* ============================================================
+   BLUE STUDIOS LOOK (the same as Rae's Sticker Maker)
+   WHY: the Sticker Maker and the Template Editor are both editors, so they share one look:
+   floating white cards on a soft grey page, a tool rail of tiles, panels with a title and a
+   close button, a text bar floating over the canvas and a layer list at the side.
+   The te- classes below copy the Sticker Maker's sm- classes. The colours (--brand, --ink,
+   --line, --soft...) come from .app-page in pages.css, which the editor's page also uses.
+   Only the look changes: every tool of the editor works as before.
+   ============================================================ */
+.te-page {
+  --te-gap: 12px;
+  --te-faint: #9AA0AE;
+  /* App.vue gives the editor the screen under the Blue Studios bar (editor-main); fill it */
+  height: 100%;
+  min-height: 520px;
+  gap: var(--te-gap);
+  padding: var(--te-gap);
+  padding-bottom: var(--te-gap); /* app-page adds 32px at the bottom; this editor fills the screen */
+  background: var(--soft) !important;
+}
+.te-body { gap: var(--te-gap); min-height: 0; }
+
+/* Every panel is one of these: white, 16px corners, a hairline and a soft lift */
+.te-card {
+  background: #ffffff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 1px 2px rgba(20, 23, 43, 0.04);
+}
+.te-icon {
+  width: 18px; height: 18px;
+  fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round;
+  flex-shrink: 0;
+}
+
+/* ---------- top bar ---------- */
+.te-topbar {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 12px;
+  padding: 8px 8px 8px 12px;
+  position: relative; z-index: 100;
+}
+.te-brand { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.te-brand-title { margin: 0; font-size: 1rem; font-weight: 800; letter-spacing: -0.01em; white-space: nowrap; }
+.te-name {
+  width: 170px; min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid transparent; border-radius: 8px;
+  background: transparent;
+  color: var(--ink); font-size: 0.9rem; font-weight: 600;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+.te-name:focus { outline: none; border-color: var(--brand); background: #ffffff; }
+.te-name::placeholder { color: var(--te-faint); font-weight: 500; }
+/* Laptop: name on the left, zoom / cutouts / rulers in the middle, actions on the right.
+   WHY a grid: the middle stays in the true centre whatever the widths of the two sides. */
+@media (min-width: 992px) {
+  .te-topbar { display: grid; grid-template-columns: 1fr auto 1fr; }
+  .te-topbar-actions { justify-self: end; }
+}
+.te-topbar-tools { display: flex; align-items: center; gap: 6px; }
+.te-topbar-actions { display: flex; align-items: center; gap: 6px; }
+.te-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+.te-square { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; padding: 0; }
+.te-zoom { position: relative; display: flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 12px; }
+.te-zoom-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 4px;
+  min-width: 32px; height: 32px; padding: 0 8px;
+  border: 0; border-radius: 9px;
+  background: transparent; color: var(--ink);
+  font-size: 0.85rem; font-weight: 600; font-variant-numeric: tabular-nums;
+  transition: background-color 150ms ease, transform 160ms var(--ease-out);
+}
+.te-zoom-btn:disabled { opacity: 0.4; }
+.te-zoom-btn:active:not(:disabled) { transform: scale(0.95); }
+.te-zoom-btn.active { background: var(--brand-tint); color: var(--brand); }
+/* On / off switches (Cutouts, Rulers): a pill, tinted blue when on */
+.te-toggle {
+  display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+  height: 36px; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: #ffffff; color: var(--muted);
+  font-size: 0.85rem; font-weight: 600; white-space: nowrap;
+  transition: color 150ms ease, background-color 150ms ease, border-color 150ms ease, transform 160ms var(--ease-out);
+}
+.te-toggle.active { color: var(--brand); border-color: var(--brand); background: var(--brand-tint); }
+.te-toggle:active { transform: scale(0.97); }
+
+/* ---------- tool rail ---------- */
+.te-rail {
+  flex: 0 0 auto;
+  width: 76px;
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 8px 6px;
+}
+.te-rail-btn {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 6px 0;
+  border: 0; border-radius: 12px;
+  background: transparent; color: var(--muted);
+  font-size: 0.72rem; font-weight: 700;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 150ms ease;
+}
+.te-rail-tile {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px;
+  border-radius: 12px;
+  transition: background-color 150ms ease, color 150ms ease, transform 160ms var(--ease-out);
+}
+.te-rail-btn.active { color: var(--brand); }
+.te-rail-btn.active .te-rail-tile { color: var(--brand); background: var(--brand-tint); transform: rotate(-4deg); }
+.te-rail-btn:active .te-rail-tile { transform: scale(0.94); }
+.te-rail-count {
+  position: absolute; top: -4px; right: -6px;
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border: 2px solid #ffffff; border-radius: 999px;
+  background: var(--brand); color: #ffffff;
+  font-size: 0.62rem; font-weight: 700; line-height: 14px; text-align: center;
+}
+/* A dot on "Edit" when something is selected, so phone users know where its settings are */
+.te-rail-btn.has-dot .te-rail-tile::after {
+  content: '';
+  position: absolute; top: 3px; right: 3px;
+  width: 8px; height: 8px;
+  border: 2px solid #ffffff; border-radius: 999px;
+  background: var(--brand);
+}
+.te-mobile-only { display: none !important; }
+
+/* ---------- panels (the tool drawer on the left, properties on the right) ---------- */
+.te-panel {
+  flex: 0 0 auto;
+  width: 300px;
+  display: flex; flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.te-panel-head {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 14px 16px 10px;
+}
+@media (min-width: 992px) {
+  .te-head-phone-only { display: none; }
+  /* Only the layers: no line above them, and room at the top where the title was */
+  .te-panel-body.is-layers-only { padding-top: 14px !important; }
+  .te-panel-body.is-layers-only .te-layers { padding-top: 0; border-top: 0; }
+}
+.te-panel-title { margin: 0; font-size: 1.05rem; font-weight: 700; text-wrap: balance; }
+.te-panel-body {
+  flex: 1 1 auto; min-height: 0;
+  overflow-y: auto;
+  padding: 0 16px 16px !important;
+  scrollbar-width: thin;
+}
+/* The panel scrolls; its parts keep their own height instead of being squashed */
+.te-panel-body > * { flex-shrink: 0; }
+.te-close {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px; flex-shrink: 0;
+  border: 0; border-radius: 999px;
+  background: transparent; color: var(--muted);
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.te-label {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  margin: 0 0 8px;
+  font-size: 0.85rem; font-weight: 700; color: var(--ink);
+}
+.te-count { font-size: 0.78rem; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.te-hint { margin: 0; font-size: 0.8rem; line-height: 1.5; color: var(--muted); text-wrap: pretty; }
+/* Joash's panels use Bootstrap's small grey labels: the same size, weight and colour as
+   .te-label, and in normal letters (not ALL CAPS) */
+.te-page .form-label.small.fw-bold,
+.te-page label.small.fw-bold { font-size: 0.85rem !important; color: var(--ink) !important; }
+
+/* Menu headings in normal letters (not ALL CAPS), the same as the rest of the app */
+.te-page .zoom-popover-menu .menu-header,
+.te-page .popover-header,
+.te-page .context-menu-header {
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.te-page .form-range { accent-color: var(--brand); }
+
+/* ---------- font cards in the Text drawer (the same as the Sticker Maker) ---------- */
+.te-font-cards { display: grid; grid-template-columns: 1fr; gap: 6px; }
+.te-font-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 10px 12px;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: #ffffff;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 150ms ease, background-color 150ms ease, transform 160ms var(--ease-out);
+}
+.te-font-card:active { transform: scale(0.97); }
+.te-font-card-sample {
+  font-size: 1.35rem; line-height: 1.2; color: var(--ink);
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.te-font-card-name { font-size: 0.72rem; font-weight: 600; color: var(--muted); }
+.te-font-card.active { border-color: var(--brand); background: var(--brand-tint); }
+.te-font-card.active .te-font-card-name { color: var(--brand); }
+
+/* ---------- canvas ---------- */
+.te-page .canvas-workspace {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  touch-action: none; /* a finger drags the stickers and the strip, instead of scrolling the page */
+}
+
+/* The caption: click to type on the strip. A blue outline while it is picked. */
+.te-page .strip-caption { cursor: text; border-radius: 4px; }
+.te-page .strip-caption.is-picked { outline: 1.5px solid var(--brand); outline-offset: 1px; }
+@media (hover: hover) and (pointer: fine) {
+  .te-page .strip-caption:not(.is-picked):hover { outline: 1px dashed var(--brand); outline-offset: 1px; }
+}
+
+/* ---------- selection handles: the same as the Sticker Maker ----------
+   Round corner handles, and the rotate knob on a stem at the top. The small bar with
+   Position / duplicate / lock / delete moves under the element to make room. */
+.te-page .resize-handle {
+  width: 12px; height: 12px;
+  border: 2px solid var(--brand);
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(20, 23, 43, 0.2);
+}
+.te-page .handle-nw { top: -7px; left: -7px; }
+.te-page .handle-ne { top: -7px; right: -7px; }
+.te-page .handle-sw { bottom: -7px; left: -7px; }
+.te-page .handle-se { bottom: -7px; right: -7px; }
+.te-page .rotate-stem { bottom: auto; top: -22px; height: 20px; background-color: var(--brand); }
+.te-page .element-rotate-handle {
+  bottom: auto; top: -34px;
+  width: 14px; height: 14px;
+  border: 2px solid #ffffff;
+  background-color: var(--brand);
+  box-shadow: 0 1px 3px rgba(20, 23, 43, 0.25);
+}
+.te-page .element-rotate-handle:hover { background-color: var(--brand); }
+.te-page .element-rotate-handle svg { display: none; }
+/* The angle while rotating, above the knob */
+.te-page .rotation-tooltip {
+  bottom: auto; top: -62px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background-color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.te-page .element-floating-bar { bottom: auto; top: calc(100% + 14px); transform-origin: top center; }
+.te-page .element-floating-bar .position-popover { bottom: auto; top: calc(100% + 8px); }
+
+/* ---------- the bar over the canvas (selected text or element) ---------- */
+.te-bar {
+  position: absolute; top: 10px; left: 50%; z-index: 130;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 4px;
+  max-width: calc(100% - 20px);
+  padding: 5px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 6px 20px rgba(20, 23, 43, 0.1);
+  cursor: default;
+}
+/* The buttons scroll sideways inside the bar on a narrow phone; the pop-ups sit outside it */
+.te-bar-scroll {
+  display: flex; align-items: center; gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.te-bar-scroll::-webkit-scrollbar { display: none; }
+.te-bar-btn {
+  display: flex; align-items: center; justify-content: center; gap: 4px;
+  min-width: 36px; height: 36px; padding: 0 8px;
+  flex-shrink: 0;
+  border: 0; border-radius: 999px;
+  background: transparent; color: var(--muted);
+  font-size: 0.85rem; font-weight: 600; white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  transition: color 150ms ease, background-color 150ms ease, transform 160ms var(--ease-out);
+}
+.te-bar-btn:disabled { opacity: 0.4; }
+.te-bar-btn.active { color: var(--brand); background: var(--brand-tint); }
+.te-bar-btn:active:not(:disabled) { transform: scale(0.92); }
+.te-bar-btn.del { color: var(--danger); }
+.te-bar-letter { padding: 0; font-size: 1rem; color: var(--ink); font-family: Georgia, 'Times New Roman', serif; }
+.te-bar-letter.active { color: var(--brand); }
+.te-bar-caps { font-family: inherit; font-size: 0.82rem; font-weight: 700; }
+.te-bar-font { padding: 0 10px; font-size: 1.05rem; color: var(--ink); }
+.te-bar-title { padding: 0 6px 0 10px; font-size: 0.85rem; font-weight: 700; color: var(--ink); white-space: nowrap; flex-shrink: 0; }
+.te-bar-line { width: 1px; height: 22px; flex-shrink: 0; background: var(--line); }
+.te-bar-size { display: flex; align-items: center; gap: 2px; flex-shrink: 0; }
+.te-bar-size input {
+  width: 40px; height: 30px; padding: 0;
+  border: 1px solid var(--line); border-radius: 8px;
+  color: var(--ink); text-align: center; font-size: 0.85rem; font-weight: 600; font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+}
+.te-bar-size input::-webkit-inner-spin-button { -webkit-appearance: none; }
+.te-bar-size input:focus { outline: none; border-color: var(--brand); }
+.te-bar-colors { display: flex; align-items: center; gap: 6px; padding: 4px; flex-shrink: 0; }
+.te-swatch {
+  position: relative;
+  width: 24px; height: 24px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 1px solid rgba(20, 23, 43, 0.12); border-radius: 999px;
+  transition: transform 160ms var(--ease-out), box-shadow 150ms ease;
+}
+.te-swatch.active { box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--brand); }
+.te-swatch:active { transform: scale(0.9); }
+.te-swatch-custom {
+  display: flex; align-items: center; justify-content: center;
+  margin: 0;
+  background: conic-gradient(#f04438, #f79009, #fdffb6, #12b76a, #0ea5e9, #7a5af8, #f04438);
+  cursor: pointer;
+}
+.te-swatch-custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.te-swatch-custom:focus-within { box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--brand); }
+.te-pipette { display: flex; align-items: center; justify-content: center; background: #ffffff; color: var(--muted); }
+.te-pipette .te-icon { width: 14px; height: 14px; }
+/* A small card under the bar: spacing, curve, adjust */
+.te-pop {
+  position: absolute; top: calc(100% + 8px); left: 50%; z-index: 140;
+  transform: translateX(-50%);
+  width: 260px; max-width: calc(100vw - 32px);
+  padding: 14px;
+  border: 1px solid var(--line); border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 12px 32px rgba(20, 23, 43, 0.16);
+  display: flex; flex-direction: column; gap: 12px;
+  animation: te-pop-in 160ms var(--ease-out);
+}
+@keyframes te-pop-in { from { opacity: 0; transform: translate(-50%, -4px); } }
+.te-pop .te-label { margin-bottom: 4px; }
+.te-pop-row { display: flex; gap: 6px; }
+.te-pop-row .btn { flex: 1; }
+
+/* ---------- slider ---------- */
+.te-range {
+  --fill: 50%;
+  width: 100%; height: 22px; margin: 0;
+  background: transparent;
+  -webkit-appearance: none; appearance: none;
+  cursor: pointer;
+}
+.te-range::-webkit-slider-runnable-track {
+  height: 6px; border-radius: 999px;
+  background: linear-gradient(to right, var(--brand) var(--fill), var(--line) var(--fill));
+}
+.te-range::-moz-range-track { height: 6px; border-radius: 999px; background: var(--line); }
+.te-range::-moz-range-progress { height: 6px; border-radius: 999px; background: var(--brand); }
+.te-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 18px; height: 18px; margin-top: -6px;
+  border: 3px solid #ffffff; border-radius: 999px;
+  background: var(--brand);
+  box-shadow: 0 1px 4px rgba(20, 23, 43, 0.3);
+  transition: transform 160ms var(--ease-out);
+}
+.te-range::-moz-range-thumb {
+  width: 12px; height: 12px;
+  border: 3px solid #ffffff; border-radius: 999px;
+  background: var(--brand);
+  box-shadow: 0 1px 4px rgba(20, 23, 43, 0.3);
+}
+.te-range:active::-webkit-slider-thumb { transform: scale(1.15); }
+.te-range:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; border-radius: 999px; }
+
+/* ---------- layers list (the same as the Sticker Maker) ---------- */
+.te-layers { padding-top: 14px; border-top: 1px solid var(--line); }
+.te-layer-list { display: flex; flex-direction: column; gap: 4px; }
+.te-layer-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 4px;
+  border: 1px solid transparent; border-radius: 10px;
+  cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease;
+}
+.te-layer-row.active { border-color: var(--brand); background: var(--brand-tint); }
+.te-layer-row.is-hidden .te-layer-name,
+.te-layer-row.is-hidden .te-layer-thumb { opacity: 0.45; }
+.te-layer-row.is-dragging {
+  position: relative; z-index: 1;
+  background: #ffffff;
+  box-shadow: 0 8px 20px rgba(20, 23, 43, 0.14);
+  transform: scale(1.02);
+}
+.te-layer-row.is-fixed { cursor: default; background: var(--soft); }
+.te-grip-handle {
+  display: flex; align-items: center; justify-content: center;
+  width: 32px; height: 32px;
+  margin: -4px -4px -4px -2px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  color: var(--te-faint);
+  cursor: grab;
+  touch-action: none; /* dragging the grip moves the layer instead of scrolling the panel */
+}
+.te-grip-handle:active { cursor: grabbing; color: var(--brand); }
+.te-grip-handle .te-icon { width: 14px; height: 14px; }
+.te-layer-thumb {
+  display: flex; align-items: center; justify-content: center;
+  width: 30px; height: 30px; flex-shrink: 0;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--soft);
+  font-size: 0.8rem; font-weight: 800; color: var(--muted);
+}
+.te-layer-thumb img { width: 100%; height: 100%; object-fit: contain; }
+.te-layer-name {
+  flex: 1; min-width: 0;
+  font-size: 0.85rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.te-layer-row.active .te-layer-name { color: var(--brand); font-weight: 600; }
+.te-row-btn {
+  display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; flex-shrink: 0;
+  border: 0; border-radius: 8px;
+  background: transparent; color: var(--te-faint);
+  transition: color 150ms ease, background-color 150ms ease;
+}
+.te-row-btn.on { color: var(--brand); }
+
+.te-page .te-rail-btn:focus-visible,
+.te-page .te-close:focus-visible,
+.te-page .te-bar-btn:focus-visible,
+.te-page .te-row-btn:focus-visible,
+.te-page .te-font-card:focus-visible,
+.te-page .te-toggle:focus-visible,
+.te-page .te-zoom-btn:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+
+/* Hover only with a mouse: on phones a tap would leave it stuck in its hover colour */
+@media (hover: hover) and (pointer: fine) {
+  .te-rail-btn:not(.active):hover { color: var(--ink); }
+  .te-rail-btn:not(.active):hover .te-rail-tile { background: var(--soft); }
+  .te-close:hover { color: var(--ink); background: var(--soft); }
+  .te-font-card:hover { border-color: var(--brand); background: var(--brand-tint); }
+  .te-bar-btn:not(.active):not(:disabled):hover { color: var(--ink); background: var(--soft); }
+  .te-bar-btn.del:hover { color: var(--danger); background: #FDE4E5; }
+  .te-zoom-btn:not(:disabled):not(.active):hover { background: var(--soft); }
+  .te-toggle:not(.active):hover { color: var(--ink); background: var(--soft); }
+  .te-name:hover:not(:focus) { background: var(--soft); }
+  .te-grip-handle:hover { color: var(--ink); background: var(--soft); }
+  .te-layer-row:not(.active):not(.is-fixed):hover { background: var(--soft); }
+  .te-row-btn:hover { color: var(--ink); background: #ffffff; }
+  .te-row-btn.del:hover { color: var(--danger); background: #FDE4E5; }
+}
+
+/* ---------- phones and small tablets: the same layout as the Sticker Maker ---------- */
+@media (max-width: 991.98px) {
+  .te-page {
+    --te-rail-h: calc(62px + env(safe-area-inset-bottom));
+    min-height: 0;
+    padding: 8px 8px calc(var(--te-rail-h) + 8px);
+    gap: 8px;
+  }
+  .te-body { gap: 8px; }
+  .te-mobile-only { display: flex !important; }
+  .te-hide-sm { display: none !important; }
+
+  /* Top bar: name and actions on one row, zoom and switches underneath */
+  .te-topbar { flex-wrap: wrap; gap: 6px; padding: 6px 6px 6px 10px; }
+  .te-brand-title { display: none; }
+  .te-brand { flex: 1 1 120px; }
+  .te-name { width: 100%; }
+  /* Wraps instead of scrolling, so the zoom menu is not cut off */
+  .te-topbar-tools { order: 3; width: 100%; margin-left: 0; flex-wrap: wrap; }
+  .te-topbar-actions { gap: 4px; margin-left: auto; }
+  .te-topbar .te-square,
+  .te-topbar .te-action { width: 36px; height: 36px; padding: 0; }
+  .te-topbar .te-hide-xs { display: none; }
+  .te-toggle { height: 34px; padding: 0 10px; }
+
+  /* Tools: a bar pinned to the bottom of the screen, above the sheets */
+  .te-rail {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 1045;
+    width: auto;
+    height: var(--te-rail-h);
+    flex-direction: row; gap: 0;
+    padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+    border-width: 1px 0 0;
+    border-radius: 0;
+    box-shadow: 0 -4px 16px rgba(20, 23, 43, 0.06);
+  }
+  .te-rail-btn { flex: 1; gap: 2px; padding: 0; font-size: 0.68rem; }
+  .te-rail-tile { width: 40px; height: 30px; border-radius: 10px; }
+  .te-rail-count { top: -5px; right: -2px; }
+
+  /* Sheets: open just above the tool bar, under half the screen */
+  .te-panel {
+    position: fixed; left: 0; right: 0; bottom: var(--te-rail-h); z-index: 1040;
+    width: auto !important;
+    max-height: 46vh;
+    max-height: 46dvh;
+    border-radius: 20px 20px 0 0;
+    border-bottom: 0;
+    box-shadow: 0 -12px 32px rgba(20, 23, 43, 0.12);
+  }
+  .te-props {
+    display: flex !important;
+    transform: translateY(calc(100% + var(--te-rail-h)));
+    transition: transform 300ms var(--ease-out);
+  }
+  .te-props.is-open { transform: translateY(0); }
+  .te-panel-head { padding: 10px 16px 6px; }
+  .te-panel-title { font-size: 0.95rem; }
+  .te-font-cards { grid-template-columns: 1fr 1fr; }
+  .te-font-card { padding: 8px 10px; }
+  .te-font-card-sample { font-size: 1.1rem; }
+  /* The drawer slides up from the tool bar instead of opening sideways */
+  .te-drawer.drawer-enter-from,
+  .te-drawer.drawer-leave-to { width: auto !important; transform: translateY(100%); }
+  .te-drawer.drawer-enter-active,
+  .te-drawer.drawer-leave-active { transition: transform 300ms var(--ease-out), opacity 180ms ease; }
+
+  .te-bar { top: 8px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .te-rail-tile, .te-font-card, .te-bar-btn, .te-swatch, .te-toggle, .te-zoom-btn,
+  .te-range::-webkit-slider-thumb { transition: none; }
+  .te-rail-btn.active .te-rail-tile,
+  .te-rail-btn:active .te-rail-tile,
+  .te-font-card:active, .te-bar-btn:active, .te-swatch:active, .te-toggle:active { transform: none; }
+  .te-props { transition: none; }
+  .te-pop { animation: none; }
+}
+
+/* ============================================================
+   Uploads, colour tiles and fold-out sections (the same pieces as the Sticker Maker)
+   ============================================================ */
+/* The upload box: a dotted outline, the Sticker Maker look */
+.te-drop {
+  width: 100%;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  padding: 22px 16px;
+  border: 1.5px dashed #D6DAE4;
+  border-radius: 16px;
+  background: #FBFCFE;
+  text-align: center;
+  transition: border-color 150ms ease, background-color 150ms ease, transform 160ms var(--ease-out);
+}
+.te-drop:active { transform: scale(0.98); }
+.te-drop.is-busy { border-color: var(--brand); background: var(--brand-tint); }
+.te-drop-tile {
+  display: flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; margin-bottom: 4px;
+  border-radius: 12px;
+  background: var(--brand-tint); color: var(--brand);
+}
+.te-drop-title { font-weight: 700; color: var(--ink); }
+.te-upload-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.te-upload { position: relative; }
+.te-upload-pick {
+  display: block; width: 100%; aspect-ratio: 1 / 1;
+  padding: 6px;
+  border: 1px solid transparent; border-radius: 12px;
+  background: var(--soft);
+  transition: border-color 150ms ease, background-color 150ms ease, transform 160ms var(--ease-out);
+}
+.te-upload-pick:active { transform: scale(0.95); }
+.te-upload-pick img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.te-upload-del {
+  position: absolute; top: -6px; right: -6px;
+  display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; padding: 0;
+  border: 2px solid #ffffff; border-radius: 999px;
+  background: var(--ink); color: #ffffff;
+}
+
+/* Search box (Elements) */
+.te-search {
+  display: flex; align-items: center; gap: 8px;
+  height: 38px; padding: 0 10px;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: var(--soft); color: var(--muted);
+}
+.te-search:focus-within { border-color: var(--brand); background: #ffffff; }
+.te-search input { flex: 1; min-width: 0; border: 0; outline: none; background: transparent; color: var(--ink); font-size: 0.88rem; }
+.te-search input::-webkit-search-cancel-button { -webkit-appearance: none; }
+.te-search-clear {
+  display: flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; padding: 0;
+  border: 0; border-radius: 999px; background: transparent; color: var(--muted);
+}
+
+/* Tabs stretched across the panel */
+.te-seg { display: flex; width: 100%; }
+.te-seg .seg-tab { flex: 1; justify-content: center; padding: 6px 8px; font-size: 0.82rem; }
+.te-seg-dot { width: 6px; height: 6px; margin-left: 5px; border-radius: 999px; background: var(--brand); display: inline-block; }
+
+/* Colours: round swatches, one tap */
+.te-swatch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(36px, 1fr)); gap: 10px; justify-items: center; }
+.te-swatch-lg { width: 34px; height: 34px; }
+label.te-swatch { margin: 0; cursor: pointer; }
+label.te-swatch input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+
+/* Gradients and textures: a small picture and its name */
+.te-tile-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.te-tile {
+  display: flex; flex-direction: column; align-items: stretch; gap: 4px;
+  padding: 0; border: 0; background: transparent;
+  text-align: center;
+}
+.te-tile-art {
+  display: flex; align-items: center; justify-content: center;
+  aspect-ratio: 1 / 1;
+  border: 1px solid var(--line); border-radius: 12px;
+  color: var(--muted);
+  transition: box-shadow 150ms ease, transform 160ms var(--ease-out);
+}
+.te-tile:active .te-tile-art { transform: scale(0.95); }
+.te-tile.active .te-tile-art { box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px var(--brand); }
+.te-tile-none { background: var(--soft); }
+.te-tile-name { font-size: 0.7rem; font-weight: 600; color: var(--muted); line-height: 1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.te-tile.active .te-tile-name { color: var(--brand); }
+
+/* What the strip has now */
+.te-current {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px;
+  border: 1px solid var(--line); border-radius: 12px;
+}
+.te-current-swatch { width: 36px; height: 36px; flex-shrink: 0; border: 1px solid var(--line); border-radius: 10px; background-size: 24px 24px, cover; }
+.te-current-text { display: flex; flex-direction: column; min-width: 0; flex: 1; line-height: 1.3; }
+.te-current-name { font-size: 0.85rem; font-weight: 700; color: var(--ink); }
+.te-current-detail { font-size: 0.72rem; color: var(--muted); font-family: ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.te-color-row { display: flex; align-items: center; gap: 8px; }
+.te-color-row .form-control { flex: 1; min-width: 0; }
+.te-stop-name { width: 48px; flex-shrink: 0; font-size: 0.78rem; font-weight: 600; color: var(--muted); }
+.te-gradient-bar { height: 22px; border: 1px solid var(--line); border-radius: 8px; }
+
+/* Fold-out sections: the less-used settings stay out of the way until opened */
+.te-fold { border: 1px solid var(--line); border-radius: 12px; }
+.te-fold > summary {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 12px;
+  font-size: 0.85rem; font-weight: 700; color: var(--ink);
+  list-style: none;
+  cursor: pointer;
+}
+.te-fold > summary::-webkit-details-marker { display: none; }
+.te-fold > summary::after {
+  content: '';
+  width: 8px; height: 8px; margin-left: auto;
+  border-right: 2px solid var(--muted); border-bottom: 2px solid var(--muted);
+  transform: rotate(45deg) translateY(-2px);
+  transition: transform 160ms var(--ease-out);
+}
+.te-fold[open] > summary::after { transform: rotate(-135deg) translateY(-2px); }
+.te-fold > summary .te-count { margin-left: auto; }
+.te-fold > summary .te-count + * { margin-left: 0; }
+.te-fold-body { display: flex; flex-direction: column; gap: 12px; padding: 0 12px 12px; }
+.te-dir-row { display: flex; gap: 4px; }
+.te-dir {
+  flex: 1; height: 34px;
+  border: 1px solid var(--line); border-radius: 9px;
+  background: #ffffff; color: var(--ink);
+  font-size: 0.95rem; font-weight: 600;
+}
+.te-dir-wide { flex: 2; font-size: 0.8rem; }
+.te-dir.active { border-color: var(--brand); background: var(--brand-tint); color: var(--brand); }
+
+@media (hover: hover) and (pointer: fine) {
+  .te-drop:hover { border-color: var(--brand); background: var(--brand-tint); }
+  .te-upload-pick:hover { border-color: var(--brand); background: var(--brand-tint); }
+  .te-upload-del:hover { background: var(--danger); }
+  .te-tile:not(.active):hover .te-tile-art { box-shadow: 0 0 0 2px #ffffff, 0 0 0 4px #C9CEDB; }
+  .te-dir:not(.active):hover { background: var(--soft); }
+  .te-fold > summary:hover { color: var(--brand); }
+}
+
+/* Small laptops: narrower panels, so the strip keeps its room */
+@media (min-width: 992px) and (max-width: 1279.98px) {
+  .te-panel { width: 256px; }
+  .te-rail { width: 68px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .te-drop, .te-upload-pick, .te-tile-art, .te-fold > summary::after { transition: none; }
+  .te-drop:active, .te-upload-pick:active, .te-tile:active .te-tile-art { transform: none; }
+}

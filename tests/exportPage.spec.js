@@ -4,7 +4,7 @@ import ExportView from '../src/views/ExportView.vue'
 import PhotoStrip from '../src/components/PhotoStrip.vue'
 import { useRoom } from '../src/composables/useRoom.js'
 
-// Component + integration tests: the Export page (format cards, name, Share and download)
+// Component + integration tests: the Export page (the name, and Share and download with the format chosen by the strip)
 
 // ---------- a pretend room and a pretend Firestore ----------
 
@@ -67,10 +67,7 @@ function mountPage() {
   return mount(ExportView, { global: { stubs: { StageBar: true, PhotoStrip: true } } })
 }
 
-// what the user sees: the three cards (PNG, GIF, MP4, in this order), their state, and the buttons
-const cardsOf = (page) => page.findAll('[role="radio"]')
-const isLocked = (card) => card.attributes('aria-disabled') === 'true'
-const isSelected = (card) => card.attributes('aria-checked') === 'true'
+// what the user sees: the button
 const shareButton = (page) => page.findAll('button').find((b) => b.text().includes('Share and download') || b.text() === 'Opening...')
 
 beforeEach(() => {
@@ -88,102 +85,22 @@ beforeEach(() => {
 
 // ---------- component tests ----------
 
-describe('Component test: Export page, the format cards', () => {
-  it('Test1: every card is blurred until the strip is finished, and says why', async () => {
-    setRoom({ slots: 3 }) // slot 4 is empty
+describe('Component test: Export page, what it shows', () => {
+  it('Test1: there is nothing to choose: no format cards, only the name and the button', async () => {
     const page = mountPage()
     await flushPromises()
-    for (const card of cardsOf(page)) expect(isLocked(card)).toBe(true)
-    expect(page.text()).toContain('Fill every slot of the strip first')
-    expect(page.text()).toContain('Finish the strip first')
-    expect(shareButton(page).attributes('disabled')).toBeDefined()
+    expect(page.findAll('[role="radio"]')).toHaveLength(0)
+    expect(page.text()).not.toContain('GIF')
+    expect(page.text()).not.toContain('Format')
+    expect(page.find('input[type="text"]').exists()).toBe(true)
+    expect(shareButton(page)).toBeDefined()
   })
 
-  it('Test2: the cards stay blurred until the stickers have been looked at', () => {
-    const page = mountPage() // no flushPromises: the check for a moving sticker is still running
-    for (const card of cardsOf(page)) expect(isLocked(card)).toBe(true)
-  })
-
-  it('Test3: a strip of photos can only be a PNG', async () => {
+  it('Test2: shows the strip next to the name box', async () => {
     const page = mountPage()
     await flushPromises()
-    const [png, gif, mp4] = cardsOf(page)
-    expect(isLocked(png)).toBe(false)
-    expect(isSelected(png)).toBe(true) // the only choice, so it is chosen
-    expect(isLocked(gif)).toBe(true)
-    expect(isLocked(mp4)).toBe(true)
-    expect(page.text()).toContain('Nothing in your strip moves')
-    expect(page.text()).toContain('Add music on the Music page')
-  })
-
-  it('Test4: a strip with a video cannot be a PNG, and says so', async () => {
-    setRoom({ video: true })
-    const page = mountPage()
-    await flushPromises()
-    const [png, gif] = cardsOf(page)
-    expect(isLocked(png)).toBe(true)
-    expect(page.text()).toContain('Your strip has video: choose GIF or MP4')
-    expect(isLocked(gif)).toBe(false)
-    expect(isSelected(gif)).toBe(true) // no music, so GIF is the only choice
-  })
-
-  it('Test5: with music, MP4 is the card chosen to begin with', async () => {
-    setRoom({ video: true, music: true })
-    const page = mountPage()
-    await flushPromises()
-    const [, gif, mp4] = cardsOf(page)
-    expect(isSelected(mp4)).toBe(true)
-    expect(isSelected(gif)).toBe(false)
-    expect(isLocked(gif)).toBe(false) // GIF can still be picked instead
-  })
-
-  it('Test6: a strip with a moving sticker cannot be a PNG', async () => {
-    setRoom({ gifSticker: true })
-    const page = mountPage()
-    await flushPromises()
-    const [png, gif] = cardsOf(page)
-    expect(isLocked(png)).toBe(true)
-    expect(page.text()).toContain('Your strip has a moving sticker')
-    expect(isLocked(gif)).toBe(false)
-  })
-
-  it('Test7: pressing a card that can be chosen saves the choice on the room for everyone', async () => {
-    setRoom({ video: true, music: true })
-    const page = mountPage()
-    await flushPromises()
-    await cardsOf(page)[1].trigger('click') // GIF
-    await flushPromises()
-    expect(mocks.updateDoc).toHaveBeenCalledWith('room-ref', { exportFormat: 'gif' })
-    expect(isSelected(cardsOf(page)[1])).toBe(true)
-    expect(isSelected(cardsOf(page)[2])).toBe(false)
-  })
-
-  it('Test8: pressing a blurred card does nothing', async () => {
-    const page = mountPage() // photos only: GIF is blurred
-    await flushPromises()
-    await cardsOf(page)[1].trigger('click')
-    await flushPromises()
-    expect(mocks.updateDoc).not.toHaveBeenCalled()
-  })
-
-  it('Test9: a saved choice that is no longer possible is replaced by one that is', async () => {
-    setRoom({ video: true, extra: { exportFormat: 'png' } }) // someone chose PNG, then a video was added
-    const page = mountPage()
-    await flushPromises()
-    const [png, gif] = cardsOf(page)
-    expect(isSelected(png)).toBe(false)
-    expect(isSelected(gif)).toBe(true)
-  })
-
-  it('Test10: PNG or GIF with music warns that the music will not be included, and points to MP4', async () => {
-    setRoom({ video: true, music: true, extra: { exportFormat: 'gif' } })
-    const page = mountPage()
-    await flushPromises()
-    expect(page.text()).toContain("Your music won't be included in a GIF")
-    expect(page.text()).toContain('Choose MP4 to keep it')
-    await cardsOf(page)[2].trigger('click') // MP4
-    await flushPromises()
-    expect(page.text()).not.toContain("won't be included")
+    expect(page.findComponent(PhotoStrip).exists()).toBe(true)
+    expect(page.text()).toContain('Name your photostrip')
   })
 })
 
@@ -249,7 +166,20 @@ describe('Component test: Export page, Share and download', () => {
     expect(shareButton(page).attributes('disabled')).toBeDefined()
   })
 
-  it('Test2: moves the whole room to the Share page, with the format and name for the job', async () => {
+  it('Test2: is switched off until the stickers have been looked at', () => {
+    const page = mountPage() // no flushPromises: the check for a moving sticker is still running
+    expect(shareButton(page).attributes('disabled')).toBeDefined()
+  })
+
+  it('Test3: is switched off, with a reason, until every slot is filled', async () => {
+    setRoom({ slots: 3 }) // slot 4 is empty
+    const page = mountPage()
+    await flushPromises()
+    expect(shareButton(page).attributes('disabled')).toBeDefined()
+    expect(page.text()).toContain('Finish the strip first')
+  })
+
+  it('Test4: moves the whole room to the Share page, with the format the strip decided and the name', async () => {
     setRoom({ video: true, music: true, extra: { furthestStage: 'export' } })
     const page = mountPage()
     await flushPromises()
@@ -260,13 +190,13 @@ describe('Component test: Export page, Share and download', () => {
     const [ref, changes] = mocks.txUpdate.mock.calls[0]
     expect(ref).toBe('room-ref')
     expect(changes.stage).toBe('share')
-    expect(changes.exportFormat).toBe('mp4')
     expect(changes.exportName).toBe('Our strip')
     expect(changes.furthestStage).toBe('share')
     expect(changes.exportJob).toMatchObject({ status: 'pending', format: 'mp4', name: 'Our strip', progress: 0 })
+    expect(changes.exportFormat).toBeUndefined() // nobody chooses it, so there is no saved choice any more
   })
 
-  it('Test3: if someone else pressed it first, the room is not changed again (we just follow them)', async () => {
+  it('Test5: if someone else pressed it first, the room is not changed again (we just follow them)', async () => {
     setRoom({ extra: { stage: 'share' } })
     const page = mountPage()
     await flushPromises()
@@ -279,46 +209,38 @@ describe('Component test: Export page, Share and download', () => {
 
 // ---------- integration test: the page + the export rules + the strip ----------
 
-// The team's export logic table, one row each: [video, music, GIF sticker, which cards can be chosen, where the music is lost]
-// (the same table that exportRules.spec.js checks on its own, here checked on the whole page)
+// The export logic, one row each: [video, music, moving sticker, the format the strip is exported as]
+// (the same table that exportRules.spec.js checks on its own, here checked on the whole page: what is sent to the Share page)
 const TABLE = [
-  [true, true, true, { png: false, gif: true, mp4: true }, 'GIF'],
-  [true, true, false, { png: false, gif: true, mp4: true }, 'GIF'],
-  [true, false, true, { png: false, gif: true, mp4: false }, null],
-  [true, false, false, { png: false, gif: true, mp4: false }, null],
-  [false, true, true, { png: false, gif: true, mp4: true }, 'GIF'],
-  [false, true, false, { png: true, gif: false, mp4: true }, 'PNG'],
-  [false, false, true, { png: false, gif: true, mp4: false }, null],
-  [false, false, false, { png: true, gif: false, mp4: false }, null],
+  [true, true, true, 'mp4'],
+  [true, true, false, 'mp4'],
+  [true, false, true, 'mp4'],
+  [true, false, false, 'mp4'],
+  [false, true, true, 'mp4'],
+  [false, true, false, 'mp4'],
+  [false, false, true, 'mp4'],
+  [false, false, false, 'png'],
 ]
 
 describe('Integration test: Export page + export rules', () => {
-  it.each(TABLE)('Test: video %s, music %s, GIF sticker %s', async (video, music, gifSticker, expected, musicLostIn) => {
+  it.each(TABLE)('Test: video %s, music %s, moving sticker %s', async (video, music, gifSticker, expected) => {
     setRoom({ video: video, music: music, gifSticker: gifSticker })
     const page = mountPage()
     await flushPromises()
-    const [png, gif, mp4] = cardsOf(page)
-    expect(isLocked(png)).toBe(!expected.png)
-    expect(isLocked(gif)).toBe(!expected.gif)
-    expect(isLocked(mp4)).toBe(!expected.mp4)
-
-    // the format that is not chosen yet can be pressed, and then the music warning must match the table
-    if (musicLostIn) {
-      await cardsOf(page)[musicLostIn === 'PNG' ? 0 : 1].trigger('click')
-      await flushPromises()
-      expect(page.text()).toContain("Your music won't be included in a " + musicLostIn)
-    } else {
-      expect(page.text()).not.toContain("won't be included")
-    }
+    await shareButton(page).trigger('click')
+    await flushPromises()
+    expect(mocks.txUpdate.mock.calls[0][1].exportJob.format).toBe(expected)
   })
 
-  it('Test: a finished strip can always be shared, and a half finished one never', async () => {
-    const finished = mountPage()
-    await flushPromises()
-    expect(shareButton(finished).attributes('disabled')).toBeUndefined()
-    setRoom({ slots: 2 })
-    const half = mountPage()
-    await flushPromises()
-    expect(shareButton(half).attributes('disabled')).toBeDefined()
+  it('Test: a half finished strip can never be shared, whatever it has', async () => {
+    for (const [video, music, gifSticker] of TABLE) {
+      mocks.runTransaction.mockClear()
+      setRoom({ video: video, music: music, gifSticker: gifSticker, slots: 2 })
+      const page = mountPage()
+      await flushPromises()
+      expect(shareButton(page).attributes('disabled')).toBeDefined()
+      await shareButton(page).trigger('click')
+      expect(mocks.runTransaction).not.toHaveBeenCalled()
+    }
   })
 })

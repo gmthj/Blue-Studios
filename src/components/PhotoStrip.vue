@@ -7,7 +7,7 @@ import { CLIP_SECONDS } from '../clips.js'
 
 // One photostrip, drawn from data in layers: frame background -> photo slots -> stickers.
 // Used by both photostrip pages:
-//   mode="pick"     (StripView.vue)    a gallery photo can be dropped into a slot, then held and dragged
+//   mode="pick"     (PickView.vue)    a gallery photo can be dropped into a slot, then held and dragged
 //                                       inside it to move it (and scrolled to zoom), like cropping
 //   mode="decorate" (DecorateView.vue) stickers can be dropped anywhere and dragged to move
 //

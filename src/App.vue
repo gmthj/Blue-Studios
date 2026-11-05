@@ -16,10 +16,12 @@ const { user, isAccount, isAdmin, authError, avatar, logOut, resendVerification 
 // Room pages and frame editor use the full width of the screen (Bootstrap container-fluid), so big laptop and
 // computer screens get a bigger camera, video call tiles, or full-width editor canvas.
 // Other pages (home) use the normal centred container.
-const isEditor = computed(() => route.path === '/frame-editor')
+// The two editors (Frame Editor, Sticker Maker) fill the screen under the bar
+const isEditor = computed(() => route.path === '/frame-editor' || route.path === '/sticker-maker')
 const inRoom = computed(() => route.path.startsWith('/room/'))
 const containerClass = computed(() => {
-  return (inRoom.value || isEditor.value) ? 'container-fluid' : 'container'
+  // WHY not the editors: the bar then lines up exactly as on every other page
+  return inRoom.value ? 'container-fluid' : 'container'
 })
 
 // Fullscreen button in a room (StageBar.vue): the header is hidden so the room gets the whole screen
@@ -53,7 +55,7 @@ async function logOutAndGoHome() {
     White bar with the logo. Sticky: it stays at the top while the page scrolls (not in a room,
     where the camera needs all the height). On phones the links become icons, so everything fits on one line.
   -->
-  <nav v-if="!hideNav" class="app-nav" :class="{ sticky: !inRoom, 'in-room': inRoom, 'mb-4': !inRoom && !isEditor }">
+  <nav v-if="!hideNav" class="app-nav" :class="{ sticky: !inRoom, 'in-room': inRoom, 'has-account': isAccount, 'mb-4': !inRoom && !isEditor }">
     <div class="nav-inner" :class="containerClass">
       <router-link to="/" class="brand">
         <!-- The camera and film strip from the logo (public/images/bluestudios.jpeg), cut out with a see-through background -->
@@ -125,6 +127,7 @@ async function logOutAndGoHome() {
     <template v-else>
       <div v-if="showVerifyReminder" class="alert alert-warning small">
         Please confirm your email: open the link we sent to {{ user.email }}.
+        You need to confirm it before you can make your frames and stickers public in the marketplace.
         <span v-if="verificationSent">Sent again!</span>
         <button v-else class="btn btn-link btn-sm p-0 align-baseline" @click="resend">Send it again</button>
       </div>
@@ -138,6 +141,15 @@ async function logOutAndGoHome() {
        Outside the v-if above, so the template editor can use it too. -->
   <AppDialog />
 </template>
+
+<style>
+/* WHY: long pages have a scrollbar and the editors do not. Without this the Blue Studios bar
+   (and everything centred) jumps sideways by the scrollbar's width when you change page.
+   Keeping the scrollbar's space on every page keeps the bar in exactly the same place. */
+html {
+  scrollbar-gutter: stable;
+}
+</style>
 
 <style scoped>
 /* The same colours and font as the landing page */
@@ -158,7 +170,9 @@ async function logOutAndGoHome() {
 /* Full-height viewport workspace for template editor */
 .editor-main {
   height: calc(100vh - 57px);
+  height: calc(100dvh - 57px); /* the visible screen height on phones (100vh counts the space under the address bar) */
   max-height: calc(100vh - 57px);
+  max-height: calc(100dvh - 57px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -174,7 +188,7 @@ async function logOutAndGoHome() {
   -webkit-backdrop-filter: blur(12px);
 }
 
-/* 56px tall, the same as the old Bootstrap navbar (RoomView.vue counts on that for the camera's height) */
+/* 56px tall, the same as the old Bootstrap navbar (ShootView.vue counts on that for the camera's height) */
 .nav-inner {
   display: flex;
   align-items: center;
@@ -220,6 +234,23 @@ async function logOutAndGoHome() {
 @media (max-width: 399.98px) {
   .app-nav.in-room .brand {
     display: none;
+  }
+}
+
+/* Phones, logged in: 4 to 5 icons, the picture and Log out don't fit next to the logo's name, and the page would
+   get wider than the screen. So the name goes (the logo stays) and the icons sit closer together. */
+@media (max-width: 519.98px) {
+  .app-nav.has-account .brand-text {
+    display: none;
+  }
+
+  .app-nav.has-account .nav-links {
+    gap: 2px;
+  }
+
+  .app-nav.has-account .nav-link-btn {
+    min-width: 36px;
+    padding: 0 8px;
   }
 }
 

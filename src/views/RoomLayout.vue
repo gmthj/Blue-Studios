@@ -20,7 +20,7 @@ import RoomStageNav from '../components/RoomStageNav.vue'
 import MessagePage from '../components/MessagePage.vue'
 
 // The parent page for everything inside a room (/room/:code/shoot, /room/:code/pick, /room/:code/video, /decorate, /music, /export).
-// It joins the room and starts the video call ONCE. The child pages (RoomView, StripView)
+// It joins the room and starts the video call ONCE. The child pages (ShootView, PickView)
 // are shown in <router-view>, so moving between them does not drop the call.
 // New room features can be added as more child pages in router.js.
 
@@ -42,6 +42,14 @@ const { room, roomRef, activeMembers, enterRoom, exitRoom, saveProgress, emptySt
 const { startCall, endCall } = useVideoCall()
 const { exitFullscreen } = useFullscreen()
 
+// Joining can fail (no connection, a blocked request, an older browser...). An error used to leave the page on
+// "Joining room..." forever. Now it shows what went wrong with Try again, and after SLOW_MS it says it is taking
+// long (with Try again) while it keeps waiting.
+const SLOW_MS = 15000
+const slow = ref(false)
+const joinError = ref('')
+let slowTimer = 0
+
 onMounted(async () => {
   // People who open a room link without a name are sent to the home page to type one
   if (guestName === '') {
@@ -49,30 +57,39 @@ onMounted(async () => {
     return
   }
 
-  const roomSnap = await getDoc(doc(db, 'rooms', code))
-  if (!roomSnap.exists()) {
-    status.value = 'notFound'
-    return
-  }
-  if (roomSnap.data().closed) {
-    status.value = 'closed'
-    forgetRoom(code)
-    return
-  }
-  if (await isRoomFull(code, uid)) {
-    status.value = 'full'
-    return
-  }
+  slowTimer = setTimeout(() => (slow.value = true), SLOW_MS)
+  try {
+    const roomSnap = await getDoc(doc(db, 'rooms', code))
+    if (!roomSnap.exists()) {
+      status.value = 'notFound'
+      return
+    }
+    if (roomSnap.data().closed) {
+      status.value = 'closed'
+      forgetRoom(code)
+      return
+    }
+    if (await isRoomFull(code, uid)) {
+      status.value = 'full'
+      return
+    }
 
-  // Join the room (members list, heartbeat, room + photos listeners), then show the child page
-  await enterRoom(code, uid, guestName, getDeviceType())
-  status.value = 'ready'
-  rememberRoom(code) // so the home page can offer to go back in after leaving (recentRooms.js)
-  followStage() // e.g. if the group is already making the photostrip, go straight there
-  applyStartTemplate(roomSnap.data())
+    // Join the room (members list, heartbeat, room + photos listeners), then show the child page
+    await enterRoom(code, uid, guestName, getDeviceType())
+    status.value = 'ready'
+    rememberRoom(code) // so the home page can offer to go back in after leaving (recentRooms.js)
+    followStage() // e.g. if the group is already making the photostrip, go straight there
+    applyStartTemplate(roomSnap.data())
 
-  // Start the video call (not awaited, so the page shows while the call connects)
-  startCall(code, uid)
+    // Start the video call (not awaited, so the page shows while the call connects)
+    startCall(code, uid)
+  } catch (error) {
+    console.error('Could not join the room', error)
+    joinError.value = (error && (error.code || error.message)) || String(error)
+    status.value = 'error'
+  } finally {
+    clearTimeout(slowTimer)
+  }
 })
 
 // The host's new room starts with the template from "Use template", already chosen on the Pick page.
@@ -90,7 +107,7 @@ async function applyStartTemplate(roomData) {
     const template = await getItem('templates', startTemplateId)
     if (!template) {
       showNotice({
-        title: "That template isn't available",
+        title: "That frame isn't available",
         message: 'It may have been made private or removed, so the room starts with the default frame.',
         icon: 'layout',
       })
@@ -102,7 +119,7 @@ async function applyStartTemplate(roomData) {
   } catch (error) {
     console.error(error)
     showNotice({
-      title: "Couldn't load the template",
+      title: "Couldn't load the frame",
       message: 'The room starts with the default frame. You can still choose a frame on the Pick page.',
       icon: 'layout',
     })
@@ -117,6 +134,7 @@ function tryAgain() {
 // Leaving the room (Leave button, closed room, or going to another website page): end the call,
 // and leave fullscreen so the rest of the website has its header back
 onBeforeUnmount(() => {
+  clearTimeout(slowTimer)
   endCall()
   exitRoom(false)
   exitFullscreen()
@@ -198,7 +216,22 @@ watch(activeMembers, (members) => {
 <template>
   <!-- Joining, or could not join: a message in the middle of the page (MessagePage.vue) -->
   <MessagePage v-if="status === 'loading'" loading :title="'Joining room ' + code">
-    Getting the room and your camera ready...
+    <template v-if="!slow">Getting the room and your camera ready...</template>
+    <template v-else>This is taking longer than usual. Check your internet connection, or try again.</template>
+    <template v-if="slow" #actions>
+      <button class="btn btn-primary" @click="tryAgain">Try again</button>
+      <router-link to="/" class="btn btn-outline-secondary">Back home</router-link>
+    </template>
+  </MessagePage>
+
+  <!-- Joining failed: say so (with the error, so it can be reported), instead of "Joining room..." forever -->
+  <MessagePage v-else-if="status === 'error'" icon="close" :title="'Couldn\'t join room ' + code">
+    Something went wrong while joining. Check your internet connection and try again.
+    <span class="d-block small text-muted mt-2">({{ joinError }})</span>
+    <template #actions>
+      <button class="btn btn-primary" @click="tryAgain">Try again</button>
+      <router-link to="/" class="btn btn-outline-secondary">Back home</router-link>
+    </template>
   </MessagePage>
 
   <MessagePage v-else-if="status === 'notFound'" icon="search" :title="'Room ' + code + ' doesn\'t exist'">
@@ -224,7 +257,7 @@ watch(activeMembers, (members) => {
   </MessagePage>
 
   <template v-else>
-    <!-- The child page: RoomView (camera), StripView (photostrip) or DecorateView.
+    <!-- The child page: ShootView (camera), PickView (photostrip) or DecorateView.
          Moving to another step: the old page fades out, the new one drops in from above.
          Not in syllabus: v-slot="{ Component }" gives us the page, <component :is> shows it.
          The <div> is there because <Transition> can only animate ONE element, and most step pages
@@ -251,7 +284,7 @@ watch(activeMembers, (members) => {
 <style scoped>
 /* Room at the bottom of every page as tall as the docked Back / Next bar (RoomStageNav.vue sets its height as
    --stage-nav-h), so the bar never covers the end of the page. The camera page is exactly one screen tall:
-   RoomView.vue takes the same height off it. */
+   ShootView.vue takes the same height off it. */
 .room-stage-body {
   padding-bottom: var(--stage-nav-h, 56px);
 }

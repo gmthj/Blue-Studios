@@ -1049,7 +1049,7 @@ async function saveToStudio() {
 
 .room-page {
   padding-bottom: 24px;
-  /* The same sizes on Pick and Decorate (StripView.vue and DecorateView.vue keep these the same):
+  /* The same sizes on Pick and Decorate (PickView.vue and DecorateView.vue keep these the same):
      --stage-h  the most the strip can be tall
      --panel-h  on computers, all 3 panels are exactly this tall, whatever is in them (the side panels scroll inside),
                 so nothing grows or shrinks when the frame, the photos or the stickers change */
