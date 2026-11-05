@@ -77,6 +77,7 @@ const {
   removeElementById,
   toggleCutouts,
   setSlotShape,
+  getRenderedSvg,
   resetFrameBackground,
   clearFrameTexture
 } = editor
@@ -125,6 +126,14 @@ function endRowDrag() {
 }
 
 onBeforeUnmount(endRowDrag)
+
+// The quick colours under each colour of a drawing (the same as the Sticker Maker's)
+const TEXT_PALETTE_COLORS = ['#101828', '#FFFFFF', '#1D4ED8', '#0EA5E9', '#12B76A', '#F79009', '#F04438', '#7A5AF8', '#FFB3C6', '#FFD6A5', '#FDFFB6', '#CAFFBF', '#A0C4FF']
+
+// A layer's picture for the layers list
+function svgThumb(el) {
+  return 'data:image/svg+xml;utf8,' + encodeURIComponent(getRenderedSvg(el))
+}
 
 const GRIP_ICON = 'M4 8h16 M4 16h16' // two lines, the same as the Sticker Maker
 </script>
@@ -286,7 +295,7 @@ const GRIP_ICON = 'M4 8h16 M4 16h16' // two lines, the same as the Sticker Maker
 
             <!-- VECTOR / SHAPE / TAPE RECOLORING -->
             <div v-if="activeVectorElement && getVectorSwatches(activeVectorElement).length > 0" class="d-flex flex-column gap-2">
-              <label class="form-label small fw-bold text-secondary mb-0">Colors & fill</label>
+              <label class="form-label small fw-bold text-secondary mb-0">Colours</label>
               
               <div
                 v-for="(swatch, sIdx) in getVectorSwatches(activeVectorElement)"
@@ -353,11 +362,6 @@ const GRIP_ICON = 'M4 8h16 M4 16h16' // two lines, the same as the Sticker Maker
                   @input="debounceTextHistory"
                 />
               </div>
-            </div>
-
-            <!-- If Emoji Note -->
-            <div v-else-if="activeSelectedElement.type === 'sticker' && !activeSelectedElement.isSvg" class="alert alert-light border small text-muted p-2 mb-0">
-              Emoji graphics use standard emoji artwork. You can scale, rotate, flip, and adjust opacity below.
             </div>
 
             <!-- DIMENSIONS (WIDTH & HEIGHT) -->
@@ -683,6 +687,8 @@ const GRIP_ICON = 'M4 8h16 M4 16h16' // two lines, the same as the Sticker Maker
               </span>
               <span class="te-layer-thumb">
                 <img v-if="el.type === 'image' && el.url" :src="el.url" alt="" />
+                <!-- A drawing (sticker or tape): a small picture of it, in its current colours -->
+                <img v-else-if="el.isSvg && el.svgRaw" :src="svgThumb(el)" alt="" />
                 <template v-else-if="el.type === 'sticker' && !el.isSvg">{{ el.content }}</template>
                 <span v-else-if="el.type === 'tape'" :style="{ width: '20px', height: '8px', borderRadius: '2px', backgroundColor: el.color }"></span>
                 <span v-else-if="el.type === 'shape'" :style="{ width: '14px', height: '14px', borderRadius: '3px', backgroundColor: el.color }"></span>

@@ -3162,8 +3162,8 @@ function imageStyle(layer) {
             </button>
             <button type="button" class="sm-drawbar-btn sm-drawbar-wide" :class="{ active: textPop === 'adjust' }" title="Opacity and rotation" @pointerdown.prevent @click="toggleTextPop('adjust')">Adjust</button>
             <span class="sm-drawbar-line" aria-hidden="true"></span>
-            <button type="button" class="sm-drawbar-btn" title="Centre left to right" aria-label="Centre left to right" @pointerdown.prevent @click="centreLayer('x')">⇄</button>
-            <button type="button" class="sm-drawbar-btn" title="Centre top to bottom" aria-label="Centre top to bottom" @pointerdown.prevent @click="centreLayer('y')">⇅</button>
+            <button type="button" class="sm-drawbar-btn" title="Centre left to right" aria-label="Centre left to right" @pointerdown.prevent @click="centreLayer('x')"><svg viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true"><path d="M12 2v20 M7 6h10v4H7z M9 14h6v4H9z" /></svg></button>
+            <button type="button" class="sm-drawbar-btn" title="Centre top to bottom" aria-label="Centre top to bottom" @pointerdown.prevent @click="centreLayer('y')"><svg viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true"><path d="M2 12h20 M6 7h4v10H6z M14 9h4v6h-4z" /></svg></button>
             </div>
 
             <!-- Pop-ups under the bar -->
@@ -3299,8 +3299,8 @@ function imageStyle(layer) {
               <svg viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true"><path :d="LOCAL_ICONS.sliders" /></svg>
               <span>Adjust</span>
             </button>
-            <button type="button" class="sm-drawbar-btn sm-drawbar-wide" title="Centre left to right" @click="centreLayer('x')">⇄ <span>Centre</span></button>
-            <button type="button" class="sm-drawbar-btn sm-drawbar-wide" title="Centre top to bottom" @click="centreLayer('y')">⇅ <span>Centre</span></button>
+            <button type="button" class="sm-drawbar-btn" title="Centre left to right" aria-label="Centre left to right" @click="centreLayer('x')"><svg viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true"><path d="M12 2v20 M7 6h10v4H7z M9 14h6v4H9z" /></svg></button>
+            <button type="button" class="sm-drawbar-btn" title="Centre top to bottom" aria-label="Centre top to bottom" @click="centreLayer('y')"><svg viewBox="0 0 24 24" class="sm-local-icon" aria-hidden="true"><path d="M2 12h20 M6 7h4v10H6z M14 9h4v6h-4z" /></svg></button>
 
             <div v-if="recolorTarget && selectedImage.svg" class="sm-pop" @pointerdown.stop>
               <p class="sm-label">Change colour</p>
@@ -3739,72 +3739,86 @@ function imageStyle(layer) {
 
           <!-- Something selected -->
           <template v-else>
-            <!-- PHOTO / STICKER properties -->
+            <!-- PHOTO / STICKER properties: laid out exactly like the Frame Editor's element panel -->
             <template v-if="selectedLayer.type === 'image'">
-              <div class="sm-section mt-0">
-                <p class="sm-label">
-                  Size
-                  <span class="sm-count">{{ Math.round(selectedLayer.width) }}%</span>
-                </p>
-                <input
-                  type="range"
-                  class="sm-range"
-                  min="3"
-                  max="200"
-                  step="1"
-                  :value="selectedLayer.width"
-                  :style="{ '--fill': ((selectedLayer.width - 3) / 197) * 100 + '%' }"
-                  aria-label="Size"
-                  @pointerdown="snapshot"
-                  @input="setProp('width', +$event.target.value)"
-                />
-              </div>
-
-              <!-- Dimensions in pixels of the 1000px download (like the Frame Editor's).
-                   Changing only one of them stretches the picture. -->
-              <div class="sm-section">
-                <p class="sm-label">Dimensions (px)</p>
-                <div class="sm-dims">
-                  <label class="sm-dim">
-                    <span>W</span>
-                    <input type="number" min="10" max="2000" :value="layerPx(selectedLayer).w" aria-label="Width in pixels" @change="setLayerPx('w', $event.target.value)" />
-                  </label>
-                  <label class="sm-dim">
-                    <span>H</span>
-                    <input type="number" min="10" max="2000" :value="layerPx(selectedLayer).h" aria-label="Height in pixels" @change="setLayerPx('h', $event.target.value)" />
-                  </label>
+              <div class="d-flex flex-column gap-3">
+                <!-- What is selected -->
+                <div class="d-flex align-items-center justify-content-between p-2 bg-light border rounded-3">
+                  <div class="d-flex align-items-center gap-2 text-truncate">
+                    <AppIcon name="sparkle" :size="16" />
+                    <div class="text-truncate">
+                      <span class="small fw-bold text-dark d-block text-truncate">{{ selectedLayer.name || selectedKind }}</span>
+                      <span class="badge bg-primary bg-opacity-10 text-primary" style="font-size: 0.65rem;">
+                        {{ selectedLayer.svg ? 'Vector SVG' : selectedKind }}
+                      </span>
+                    </div>
+                  </div>
                 </div>
-              </div>
 
-              <!-- The drawing's colours, each with its exact code (like the Frame Editor's "Colors & fill") -->
-              <div v-if="imageColors.length" class="sm-section">
-                <p class="sm-label">
-                  Colours
-                  <span class="sm-count">{{ imageColors.length }}</span>
-                </p>
-                <div v-for="(original, i) in imageColors" :key="original" class="sm-color-row">
-                  <label class="sm-swatch sm-color-pick" :style="{ background: shownColor(selectedLayer, original) }" :title="'Colour ' + (i + 1)">
-                    <input type="color" :value="hexOnly(shownColor(selectedLayer, original))" :aria-label="'Colour ' + (i + 1)" @change="recolor(original, $event.target.value)" />
-                  </label>
-                  <input
-                    type="text"
-                    class="form-control form-control-sm sm-hex"
-                    maxlength="9"
-                    spellcheck="false"
-                    :value="shownColor(selectedLayer, original).toUpperCase()"
-                    :aria-label="'Colour ' + (i + 1) + ' code'"
-                    @change="setHexColor(original, $event.target)"
-                  />
-                  <button
-                    type="button"
-                    class="sm-row-del"
-                    title="Back to the original colour"
-                    aria-label="Back to the original colour"
-                    :disabled="shownColor(selectedLayer, original) === original"
-                    @click="recolor(original, original)"
+                <!-- Colours: each colour of the drawing, with its exact code and quick colours -->
+                <div v-if="imageColors.length" class="d-flex flex-column gap-2">
+                  <label class="form-label small fw-bold text-secondary mb-0">Colours</label>
+                  <div
+                    v-for="(original, i) in imageColors"
+                    :key="original"
+                    class="card p-2 bg-light border rounded-3 d-flex flex-column gap-2"
                   >
-                    <AppIcon name="refresh" :size="13" />
-                  </button>
+                    <div class="d-flex justify-content-between align-items-center">
+                      <span class="small fw-semibold text-dark">Colour {{ i + 1 }}</span>
+                      <span class="font-monospace small text-muted">{{ shownColor(selectedLayer, original).toUpperCase() }}</span>
+                    </div>
+                    <div class="input-group input-group-sm">
+                      <input
+                        type="color"
+                        :value="hexOnly(shownColor(selectedLayer, original))"
+                        class="form-control form-control-color form-control-sm p-1"
+                        style="max-width: 38px;"
+                        :aria-label="'Colour ' + (i + 1)"
+                        @change="recolor(original, $event.target.value)"
+                      />
+                      <input
+                        type="text"
+                        :value="shownColor(selectedLayer, original).toUpperCase()"
+                        class="form-control form-control-sm text-uppercase font-monospace sm-hex"
+                        maxlength="9"
+                        spellcheck="false"
+                        :aria-label="'Colour ' + (i + 1) + ' code'"
+                        @change="setHexColor(original, $event.target)"
+                      />
+                    </div>
+                    <div class="d-flex align-items-center gap-1 flex-wrap">
+                      <button
+                        v-for="c in [...SOLID_COLORS, ...PASTEL_COLORS]"
+                        :key="c"
+                        type="button"
+                        class="btn p-0 rounded-circle border shadow-none"
+                        :style="{
+                          backgroundColor: c,
+                          width: '18px',
+                          height: '18px',
+                          boxShadow: shownColor(selectedLayer, original).toLowerCase() === c.toLowerCase() ? '0 0 0 2px #fff, 0 0 0 3.5px #2563eb' : 'none'
+                        }"
+                        :title="c"
+                        :aria-label="'Colour ' + c"
+                        @click="recolor(original, c)"
+                      ></button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Dimensions in pixels of the 1000px download -->
+                <div class="d-flex flex-column gap-1">
+                  <label class="form-label small fw-bold text-secondary mb-0">Dimensions (px)</label>
+                  <div class="d-flex gap-2">
+                    <div class="input-group input-group-sm">
+                      <span class="input-group-text bg-light">W</span>
+                      <input type="number" min="10" max="2000" class="form-control text-center" :value="layerPx(selectedLayer).w" aria-label="Width in pixels" @change="setLayerPx('w', $event.target.value)" />
+                    </div>
+                    <div class="input-group input-group-sm">
+                      <span class="input-group-text bg-light">H</span>
+                      <input type="number" min="10" max="2000" class="form-control text-center" :value="layerPx(selectedLayer).h" aria-label="Height in pixels" @change="setLayerPx('h', $event.target.value)" />
+                    </div>
+                  </div>
                 </div>
               </div>
 

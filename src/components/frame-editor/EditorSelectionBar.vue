@@ -184,8 +184,8 @@ const opacityOf = el => (el.opacity !== undefined ? el.opacity : 1)
       </button>
       <button type="button" class="te-bar-btn" :class="{ active: isElementTransformOpen }" title="Opacity and rotation" @pointerdown.prevent @click="togglePop('adjust')">Adjust</button>
       <span class="te-bar-line" aria-hidden="true"></span>
-      <button type="button" class="te-bar-btn" title="Centre left to right on the strip" aria-label="Centre left to right" @pointerdown.prevent @click="alignElementCenterH(textEl)">⇄</button>
-      <button type="button" class="te-bar-btn" title="Centre top to bottom on the strip" aria-label="Centre top to bottom" @pointerdown.prevent @click="alignElementCenterV(textEl)">⇅</button>
+      <button type="button" class="te-bar-btn" title="Centre left to right on the strip" aria-label="Centre left to right" @pointerdown.prevent @click="alignElementCenterH(textEl)"><svg viewBox="0 0 24 24" class="te-icon" aria-hidden="true"><path d="M12 2v20 M7 6h10v4H7z M9 14h6v4H9z" /></svg></button>
+      <button type="button" class="te-bar-btn" title="Centre top to bottom on the strip" aria-label="Centre top to bottom" @pointerdown.prevent @click="alignElementCenterV(textEl)"><svg viewBox="0 0 24 24" class="te-icon" aria-hidden="true"><path d="M2 12h20 M6 7h4v10H6z M14 9h4v6h-4z" /></svg></button>
     </div>
 
     <!-- Pop-ups under the bar -->
@@ -319,8 +319,8 @@ const opacityOf = el => (el.opacity !== undefined ? el.opacity : 1)
         <svg viewBox="0 0 24 24" class="te-icon" aria-hidden="true"><path d="M4 21v-7 M4 10V3 M12 21v-9 M12 8V3 M20 21v-5 M20 12V3 M1 14h6 M9 8h6 M17 16h6" /></svg>
         Adjust
       </button>
-      <button type="button" class="te-bar-btn" title="Centre left to right on the strip" @click="alignElementCenterH(otherEl)">⇄ Centre</button>
-      <button type="button" class="te-bar-btn" title="Centre top to bottom on the strip" @click="alignElementCenterV(otherEl)">⇅ Centre</button>
+      <button type="button" class="te-bar-btn" title="Centre left to right on the strip" aria-label="Centre left to right" @click="alignElementCenterH(otherEl)"><svg viewBox="0 0 24 24" class="te-icon" aria-hidden="true"><path d="M12 2v20 M7 6h10v4H7z M9 14h6v4H9z" /></svg></button>
+      <button type="button" class="te-bar-btn" title="Centre top to bottom on the strip" aria-label="Centre top to bottom" @click="alignElementCenterV(otherEl)"><svg viewBox="0 0 24 24" class="te-icon" aria-hidden="true"><path d="M2 12h20 M6 7h4v10H6z M14 9h4v6h-4z" /></svg></button>
     </div>
 
     <div v-if="shownSwatch" class="te-pop" @pointerdown.stop>

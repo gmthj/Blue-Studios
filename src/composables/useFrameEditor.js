@@ -2396,7 +2396,7 @@ function getVectorSwatches(el) {
       key: orig,
       orig: orig,
       current: el.colorMap?.[orig] || orig,
-      label: `Layer Color ${idx + 1}`
+      label: `Colour ${idx + 1}`
     }))
   }
   if (el.type === 'shape') {
