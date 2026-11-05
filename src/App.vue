@@ -237,6 +237,13 @@ html {
   }
 }
 
+/* Small phones, logged out: Log in and Sign up don't fit next to the logo's name either */
+@media (max-width: 419.98px) {
+  .app-nav:not(.in-room) .brand-text {
+    display: none;
+  }
+}
+
 /* Phones, logged in: 4 to 5 icons, the picture and Log out don't fit next to the logo's name, and the page would
    get wider than the screen. So the name goes (the logo stays) and the icons sit closer together. */
 @media (max-width: 519.98px) {
