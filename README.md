@@ -3,7 +3,7 @@
 
 > Take a photostrip together, from anywhere. Built with Vue 3, Vue Router, Bootstrap 5, Firebase, Agora and Vercel.
 
-Friends join one room from their own phones and laptops (a 4-digit code or a QR code), video call, and take photos together on one synchronised countdown. Then they make the photostrip together: pick the photos and the frame, cut a video, decorate it with stickers, mix a soundtrack, and export it as a PNG, GIF or MP4 with a link and QR code to share. Accounts keep their strips, frames and stickers in **My Studio** and share frames and stickers in the **Marketplace**. Moderators have an **Admin** page.
+Friends join one room from their own phones and laptops (a 4-digit code or a QR code), video call, and take photos together on one synchronised countdown. Then they make the photostrip together: pick the photos and the frame, cut a video, decorate it with stickers, mix a soundtrack, and export it with a link and QR code to share. Nobody picks the format: a still strip becomes a PNG, and a strip with a video, a moving (GIF) sticker or music becomes an MP4. Accounts keep their strips, frames and stickers in **My Studio** and share frames and stickers in the **Marketplace**. Moderators have an **Admin** page.
 
 This README sets the project up from scratch, step by step: a Vue 3 frontend, a Firebase backend (Auth, Firestore, Storage), Vercel serverless functions, and three test suites. Follow the steps below in order.
 
@@ -15,7 +15,7 @@ This README sets the project up from scratch, step by step: a Vue 3 frontend, a 
 | Backend | Firebase Authentication, Cloud Firestore (real-time `onSnapshot` listeners), Firebase Storage, protected by security rules |
 | Server functions | Vercel serverless functions in `api/` (video call tokens, admin actions, room cleanup, sticker APIs), Firebase Admin SDK |
 | Video call | Agora Web SDK (`agora-rtc-sdk-ng`), tokens made on the server with `agora-token` |
-| Media | MediaDevices API (camera), Canvas API, MediaRecorder, FFmpeg.wasm (MP4), gifenc (GIF), Tone.js (music mixer), MediaPipe (face filters) |
+| Media | MediaDevices API (camera), Canvas API, MediaRecorder, FFmpeg.wasm (MP4), gifenc (animated GIF stickers), Tone.js (music mixer), MediaPipe (face filters) |
 | Outside APIs | Jamendo (songs), remove.bg (sticker backgrounds), OpenWeatherMap and OpenStreetMap (live stickers), GIPHY |
 | Build tool | Vite |
 | Tests | Vitest (components), `@firebase/rules-unit-testing` + Firebase emulators (security rules), Playwright (end-to-end) |
@@ -27,14 +27,13 @@ Don't want to set up your own Firebase project? Try the deployed app:
 
 **🔗 [blue-studios-mu.vercel.app](https://blue-studios-mu.vercel.app)**
 
-Two demo accounts are available:
+Demo account available:
 
 | Role  | Email | Password |
 |-------|-------|----------|
 | User  | `blue.studios.cc+test1@gmail.com` | `ii&ehV47GH3WP&S#XOi!` |
 
 - Log in with the **user** account to try **My Studio**, the **Marketplace**, the **Frame Editor** and the **Sticker Maker**.
-- Log in with the **admin** account to explore the **Admin** page (reports, items, accounts, rooms, the moderator log).
 - **No account needed for a room.** Type your name and press **Create a new room**. Open the site on a second device (or scan the QR code with your phone), type the 4-digit code and press **Join**. Press the round shutter button: the countdown runs on every device.
 - Alternatively, click **Sign up** to make your own free account.
 
@@ -268,7 +267,9 @@ src/
 ├── roomCleanup.js        # The room cleanup rules (shared with api/cleanup.js)
 ├── stripData.js          # Strip layouts, frame styles, filters, safeStickers
 ├── shares.js             # A finished strip with a link and QR code
-├── exportFile.js, stripRender.js, gif.js, ffmpeg.js, mixRender.js   # Building the PNG / GIF / MP4 and the music mix
+├── exportFile.js, stripRender.js, ffmpeg.js, mixRender.js   # Building the PNG / MP4 and the music mix
+├── exportRules.js        # Which format a strip is exported as (PNG or MP4)
+├── gif.js                # The GIF encoder for animated stickers in the Sticker Maker
 └── utils/                # Cleaning uploaded SVGs, the QR code with our logo, the frame editor's file format, ...
 
 api/                      # Vercel serverless functions
@@ -298,7 +299,7 @@ The rest of this README is the reference: how each part works, for teammates and
 rooms/{code}                 { hostId, hostName, shotNumber, shotStartedBy, stage, furthestStage, visitedStages, lastActive, keep, closed, createdAt,
                                captureMode, virtualFriends, startTemplateId,
                                stripLayoutId, stripStyleId, stripCustomTemplate, stripSlots, stripCrops, stripEdits, stripStickers,
-                               videoTimeline, videoEditing, editedVideos, mixer, music, exportFormat, exportName, exportJob }
+                               videoTimeline, videoEditing, editedVideos, mixer, music, exportName, exportJob }
 rooms/{code}/members/{id}    { name, deviceType, joinedAt, lastSeen }
 rooms/{code}/photos/{auto}   { ownerId, name, shotNumber, image, createdAt }
 rooms/{code}/clips/{auto}    { ownerId, name, shotNumber, path, mime, mirrored, createdAt }   (the video file is in Storage)
@@ -337,7 +338,7 @@ templates/{id}  { ownerId, ownerName, name, slotCount, categories, visibility, s
 stickers/{id}   { ownerId, ownerName, name, kind, categories, visibility, status, saveCount, imagePath, cardPath, cardUrl, createdAt, updatedAt }
                   Storage: stickers/{uid}/{id}/image
 strips/{id}     { ownerId, title, imagePath, format, shareId, createdAt }
-                  Storage: strips/{uid}/{id}.png / .gif / .mp4
+                  Storage: strips/{uid}/{id}.png / .mp4
 ```
 
 - `categories`: 1 to 3 ids from `CATEGORIES` in [`studio.js`](src/studio.js) (`birthday`, `friends`, `love`, `graduation`, `holiday`, `cute`, `minimal`, `other`).
