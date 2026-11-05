@@ -23,7 +23,7 @@
 import { ref } from 'vue'
 import { getFaceFilter } from '../filters/faceFilters.js'
 import { loadMediaPipe, createTask } from '../utils/mediapipe.js'
-import { drawBehindLayer, releaseBehindLayer } from './useBehindLayer.js'
+import { drawBehindLayer, isMyCutoutReady, drawMyCutout, releaseBehindLayer } from './useBehindLayer.js'
 
 const FRAME_RATE = 30 // frames per second sent out from the canvas
 const MAX_FACES = 4   // several friends can share one camera in a photobooth
@@ -196,20 +196,33 @@ function drawFrame() {
     return
   }
 
+  const filter = getFaceFilter(faceFilterId.value)
+  const filterReady = filter.parts.length > 0 && faceLandmarker && !faceFilterLoading.value
+  const behindParts = filterReady ? filter.parts.filter((part) => part.behind) : []
+
   // The layer behind me (people added by the host, see useBehindLayer.js) draws the whole picture
   // with me cut out on top. If it is not in use (or still loading), just draw the camera.
-  if (!drawBehindLayer(ctx, sourceVideo, width, height)) {
+  if (!drawBehindLayer(ctx, sourceVideo, width, height, behindParts.length > 0)) {
     ctx.drawImage(sourceVideo, 0, 0, width, height)
   }
-
-  // Face stickers go on top of everything
-  const filter = getFaceFilter(faceFilterId.value)
-  if (filter.parts.length === 0 || !faceLandmarker || faceFilterLoading.value) return
+  if (!filterReady) return
 
   findFaces()
+
+  // Parts behind me: drawn over the picture so far, then me (cut out) drawn on top of them again
+  if (behindParts.length > 0 && faces.length > 0 && isMyCutoutReady(sourceVideo)) {
+    for (const face of faces) {
+      for (const part of behindParts) {
+        drawPart(face, part)
+      }
+    }
+    drawMyCutout(ctx, sourceVideo, width, height)
+  }
+
+  // The other face stickers go on top of everything
   for (const face of faces) {
     for (const part of filter.parts) {
-      drawPart(face, part)
+      if (!part.behind) drawPart(face, part)
     }
   }
 }
@@ -279,7 +292,7 @@ function drawPart(face, part) {
   // Move to the spot, turn with the head, move by the offset, then draw the picture centred there
   ctx.save()
   ctx.translate(x, y)
-  ctx.rotate(tilt)
+  if (!part.upright) ctx.rotate(tilt)
   ctx.translate(part.offsetX * eyeWidth, part.offsetY * eyeWidth)
   if (part.flip) ctx.scale(-1, 1) // mirror the picture left-right
   ctx.drawImage(img, -width / 2, -height / 2, width, height)

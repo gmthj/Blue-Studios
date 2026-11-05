@@ -135,7 +135,7 @@ let pictureHeight = 1
 
 // Draws the whole picture (see the top of this file). Returns false if there is nothing to do
 // (or it is still loading), and then the camera should be drawn normally.
-function drawBehindLayer(ctx, myVideo, width, height) {
+function drawBehindLayer(ctx, myVideo, width, height, keepMyCutout = false) {
   const myId = getUid()
   drawnOthers = [] // nobody drawn yet this frame (stays empty if the layer is not drawn)
 
@@ -151,7 +151,9 @@ function drawBehindLayer(ctx, myVideo, width, height) {
   }
   forgetUnusedRemoteVideos()
   const others = entries.filter((entry) => entry.id !== myId)
-  forgetUnusedCutouts(others.length > 0 ? entries.map((entry) => entry.video) : [])
+  const videosInUse = others.length > 0 ? entries.map((entry) => entry.video) : []
+  if (keepMyCutout) videosInUse.push(myVideo) // a face filter with a "behind" part also needs my cut-out
+  forgetUnusedCutouts(videosInUse)
   if (others.length === 0) return false
 
   const me = getCutout(myVideo)
@@ -266,6 +268,19 @@ function drawBehindLayer(ctx, myVideo, width, height) {
   // 3. Me, cut out, on top
   drawCutout(ctx, myVideo, me, 0, 0, width, height)
   return true
+}
+
+// For face filters with a part BEHIND me (see faceFilters.js):
+//   if (isMyCutoutReady(myVideo)) { ...draw the behind parts...; drawMyCutout(ctx, myVideo, width, height) }
+// Not ready yet (cut-out model still downloading) = draw no behind parts.
+function isMyCutoutReady(myVideo) {
+  const me = getCutout(myVideo)
+  return me.ready && me.hasPerson
+}
+
+function drawMyCutout(ctx, myVideo, width, height) {
+  const me = cutouts.get(myVideo)
+  if (me && me.ready) drawCutout(ctx, myVideo, me, 0, 0, width, height)
 }
 
 // If the line-up is too long to fit on one side of the anchor, bring that side's people closer together,
@@ -906,4 +921,4 @@ export function useBehindLayer() {
   }
 }
 
-export { drawBehindLayer, releaseBehindLayer, setBehindLayerMirrored, setRemoteTrackSource, resetBehindLayer }
+export { drawBehindLayer, isMyCutoutReady, drawMyCutout, releaseBehindLayer, setBehindLayerMirrored, setRemoteTrackSource, resetBehindLayer }
