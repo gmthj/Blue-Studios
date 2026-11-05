@@ -26,8 +26,9 @@ export const adminAuth = getAuth(adminApp)
 export const adminDb = getFirestore(adminApp)
 const bucket = getStorage(adminApp).bucket()
 
-// /api/* are Vercel functions (video call tokens, admin bans, weather...). The test server (Vite) doesn't run them,
-// so by default they answer like a server that is down. A test can answer one itself with page.route(...):
+// /api/* are Vercel functions (video call tokens, admin bans, weather...). The test server (Vite, vite.config.js)
+// would run them with the real keys from .env, so the browser stops them here: by default they answer like a
+// server that is down. A test can answer one itself with page.route(...):
 // routes added later are tried first.
 export const test = base.extend({
   page: async ({ page }, use) => {
