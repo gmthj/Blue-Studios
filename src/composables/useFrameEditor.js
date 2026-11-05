@@ -1339,6 +1339,20 @@ function onCollectiveDblClick(event) {
   }
 }
 
+// Resize and rotate handles use pointer events, so they work with a mouse, a pen and a finger.
+// preventDefault on pointerdown also stops the browser's copied mousedown, which would start a drag of the element.
+function listenToPointer(onMove, onUp) {
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp)
+  window.addEventListener('pointercancel', onUp)
+}
+
+function stopListeningToPointer(onMove, onUp) {
+  window.removeEventListener('pointermove', onMove)
+  window.removeEventListener('pointerup', onUp)
+  window.removeEventListener('pointercancel', onUp)
+}
+
 function startCollectiveResize(handle, event) {
   if (event.button !== 0) return
   event.preventDefault()
@@ -1362,8 +1376,7 @@ function startCollectiveResize(handle, event) {
     }))
   }
 
-  window.addEventListener('mousemove', onCollectiveResizeMove)
-  window.addEventListener('mouseup', onCollectiveResizeUp)
+  listenToPointer(onCollectiveResizeMove, onCollectiveResizeUp)
 }
 
 function onCollectiveResizeMove(event) {
@@ -1398,7 +1411,7 @@ function onCollectiveResizeMove(event) {
     const relY = initial.y - initialBounds.minY
     item.x = Math.round(initialBounds.minX + relX * scale)
     item.y = Math.round(initialBounds.minY + relY * scale)
-    if (item.type === 'tape' || item.type === 'shape') {
+    if (item.type === 'tape' || item.type === 'shape' || item.type === 'image' || (item.type === 'sticker' && item.isSvg)) {
       item.width = Math.max(16, Math.round(initial.width * scale))
       item.height = Math.max(10, Math.round(initial.height * scale))
     } else if (item.type === 'sticker' || item.type === 'text') {
@@ -1412,8 +1425,7 @@ function onCollectiveResizeUp() {
     isCollectiveResizing.value = false
     saveHistoryState()
   }
-  window.removeEventListener('mousemove', onCollectiveResizeMove)
-  window.removeEventListener('mouseup', onCollectiveResizeUp)
+  stopListeningToPointer(onCollectiveResizeMove, onCollectiveResizeUp)
 }
 
 function startCollectiveRotate(event) {
@@ -1444,8 +1456,7 @@ function startCollectiveRotate(event) {
     }))
   }
 
-  window.addEventListener('mousemove', onCollectiveRotateMove)
-  window.addEventListener('mouseup', onCollectiveRotateUp)
+  listenToPointer(onCollectiveRotateMove, onCollectiveRotateUp)
 }
 
 function onCollectiveRotateMove(event) {
@@ -1481,8 +1492,7 @@ function onCollectiveRotateUp() {
     isCollectiveRotating.value = false
     saveHistoryState()
   }
-  window.removeEventListener('mousemove', onCollectiveRotateMove)
-  window.removeEventListener('mouseup', onCollectiveRotateUp)
+  stopListeningToPointer(onCollectiveRotateMove, onCollectiveRotateUp)
 }
 
 // =============================================================================
@@ -1589,48 +1599,62 @@ function onMarqueeMouseUp() {
 // 12. Precision Transformations (Single Resize, Rotate, Nudge)
 // =============================================================================
 function startResize(el, handle, event) {
+  if (event.button !== undefined && event.button !== 0) return
   event.stopPropagation()
   event.preventDefault()
+  if (el.isLocked) return
   isResizing.value = true
   resizeTarget.value = el
   resizeData.value = {
     startX: event.clientX,
     startY: event.clientY,
+    startElX: el.x || 0,
+    startElY: el.y || 0,
     startW: el.width || 36,
     startH: el.height || 36,
     startFontSize: el.fontSize || 24,
+    hasSize: Boolean(el.width && el.height), // emoji and text are sized by their font, so their box size isn't known here
     handle: handle
   }
-  window.addEventListener('mousemove', onResizeMove)
-  window.addEventListener('mouseup', onResizeUp)
+  listenToPointer(onResizeMove, onResizeUp)
 }
 
 function onResizeMove(event) {
   if (!isResizing.value || !resizeTarget.value) return
   const el = resizeTarget.value
-  const { startX, startY, startW, startH, startFontSize, handle } = resizeData.value
+  const { startX, startY, startElX, startElY, startW, startH, startFontSize, hasSize, handle } = resizeData.value
+  // How far the pointer moved, in canvas pixels, turned so that "outwards from the corner" is positive
   let dx = (event.clientX - startX) / canvasScale.value
   let dy = (event.clientY - startY) / canvasScale.value
+  if (handle.includes('w')) dx = -dx
+  if (handle.includes('n')) dy = -dy
 
-  if (handle === 'nw') {
-    dx = -dx
-    dy = -dy
-  } else if (handle === 'ne') {
-    dy = -dy
-  } else if (handle === 'sw') {
-    dx = -dx
-  }
-
+  let newW
+  let newH
   if (el.type === 'sticker' || el.type === 'text' || el.type === 'image') {
-    const delta = (dx + dy) / 2
-    const scale = Math.max(0.25, (startW + delta) / startW)
-    if (el.fontSize) el.fontSize = Math.max(12, Math.min(84, Math.round(startFontSize * scale)))
-    el.width = Math.max(18, Math.min(500, Math.round(startW * scale)))
-    el.height = Math.max(18, Math.min(500, Math.round(startH * scale)))
+    // Keep the shape: one scale for both sides. Follow whichever direction the pointer moved most,
+    // so dragging straight sideways works as well as dragging diagonally.
+    const scaleX = (startW + dx) / startW
+    const scaleY = (startH + dy) / startH
+    let scale = Math.abs(scaleX - 1) > Math.abs(scaleY - 1) ? scaleX : scaleY
+    // The same limits for both sides, so the picture never gets squashed when one side hits a limit
+    const minScale = Math.max(18 / startW, 18 / startH, 0.1)
+    const maxScale = Math.max(minScale, Math.min(800 / startW, 800 / startH))
+    scale = Math.max(minScale, Math.min(maxScale, scale))
+    if (el.fontSize) el.fontSize = Math.max(8, Math.min(200, Math.round(startFontSize * scale)))
+    newW = Math.round(startW * scale)
+    newH = Math.round(startH * scale)
   } else {
-    el.width = Math.max(25, Math.min(260, Math.round(startW + dx)))
-    el.height = Math.max(10, Math.min(180, Math.round(startH + dy)))
+    newW = Math.max(25, Math.min(400, Math.round(startW + dx)))
+    newH = Math.max(10, Math.min(300, Math.round(startH + dy)))
   }
+  el.width = newW
+  el.height = newH
+
+  // The corner on the other side stays where it is: dragging a left or top handle moves the element too
+  if (!hasSize) return
+  if (handle.includes('w')) el.x = Math.round(startElX + (startW - newW))
+  if (handle.includes('n')) el.y = Math.round(startElY + (startH - newH))
 }
 
 function onResizeUp() {
@@ -1639,8 +1663,7 @@ function onResizeUp() {
     resizeTarget.value = null
     saveHistoryState()
   }
-  window.removeEventListener('mousemove', onResizeMove)
-  window.removeEventListener('mouseup', onResizeUp)
+  stopListeningToPointer(onResizeMove, onResizeUp)
 }
 
 function startRotate(el, event) {
@@ -1665,8 +1688,7 @@ function startRotate(el, event) {
 
   rotateInitialRotation.value = el.rotation || 0
 
-  window.addEventListener('mousemove', onRotateMove)
-  window.addEventListener('mouseup', onRotateUp)
+  listenToPointer(onRotateMove, onRotateUp)
 }
 
 function onRotateMove(event) {
@@ -1693,8 +1715,7 @@ function onRotateUp() {
     rotateTarget.value = null
     saveHistoryState()
   }
-  window.removeEventListener('mousemove', onRotateMove)
-  window.removeEventListener('mouseup', onRotateUp)
+  stopListeningToPointer(onRotateMove, onRotateUp)
 }
 
 let nudgeDebounceTimer = null
@@ -3934,10 +3955,12 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', updateScreenSize)
   window.removeEventListener('mousemove', onMouseMove)
   window.removeEventListener('mouseup', onMouseUp)
-  window.removeEventListener('mousemove', onResizeMove)
-  window.removeEventListener('mouseup', onResizeUp)
-  window.removeEventListener('mousemove', onRotateMove)
-  window.removeEventListener('mouseup', onRotateUp)
+  window.removeEventListener('touchmove', onTouchMove)
+  window.removeEventListener('touchend', onTouchEnd)
+  stopListeningToPointer(onResizeMove, onResizeUp)
+  stopListeningToPointer(onRotateMove, onRotateUp)
+  stopListeningToPointer(onCollectiveResizeMove, onCollectiveResizeUp)
+  stopListeningToPointer(onCollectiveRotateMove, onCollectiveRotateUp)
 })
 
 

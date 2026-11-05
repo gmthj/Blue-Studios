@@ -38,7 +38,7 @@ export const test = base.extend({
     // The floating video call window is remembered on each device (VideoCallCard.vue). Start it minimised, at the
     // top right, so it never covers the Back / Next buttons at the bottom of the room pages.
     await page.addInitScript(() => {
-      localStorage.setItem('callMinimised', 'true')
+      localStorage.setItem('callStartMinimised', 'true')
       localStorage.setItem('callDock', JSON.stringify({ x: 8, y: 64, right: true, bottom: false }))
     })
     await use(page)

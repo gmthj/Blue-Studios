@@ -684,6 +684,43 @@ function openFilePicker() {
   fileInput.value.click()
 }
 
+// Drag and drop: a photo dragged from the computer onto the Upload box (or the canvas) is added like an upload.
+// dragDepth counts enter / leave, because moving over a child element fires a leave on its parent.
+const dropActive = ref(false)
+let dragDepth = 0
+
+function isFileDrag(event) {
+  return event.dataTransfer && Array.from(event.dataTransfer.types || []).includes('Files')
+}
+
+function onFileDragEnter(event) {
+  if (!isFileDrag(event)) return
+  event.preventDefault()
+  dragDepth++
+  dropActive.value = true
+}
+
+function onFileDragOver(event) {
+  if (!isFileDrag(event)) return
+  event.preventDefault() // without this the browser opens the photo instead of dropping it here
+  event.dataTransfer.dropEffect = 'copy'
+}
+
+function onFileDragLeave(event) {
+  if (!isFileDrag(event)) return
+  dragDepth = Math.max(0, dragDepth - 1)
+  if (dragDepth === 0) dropActive.value = false
+}
+
+async function onFileDrop(event) {
+  if (!isFileDrag(event)) return
+  event.preventDefault()
+  dragDepth = 0
+  dropActive.value = false
+  const file = Array.from(event.dataTransfer.files).find((f) => f.type.startsWith('image/')) || event.dataTransfer.files[0]
+  if (file) await addPhotoFile(file)
+}
+
 async function uploadPhoto(event) {
   const file = event.target.files[0]
   if (!file) return
@@ -2359,9 +2396,18 @@ function imageStyle(layer) {
 
           <!-- ---------- UPLOAD ---------- -->
           <template v-else-if="tool === 'upload'">
-            <button type="button" class="sm-drop" @click="openFilePicker">
+            <button
+              type="button"
+              class="sm-drop"
+              :class="{ 'is-dragover': dropActive }"
+              @click="openFilePicker"
+              @dragenter="onFileDragEnter"
+              @dragover="onFileDragOver"
+              @dragleave="onFileDragLeave"
+              @drop="onFileDrop"
+            >
               <span class="empty-icon"><AppIcon name="upload" :size="20" /></span>
-              <span class="sm-drop-title">Choose a photo</span>
+              <span class="sm-drop-title">{{ dropActive ? 'Drop to add it' : 'Choose or drop a photo' }}</span>
               <span class="sm-hint mt-0">PNG, JPEG or WebP</span>
             </button>
             <input
@@ -2381,7 +2427,15 @@ function imageStyle(layer) {
 
       <!-- ---------- CANVAS + FRAMES ---------- -->
       <main class="sm-main">
-        <div ref="stageEl" class="sm-stage">
+        <div
+          ref="stageEl"
+          class="sm-stage"
+          :class="{ 'is-dragover': dropActive }"
+          @dragenter="onFileDragEnter"
+          @dragover="onFileDragOver"
+          @dragleave="onFileDragLeave"
+          @drop="onFileDrop"
+        >
           <!-- Text bar: shows while a text box is selected. pointerdown.prevent on the buttons
                keeps you typing in the box while you press Bold or pick a colour. -->
           <div v-if="selectedText && !drawing && !playing" class="sm-drawbar" role="toolbar" aria-label="Text style">
@@ -3640,6 +3694,8 @@ function imageStyle(layer) {
   transition: border-color 150ms ease, background-color 150ms ease, transform 160ms var(--ease-out);
 }
 .sm-drop:active { transform: scale(0.98); }
+.sm-drop.is-dragover { border-color: var(--brand); background: var(--brand-tint); }
+.sm-stage.is-dragover { box-shadow: inset 0 0 0 2px var(--brand); }
 .sm-drop-title { font-weight: 700; color: var(--ink); }
 
 /* ---------- canvas stage: a dotted cutting mat ---------- */

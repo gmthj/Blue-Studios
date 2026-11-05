@@ -158,7 +158,9 @@ async function logOutAndGoHome() {
 /* Full-height viewport workspace for template editor */
 .editor-main {
   height: calc(100vh - 57px);
+  height: calc(100dvh - 57px); /* the visible screen height on phones (100vh counts the space under the address bar) */
   max-height: calc(100vh - 57px);
+  max-height: calc(100dvh - 57px);
   overflow: hidden;
   display: flex;
   flex-direction: column;

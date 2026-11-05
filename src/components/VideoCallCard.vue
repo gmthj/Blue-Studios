@@ -18,7 +18,7 @@ const uid = getUid()
 const { room, activeMembers } = useRoom()
 const { micOn, micBusy, toggleMic, callError } = useVideoCall()
 
-// The position and minimised state are remembered on this device (localStorage), so they stay the same
+// The position and size are remembered on this device (localStorage), so they stay the same
 // when moving between pages. try/catch because some browsers block localStorage (e.g. private mode).
 function loadSetting(key, fallback) {
   try {
@@ -36,14 +36,13 @@ function saveSetting(key, value) {
   }
 }
 
-// Phones (narrower than Bootstrap "sm", 576px) start minimised, so the call does not cover the page.
-// localStorage only stores text, so true / false are saved as 'true' / 'false'.
-const savedMinimised = loadSetting('callMinimised', '')
-const minimised = ref(savedMinimised ? savedMinimised === 'true' : window.innerWidth < 576)
+// The call always starts open when joining a room, so everyone sees who is in it. This window is made once
+// per room (RoomLayout.vue), so minimising it lasts until leaving the room.
+// (The end-to-end tests set 'callStartMinimised' so the window never covers the buttons they click.)
+const minimised = ref(loadSetting('callStartMinimised', '') === 'true')
 
 async function toggleMinimised() {
   minimised.value = !minimised.value
-  saveSetting('callMinimised', String(minimised.value))
   await nextTick()  // wait for the new size...
   keepOnScreen()    // ...then make sure it did not grow off the screen
 }
@@ -72,7 +71,8 @@ const dragging = ref(false)
 let dragPointer = null           // the finger / mouse doing the drag or resize (other fingers are ignored)
 let grabOffset = { x: 0, y: 0 }  // where on the window the pointer grabbed it
 
-// Where it was last time, or the bottom-right corner the first time
+// Where it was last time, or the top-right corner (just under the navbar) the first time.
+// Not the bottom: the call starts open, and there it would cover the Back / Next bar.
 function loadDock() {
   try {
     const saved = JSON.parse(loadSetting('callDock', ''))
@@ -80,7 +80,7 @@ function loadDock() {
   } catch {
     // nothing saved yet: use the default below
   }
-  return { x: EDGE, y: EDGE, right: true, bottom: true }
+  return { x: EDGE, y: 64, right: true, bottom: false }
 }
 
 // left / right and top / bottom for the style, depending on the corner it is docked to
@@ -451,6 +451,7 @@ onBeforeUnmount(() => {
   z-index: 1040;
   max-width: calc(100vw - 16px); /* never bigger than the screen (the width and height are set by the script) */
   max-height: calc(100vh - 16px);
+  max-height: calc(100dvh - 16px);
   overflow: hidden;
   color: var(--call-text);
   background: var(--call-bg);
