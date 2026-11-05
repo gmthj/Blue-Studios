@@ -31,7 +31,16 @@ const props = defineProps({
   selectedStickerId: { type: Number, default: null },   // the sticker to outline
 })
 
-const emit = defineEmits(['drop-photo', 'slot-click', 'clear-slot', 'crop-slot', 'drop-sticker', 'move-sticker', 'sticker-click', 'sticker-dblclick', 'delete-sticker', 'update-sticker', 'strip-click'])
+const emit = defineEmits(['drop-photo', 'slot-click', 'clear-slot', 'crop-slot', 'drop-sticker', 'move-sticker', 'sticker-click', 'sticker-dblclick', 'delete-sticker', 'update-sticker', 'strip-click', 'crop-start', 'crop-preview'])
+
+// A saved frame's picture is a snapshot of the Frame Editor's strip: 280px wide with 18px round corners and a soft
+// shadow under it. The snapshot is square, so the shadow shows in its corners as a faint outline around the frame.
+// Rounding the strip the same way (18 / 280 of the width; across and down, as % of the width and of the height)
+// cuts that off, so only the frame itself shows.
+const templateCorners = computed(() => {
+  const across = (18 / 280) * 100
+  return across + '% / ' + across * (Number(props.layout.aspect) || 0.3) + '%'
+})
 
 const stripEl = ref(null)   // the strip <div>, measured to work out where things are dropped
 const hoverSlot = ref(null) // the slot under a dragged photo (highlighted)
@@ -42,6 +51,9 @@ const hoverSlot = ref(null) // the slot under a dragged photo (highlighted)
 // While someone drags, the new position is only shown on their screen (liveCrop).
 // It is saved once, when they let go, so Firestore is not written on every mouse movement.
 const liveCrop = ref(null)       // { index, crop } while something is being moved or zoomed, otherwise null
+// The page hears about it too, so its reposition card follows the slot being touched and its zoom number moves live:
+// crop-start (index) as soon as a slot with a picture is pressed or scrolled, crop-preview ({ index, crop } or null)
+watch(liveCrop, (value) => emit('crop-preview', value))
 const panningIndex = ref(null)   // the slot being dragged right now (shows the grid), or null
 const hintOffIndex = ref(null)   // the slot just moved or zoomed: its hint stays hidden until the mouse leaves it
 const mouseOverIndex = ref(null) // the slot the MOUSE is over (not a finger), to show the hint
@@ -102,6 +114,7 @@ function onPanStart(event, index) {
 
   if (pointers.size === 1) {
     // First finger (or the mouse): start a drag
+    emit('crop-start', index)
     pan = { index: index, startX: event.clientX, startY: event.clientY, startCrop: cropFor(index), moved: false, pinch: null }
   } else if (pointers.size === 2 && pan && pan.index === index) {
     // Second finger on the same slot: start a pinch from where the picture is now
@@ -165,6 +178,7 @@ function onPanEnd(event) {
 function onWheel(event, index) {
   if (!canCrop(index)) return
   event.preventDefault()
+  emit('crop-start', index)
   const crop = { ...cropFor(index) }
   crop.zoom = Math.min(MAX_ZOOM, Math.max(1, crop.zoom - event.deltaY * 0.002)) // wheel down = zoom out
   liveCrop.value = { index: index, crop: crop }
@@ -464,7 +478,8 @@ function onStripClick(event) {
       aspectRatio: layout.aspect,
       '--strip-aspect': layout.aspect,
       background: frameStyle.thumbnailUrl ? `url(${frameStyle.thumbnailUrl}) center/cover no-repeat` : frameStyle.background,
-      borderColor: frameStyle.border
+      borderColor: frameStyle.border,
+      borderRadius: frameStyle.thumbnailUrl ? templateCorners : undefined
     }"
     @dragover.prevent="onDragOver"
     @dragleave="hoverSlot = null"
@@ -522,11 +537,11 @@ function onStripClick(event) {
       </div>
       <span v-else-if="mode === 'pick'" class="slot-empty">Drop here</span>
 
-      <!-- Reposition helpers (Pick page): a rule-of-thirds grid while dragging, otherwise a hint that shows on hover
-           (hidden after the picture is moved or zoomed, until the mouse leaves the slot) -->
+      <!-- Reposition helpers (Pick page): a rule-of-thirds grid while dragging, otherwise a hint inside the slot
+           when the mouse is over it (hidden after the picture is moved or zoomed, until the mouse leaves the slot) -->
       <template v-if="canCrop(index)">
         <div v-if="panningIndex === index" class="crop-grid"></div>
-        <span class="crop-hint" :class="{ show: showHint(index) }">✥ Hold &amp; drag to reposition</span>
+        <span class="crop-hint" :class="{ show: showHint(index) }" aria-hidden="true">✥ Hold &amp; drag to move · Scroll to zoom</span>
       </template>
 
 
@@ -638,7 +653,9 @@ function onStripClick(event) {
   /* At most 300px wide, and never taller than the page's stage (--stage-h, set by the page around the strip;
      82% of the screen height if the page sets none). width = height × aspect, so every frame, default or saved,
      fits in the same space whatever its shape. */
-  max-width: min(300px, calc(var(--stage-h, 82vh) * var(--strip-aspect, 0.3)));
+  max-width: var(--strip-max-w, min(var(--strip-cap, 300px), calc((var(--stage-h, 82vh) - 12px) * var(--strip-aspect, 0.3))));
+  /* (--strip-cap: the Decorate page lets the strip be as wide as on the Pick page. The Pick page sets
+     --strip-max-w: none and sizes the strip itself, so it can be zoomed.) */
   margin: 0 auto;
 }
 
@@ -734,25 +751,32 @@ function onStripClick(event) {
   border: 3px solid #2F5BEA;
 }
 
-/* "Hold & drag to reposition": hidden until showHint() adds the "show" class (see the script) */
+/* "Hold & drag to move · Scroll to zoom": a see-through label inside each slot, in the middle, shown while the
+   mouse is over that slot (showHint in the script). It wraps onto 2 lines in a small slot, so it is never cut off. */
 .crop-hint {
   position: absolute;
-  left: 50%;
   top: 50%;
-  transform: translate(-50%, -50%);
-  background: rgba(20, 23, 43, 0.72);
+  left: 50%;
+  z-index: 5;
+  width: max-content;
+  max-width: calc(100% - 12px);
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(20, 23, 43, 0.6);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
   color: #fff;
-  font-size: 0.65rem;
+  font-size: 0.66rem;
   font-weight: 600;
-  padding: 3px 10px;
-  border-radius: 999px;
-  white-space: nowrap;
+  line-height: 1.3;
+  text-align: center;
+  text-wrap: balance;
+  transform: translate(-50%, -50%);
   pointer-events: none; /* the slot underneath still gets the drag */
   opacity: 0;
-  transition: opacity 0.15s ease;
+  transition: opacity 150ms ease;
 }
 
-/* Fades in and out (the transition on .crop-hint) */
 .crop-hint.show {
   opacity: 1;
 }

@@ -1,11 +1,11 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { playSound } from '../sounds.js'
 import { updateDoc } from 'firebase/firestore'
 import { useRoom } from '../composables/useRoom.js'
 import { useAuth } from '../composables/useAuth.js'
 import { LAYOUTS, FRAME_STYLES, saveFields, saveField, cropOf, MAX_ZOOM, emptySlotIndexes, cutLabel, safeStickers } from '../stripData.js'
-import { listMyItems, getFileUrl, templateFrameFields, loadTemplateProject } from '../studio.js'
+import { listMyItems, getFileUrl, templateFrameFields, loadTemplateProject, CATEGORIES } from '../studio.js'
 import { getItem, listMySaved, searchPublicItems } from '../marketplace.js'
 import { loadSavedFramesFromDB } from '../utils/savedFrameEngine.js'
 import { resolveEditedVideos, editedVideoList } from '../clips.js'
@@ -15,6 +15,8 @@ import StageBar from '../components/StageBar.vue'
 import PhotoStrip from '../components/PhotoStrip.vue'
 import FrameTile from '../components/FrameTile.vue'
 import AppIcon from '../components/AppIcon.vue'
+import PageTip from '../components/PageTip.vue'
+import { askConfirm } from '../composables/useDialog.js'
 
 // The "Pick" page (a child of RoomLayout.vue): choose a frame and drag photos into it.
 //   Left:   gallery, photos grouped by session (shot)
@@ -24,6 +26,61 @@ import AppIcon from '../components/AppIcon.vue'
 
 const { room, photos, clips, roomRef, goToStage, fullStripBlocked } = useRoom() // goToStage: the whole room moves (the empty-state button below)
 const { isAccount } = useAuth()
+
+// ---------- FIRST-TIME TIPS ----------
+// The same idea as the GIF tips in the Sticker Maker: the first time someone opens the Pick page, three
+// small cards explain it, each one pointing at the part it is about (PageTip.vue). The "?" next to
+// Gallery shows them again. Remembered per browser (localStorage); if storage is blocked they just show again.
+const PICK_TIPS = [
+  {
+    target: 'gallery',
+    title: 'Your photos and videos',
+    text: 'Everything from the camera is here, grouped by session.',
+  },
+  {
+    target: 'strip',
+    title: 'Fill every slot',
+    text: 'Each slot needs to be filled before you can move on. Drag a photo or video onto a slot, or tap the photo and then the slot. Then drag inside the frame to move it.',
+  },
+  {
+    target: 'frames',
+    title: 'Choose a frame',
+    text: 'Pick a frame from Saved frames. Everyone in the room sees the same strip, so you can choose together.',
+  },
+]
+const PICK_TIPS_KEY = 'pick-tips-seen'
+const pickTipIndex = ref(-1)
+const pickTip = computed(() => PICK_TIPS[pickTipIndex.value] || null)
+
+function showPickTips() {
+  pickTipIndex.value = 0
+}
+
+function nextPickTip() {
+  if (pickTipIndex.value < PICK_TIPS.length - 1) pickTipIndex.value++
+  else closePickTips()
+}
+
+function closePickTips() {
+  pickTipIndex.value = -1
+  try {
+    localStorage.setItem(PICK_TIPS_KEY, '1')
+  } catch (error) {
+    // storage blocked: the tips will show again next time
+  }
+}
+
+function seenPickTips() {
+  try {
+    return localStorage.getItem(PICK_TIPS_KEY) === '1'
+  } catch (error) {
+    return false
+  }
+}
+
+onMounted(() => {
+  if (!seenPickTips()) showPickTips()
+})
 
 const selectedPhotoId = ref(null) // phones: the photo tapped (each person has their own)
 const targetSlot = ref(null)      // phones: the slot tapped first, waiting for a photo / video to be tapped
@@ -80,8 +137,6 @@ watch(isAccount, loadTemplates)
 // The account name is matched loosely ("Blue Studio", "blue studios", "BlueStudios" all count).
 const studioFrames = ref([])
 const loadingStudioFrames = ref(true)
-const DEFAULT_VISIBLE = 8           // 2 rows of 4, before "Show all"
-const showAllDefault = ref(false)
 
 function isStudioAccount(ownerName) {
   return /^blue\s*studios?$/i.test(String(ownerName || '').trim())
@@ -133,14 +188,62 @@ async function workOutCut(tpl) {
   }
 }
 
-// The default frames shown now: the first 8, or all of them after "Show all"
-const shownStudioFrames = computed(() =>
-  showAllDefault.value ? studioFrames.value : studioFrames.value.slice(0, DEFAULT_VISIBLE))
+// ---------- THE FRAME LIST: 3 DROPDOWNS ----------
+// Default, Mine and Saved each open and close (Default starts open). Inside Default every category
+// (Birthday, Friends, Cute...) is its own dropdown, in the marketplace's category order.
+// A frame can have up to 3 categories: it goes under its first one, so it only shows once.
+// Frames with no category go under Other.
+const openSections = ref(['default'])
+const openGroups = ref([]) // the Default categories that are open
 
-// Saved from the marketplace: the first 8 too, then "Show all"
-const showAllSaved = ref(false)
-const shownSavedFrames = computed(() =>
-  showAllSaved.value ? savedTemplates.value : savedTemplates.value.slice(0, DEFAULT_VISIBLE))
+function sectionOpen(id) {
+  return openSections.value.includes(id)
+}
+
+function toggleSection(id) {
+  openSections.value = sectionOpen(id)
+    ? openSections.value.filter((item) => item !== id)
+    : [...openSections.value, id]
+}
+
+const studioGroups = computed(() => {
+  const groups = CATEGORIES.map((category) => ({ id: category.id, label: category.label, frames: [] }))
+  const other = groups.find((group) => group.id === 'other')
+  for (const frame of studioFrames.value) {
+    const first = (frame.categories || [])[0]
+    const group = groups.find((item) => item.id === first) || other
+    group.frames.push(frame)
+  }
+  return groups.filter((group) => group.frames.length > 0)
+})
+
+function groupOpen(group) {
+  return openGroups.value.includes(group.id)
+}
+
+function toggleGroup(group) {
+  openGroups.value = groupOpen(group)
+    ? openGroups.value.filter((id) => id !== group.id)
+    : [...openGroups.value, group.id]
+}
+
+// When the default frames have loaded, open one category so there is something to pick straight away:
+// the one with the frame the room is using, or else the first
+let openedFirstGroup = false
+watch(studioGroups, (groups) => {
+  if (openedFirstGroup || groups.length === 0) return
+  openedFirstGroup = true
+  const current = groups.find((group) => group.frames.some((frame) => frame.id === frameStyle.value.id))
+  openGroups.value = [(current || groups[0]).id]
+}, { immediate: true })
+
+// Every default frame on screen now (to work out the cut under each, see below)
+const shownStudioFrames = computed(() => sectionOpen('default')
+  ? studioGroups.value.filter(groupOpen).flatMap((group) => group.frames)
+  : [])
+
+// The cut of the frame the room is using ("4-cut", "2x2"), under its name at the top
+const activeCut = computed(() => cutLabel((room.value.stripCustomTemplate && room.value.stripCustomTemplate.slots) || []))
 
 // The template the room was made with ("Use template" in the marketplace or My Studio, see RoomLayout.vue).
 // Listed first under "Mine", even if it isn't mine or saved, so the room can go back to it.
@@ -165,10 +268,6 @@ const mineTemplates = computed(() => {
   return [start, ...userTemplates.value]
 })
 
-// Mine shows 2 rows of 4 frames. With more than 8, the rows scroll sideways until "View all" is opened.
-const MINE_VISIBLE = 8
-const showAllMine = ref(false)
-
 // A templates/{id} document (mine or saved from the marketplace) as a swatch in the list
 async function templateSwatch(item) {
   let thumbUrl = null
@@ -186,6 +285,7 @@ async function templateSwatch(item) {
     dataPath: item.dataPath,
     thumbnailPath: item.thumbnailPath,
     slotCount: item.slotCount,
+    categories: item.categories || [], // e.g. ['birthday', 'cute'], to group the Default frames
     shape: 'square',
     background: '#FFFFFF',
     border: '#1A1A2E'
@@ -275,19 +375,6 @@ const sessions = computed(() => {
     groupFor(clip.shotNumber).clips.push(clip)
   }
   return groups.sort((a, b) => a.shotNumber - b.shotNumber)
-})
-
-// How many slots of the current layout have a photo
-const filledCount = computed(() => {
-  let count = 0
-  for (let i = 0; i < layout.value.slots.length; i++) {
-    const id = slotPhotos.value[i]
-    // a slot is filled by a photo, a clip, or an edited video (that still has clips)
-    if (id && (photosById.value[id] || clipsById.value[id] || (editedVideos.value[id] && editedVideos.value[id].entries.length > 0))) {
-      count = count + 1
-    }
-  }
-  return count
 })
 
 // ---------- EVERY FRAME MUST BE FILLED ----------
@@ -402,8 +489,23 @@ const cropLabel = computed(() => {
 // The saved crop of the slot being repositioned
 const currentCrop = computed(() => cropOf(room.value.stripCrops, cropSlot.value))
 
-// The zoom to show: the slider's value while it moves, otherwise the saved one
-const shownZoom = computed(() => (draftZoom.value !== null ? draftZoom.value : currentCrop.value.zoom))
+// The picture being dragged, pinched or scrolled in the strip right now ({ index, crop }), from PhotoStrip
+const liveCrop = ref(null)
+
+// Pressing, dragging or scrolling a picture in the strip: the reposition card switches to that slot straight away
+function onCropStart(index) {
+  if (cropSlot.value === index) return
+  cropSlot.value = index
+  draftZoom.value = null
+}
+
+// The zoom to show: the slider's value while it moves, the strip's while a picture is pinched or scrolled,
+// otherwise the saved one
+const shownZoom = computed(() => {
+  if (draftZoom.value !== null) return draftZoom.value
+  if (liveCrop.value && liveCrop.value.index === cropSlot.value) return liveCrop.value.crop.zoom
+  return currentCrop.value.zoom
+})
 
 // The crops given to the strip. While the zoom slider moves, the strip shows it straight away on this screen.
 const shownCrops = computed(() => {
@@ -451,6 +553,118 @@ onMounted(() => window.addEventListener('pointerdown', onAnyPointerDown))
 onBeforeUnmount(() => window.removeEventListener('pointerdown', onAnyPointerDown)) // stop listening when leaving the page
 
 // Back to the centred picture
+// ---------- ZOOMING THE WHOLE STRIP ----------
+// 100% is the strip as big as fits. Zoomed in, it gets bigger and the middle panel scrolls around it.
+// Ways to zoom: the round + / − at the right, the mouse wheel or a trackpad pinch over the strip,
+// or two fingers on a phone. Over a photo, the wheel / pinch zooms that photo instead (PhotoStrip.vue).
+// Zoomed in, dragging the frame or the empty space around it moves the view.
+const STRIP_ZOOMS = [1, 1.25, 1.5, 2, 2.5, 3]
+const MIN_STRIP_ZOOM = STRIP_ZOOMS[0]
+const MAX_STRIP_ZOOM = STRIP_ZOOMS[STRIP_ZOOMS.length - 1]
+const stripZoom = ref(1)
+const stripViewport = ref(null)
+
+// + / −: the next level up or down (also from an in-between zoom made with the wheel)
+function zoomStrip(step) {
+  const now = stripZoom.value
+  const next = step > 0
+    ? STRIP_ZOOMS.find((level) => level > now + 0.001)
+    : [...STRIP_ZOOMS].reverse().find((level) => level < now - 0.001)
+  setStripZoom(next === undefined ? now : next)
+}
+
+// Change the zoom, keeping the point at (x, y) in the box (the mouse, or between the fingers) where it is
+function setStripZoom(zoom, x, y) {
+  const box = stripViewport.value
+  const old = stripZoom.value
+  const next = Math.min(MAX_STRIP_ZOOM, Math.max(MIN_STRIP_ZOOM, Math.round(zoom * 100) / 100))
+  if (next === old) return
+  stripZoom.value = next
+  if (!box) return
+  const px = x === undefined ? box.clientWidth / 2 : x
+  const py = y === undefined ? box.clientHeight / 2 : y
+  const left = box.scrollLeft
+  const top = box.scrollTop
+  nextTick(() => {
+    box.scrollLeft = (left + px) * (next / old) - px
+    box.scrollTop = (top + py) * (next / old) - py
+  })
+}
+
+// The wheel (or a trackpad pinch, which comes as the wheel with Ctrl) over the strip's box
+function onStripWheel(event) {
+  if (event.defaultPrevented) return // a photo was zoomed (PhotoStrip.vue)
+  event.preventDefault()
+  const box = stripViewport.value.getBoundingClientRect()
+  const speed = event.ctrlKey ? 0.01 : 0.0015 // pinches send small steps
+  setStripZoom(stripZoom.value * Math.exp(-event.deltaY * speed), event.clientX - box.left, event.clientY - box.top)
+}
+
+// Zoomed in with a mouse: drag the frame or the space around it to move the view (not a photo: that moves the photo)
+let viewDrag = null // { x, y, left, top } while dragging the view
+const draggingView = ref(false)
+
+function onViewPointerDown(event) {
+  if (event.pointerType !== 'mouse' || event.button !== 0 || stripZoom.value <= 1) return
+  if (event.target.closest('.slot, button')) return
+  const box = stripViewport.value
+  viewDrag = { x: event.clientX, y: event.clientY, left: box.scrollLeft, top: box.scrollTop }
+  draggingView.value = true
+  box.setPointerCapture(event.pointerId)
+}
+
+function onViewPointerMove(event) {
+  if (!viewDrag) return
+  const box = stripViewport.value
+  box.scrollLeft = viewDrag.left - (event.clientX - viewDrag.x)
+  box.scrollTop = viewDrag.top - (event.clientY - viewDrag.y)
+}
+
+function onViewPointerUp() {
+  viewDrag = null
+  draggingView.value = false
+}
+
+// Phones: two fingers on the strip zoom it (not on a photo: that zooms the photo). One finger still scrolls.
+let viewPinch = null // { dist, zoom } while pinching
+
+function touchGap(touches) {
+  return Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY)
+}
+
+function onViewTouchStart(event) {
+  if (event.touches.length !== 2) return
+  if ([...event.touches].some((touch) => touch.target.closest && touch.target.closest('.slot.croppable'))) return
+  viewPinch = { dist: touchGap(event.touches), zoom: stripZoom.value }
+}
+
+function onViewTouchMove(event) {
+  if (!viewPinch || event.touches.length !== 2) return
+  event.preventDefault() // the strip zooms, not the whole page
+  const box = stripViewport.value.getBoundingClientRect()
+  const midX = (event.touches[0].clientX + event.touches[1].clientX) / 2 - box.left
+  const midY = (event.touches[0].clientY + event.touches[1].clientY) / 2 - box.top
+  setStripZoom(viewPinch.zoom * (touchGap(event.touches) / viewPinch.dist), midX, midY)
+}
+
+function onViewTouchEnd(event) {
+  if (event.touches.length < 2) viewPinch = null
+}
+
+// touchmove has to be added by hand, to be allowed to stop the page zooming (Vue's @touchmove is passive here)
+onMounted(() => {
+  if (stripViewport.value) stripViewport.value.addEventListener('touchmove', onViewTouchMove, { passive: false })
+})
+onBeforeUnmount(() => {
+  if (stripViewport.value) stripViewport.value.removeEventListener('touchmove', onViewTouchMove)
+})
+
+// Done in the reposition card: nothing selected any more
+function finishCrop() {
+  cropSlot.value = null
+  targetSlot.value = null
+}
+
 function resetCrop() {
   saveCrop(cropSlot.value, null)
 }
@@ -460,14 +674,41 @@ function resetCrop() {
 
 // A style only changes the colours and slot shape, so the photos stay
 async function chooseStyle(id) {
+  if (id === frameStyle.value.id) return
+  if (!(await sureToChangeFrame(layout.value.slots.length))) return
   await saveFields(roomRef(), { stripStyleId: id, stripCustomTemplate: null })
+}
+
+// Changing the frame changes it for everyone in the room. Once there are photos on the strip, ask first,
+// and say what happens to them (newSlots: how many slots the new frame has). True: go ahead.
+async function sureToChangeFrame(newSlots) {
+  const filled = layout.value.slots.filter((slot, index) => slotHasMedia(index)).length
+  if (filled === 0) return true
+  const now = layout.value.slots.length
+  let message = 'Everyone in the room will see the new frame. The photos stay in their slots.'
+  if (newSlots < now) {
+    message = 'It has ' + newSlots + ' slots instead of ' + now + ', so the photos in the last '
+      + (now - newSlots === 1 ? 'slot are' : (now - newSlots) + ' slots are') + ' left out. Everyone in the room will see the change.'
+  } else if (newSlots > now) {
+    message = 'It has ' + newSlots + ' slots instead of ' + now + ', so ' + (newSlots - now)
+      + ' more need filling before you can move on. Everyone in the room will see the change.'
+  }
+  return askConfirm({
+    title: 'Change the frame?',
+    message: message,
+    confirmLabel: 'Change frame',
+    cancelLabel: 'Keep this one',
+    danger: newSlots < now,
+    icon: 'layout',
+  })
 }
 
 // Choose a saved template from the Template Editor
 async function chooseCustomTemplate(tpl) {
   try {
-    // No question first: a template with a different number of photo slots clears the strip for everyone
-    const { fields } = await templateFrameFields(tpl)
+    if (tpl.id === frameStyle.value.id) return // already the frame in use
+    const { fields, slotCount } = await templateFrameFields(tpl)
+    if (!(await sureToChangeFrame(slotCount))) return
 
     await saveFields(roomRef(), fields)
   } catch (err) {
@@ -482,7 +723,11 @@ async function editSaved(edit) {
 
 // Work out the cut of every frame that is on screen (and of new ones as they load)
 watch(
-  () => [...shownStudioFrames.value, ...mineTemplates.value, ...shownSavedFrames.value],
+  () => [
+    ...shownStudioFrames.value,
+    ...(sectionOpen('mine') ? mineTemplates.value : []),
+    ...(sectionOpen('saved') ? savedTemplates.value : []),
+  ],
   (frames) => frames.forEach(workOutCut),
   { immediate: true }
 )
@@ -497,16 +742,22 @@ watch(
   <div class="row g-3">
     <!-- LEFT: gallery -->
     <div class="col-12 col-md-6 col-lg-3 order-2 order-lg-1">
-      <div class="panel">
-        <div class="d-flex justify-content-between align-items-center mb-1">
+      <div class="panel gallery-panel" :class="{ 'tip-target': pickTip && pickTip.target === 'gallery' }">
+        <div class="panel-head mb-3">
           <h2 class="section-title mb-0">Gallery</h2>
-        </div>
-        <p class="hint">Drag a photo or video into a slot. On a phone: tap it, then a slot (or the slot first).</p>
-
-        <!-- A slot was tapped first: say what to do next, with a way to cancel -->
-        <div v-if="targetSlot !== null" class="target-hint mb-2" role="status">
-          <span>Slot {{ targetSlot + 1 }} picked. Now tap a photo or video for it.</span>
-          <button type="button" class="target-cancel" aria-label="Cancel" title="Cancel" @click="targetSlot = null; cropSlot = null"><AppIcon name="close" :size="14" /></button>
+          <!-- Shows the how-to tips again -->
+          <button type="button" class="tip-help" title="How to fill the strip" aria-label="How to fill the strip" @click="showPickTips">?</button>
+          <PageTip
+            v-if="pickTip && pickTip.target === 'gallery'"
+            class="tip-under-head"
+            :title="pickTip.title"
+            :text="pickTip.text"
+            :phone="pickTip.phone"
+            :step="pickTipIndex + 1"
+            :total="PICK_TIPS.length"
+            @next="nextPickTip"
+            @skip="closePickTips"
+          />
         </div>
 
         <div v-if="sessions.length === 0" class="empty-state">
@@ -584,174 +835,261 @@ watch(
 
     <!-- MIDDLE: the strip (the same for everyone) -->
     <div class="col-12 col-lg-6 order-1 order-lg-2">
-      <div class="panel canvas-area position-relative">
-        <PhotoStrip
-          mode="pick"
-          :layout="layout"
-          :frame-style="frameStyle"
-          :photos-by-id="photosById"
-          :slot-photos="slotPhotos"
-          :clips="clips"
-          :edited-videos="editedVideos"
-          :edits="room.stripEdits || {}"
-          :crops="shownCrops"
-          :stickers="safeStickers(room.stripStickers)"
-          :selected-slot="targetSlot !== null ? targetSlot : cropSlot"
-          :flash-empty="flashEmpty"
-          @drop-photo="placePhoto"
-          @slot-click="onSlotClick"
-          @clear-slot="clearSlot"
-          @crop-slot="saveCrop"
+      <div class="panel canvas-area position-relative" :class="{ 'tip-target': pickTip && pickTip.target === 'strip' }">
+        <PageTip
+          v-if="pickTip && pickTip.target === 'strip'"
+          class="tip-on-strip"
+          arrow="down"
+          :title="pickTip.title"
+          :text="pickTip.text"
+            :phone="pickTip.phone"
+          :step="pickTipIndex + 1"
+          :total="PICK_TIPS.length"
+          @next="nextPickTip"
+          @skip="closePickTips"
         />
+        <div class="stage-layout" :style="{ '--strip-aspect': layout.aspect, '--strip-zoom': stripZoom }">
+          <!-- LEFT: the reposition card for the slot picked, or a short note on how to get it -->
+          <div class="stage-side">
+            <div v-if="cropSlot !== null && slotHasMedia(cropSlot)" class="reposition-card" role="group" :aria-label="'Reposition ' + cropLabel">
+              <div class="reposition-head mb-3">
+                <span class="reposition-icon" aria-hidden="true"><AppIcon name="image" :size="18" /></span>
+                <div class="reposition-title">Reposition {{ cropLabel }}</div>
+              </div>
 
-        <!-- The reposition bar: shown after something is dropped in a slot, or a filled slot is tapped -->
-        <div v-if="cropSlot !== null && slotHasMedia(cropSlot)" class="reposition-bar mt-3" role="group" :aria-label="'Reposition ' + cropLabel">
-          <div class="d-flex align-items-center gap-2 mb-2">
-            <span class="reposition-icon" aria-hidden="true"><AppIcon name="image" :size="18" /></span>
-            <div class="flex-grow-1 lh-sm">
-              <div class="fw-semibold small">Reposition {{ cropLabel }}</div>
-              <div class="reposition-tip">Drag inside the frame to move · {{ usesTouch ? 'pinch' : 'scroll' }} to zoom</div>
+              <!-- Zoom: − / slider / + . Zooming in gives the picture room to move. -->
+              <div class="reposition-zoom-label">
+                <span>Zoom</span>
+                <span class="zoom-value tabular">{{ shownZoom.toFixed(1) }}×</span>
+              </div>
+              <div class="d-flex align-items-center gap-2">
+                <button class="zoom-btn" :disabled="shownZoom <= 1" aria-label="Zoom out" title="Zoom out" @click="stepZoom(-0.25)">−</button>
+                <input
+                  type="range"
+                  class="form-range flex-grow-1"
+                  min="1"
+                  :max="MAX_ZOOM"
+                  step="0.05"
+                  :value="shownZoom"
+                  aria-label="Zoom"
+                  @input="previewZoom"
+                  @change="commitZoom"
+                />
+                <button class="zoom-btn" :disabled="shownZoom >= MAX_ZOOM" aria-label="Zoom in" title="Zoom in" @click="stepZoom(0.25)">+</button>
+              </div>
+
+              <button class="btn btn-primary btn-sm w-100 mt-3" @click="finishCrop">Done</button>
+              <div class="d-flex gap-2 mt-2">
+                <button class="btn btn-outline-secondary btn-sm flex-fill" @click="resetCrop">Reset</button>
+                <button class="btn btn-outline-danger btn-sm flex-fill" data-test="remove-from-bar" @click="clearSlot(cropSlot)">Remove</button>
+              </div>
+            </div>
+            <div v-else class="reposition-empty">
+              <span class="reposition-icon muted" aria-hidden="true"><AppIcon name="image" :size="18" /></span>
+              <p class="mb-0">{{ usesTouch ? 'Tap' : 'Click' }} a photo in the strip to reposition it.</p>
             </div>
           </div>
 
-          <!-- Zoom: − / slider / + . Zooming in gives the picture room to move. -->
-          <div class="d-flex align-items-center gap-2">
-            <button class="zoom-btn" :disabled="shownZoom <= 1" aria-label="Zoom out" title="Zoom out" @click="stepZoom(-0.25)">−</button>
-            <input
-              type="range"
-              class="form-range flex-grow-1"
-              min="1"
-              :max="MAX_ZOOM"
-              step="0.05"
-              :value="shownZoom"
-              aria-label="Zoom"
-              @input="previewZoom"
-              @change="commitZoom"
-            />
-            <button class="zoom-btn" :disabled="shownZoom >= MAX_ZOOM" aria-label="Zoom in" title="Zoom in" @click="stepZoom(0.25)">+</button>
-            <span class="zoom-value tabular">{{ shownZoom.toFixed(1) }}×</span>
+          <!-- MIDDLE: the strip. Zoomed in, this box scrolls around it. -->
+          <div
+            ref="stripViewport"
+            class="strip-viewport"
+            :class="{ zoomed: stripZoom > 1, 'dragging-view': draggingView }"
+            @wheel="onStripWheel"
+            @pointerdown="onViewPointerDown"
+            @pointermove="onViewPointerMove"
+            @pointerup="onViewPointerUp"
+            @pointercancel="onViewPointerUp"
+            @touchstart.passive="onViewTouchStart"
+            @touchend.passive="onViewTouchEnd"
+            @touchcancel.passive="onViewTouchEnd"
+          >
+            <div class="strip-stage">
+              <PhotoStrip
+                mode="pick"
+                :layout="layout"
+                :frame-style="frameStyle"
+                :photos-by-id="photosById"
+                :slot-photos="slotPhotos"
+                :clips="clips"
+                :edited-videos="editedVideos"
+                :edits="room.stripEdits || {}"
+                :crops="shownCrops"
+                :stickers="safeStickers(room.stripStickers)"
+                :selected-slot="targetSlot !== null ? targetSlot : cropSlot"
+                :flash-empty="flashEmpty"
+                @drop-photo="placePhoto"
+                @slot-click="onSlotClick"
+                @clear-slot="clearSlot"
+                @crop-slot="saveCrop"
+                @crop-start="onCropStart"
+                @crop-preview="liveCrop = $event"
+              />
+            </div>
           </div>
 
-          <div class="d-flex gap-2 mt-2">
-            <button class="btn btn-outline-secondary btn-sm flex-fill" @click="resetCrop">Reset</button>
-            <button class="btn btn-outline-danger btn-sm flex-fill" data-test="remove-from-bar" @click="clearSlot(cropSlot)">Remove</button>
-            <button class="btn btn-primary btn-sm flex-fill" @click="cropSlot = null">Done</button>
+          <!-- RIGHT: zoom the whole strip, so it is easier to see -->
+          <div class="strip-zoom" role="group" aria-label="Zoom the strip">
+            <button type="button" class="strip-zoom-btn" :disabled="stripZoom >= MAX_STRIP_ZOOM" aria-label="Zoom in on the strip" title="Zoom in" data-test="strip-zoom-in" @click="zoomStrip(1)">
+              <AppIcon name="plus" :size="16" />
+            </button>
+            <span class="strip-zoom-value" aria-live="polite">{{ Math.round(stripZoom * 100) }}%</span>
+            <button type="button" class="strip-zoom-btn" :disabled="stripZoom <= 1" aria-label="Zoom out on the strip" title="Zoom out" data-test="strip-zoom-out" @click="zoomStrip(-1)">−</button>
+            <span class="strip-zoom-line" aria-hidden="true"></span>
+            <button type="button" class="strip-zoom-btn" :disabled="stripZoom === 1" aria-label="Fit the strip" title="Fit" @click="setStripZoom(1)">
+              <AppIcon name="minimize" :size="15" />
+            </button>
           </div>
         </div>
       </div>
     </div>
 
     <!-- RIGHT: saved frames -->
-    <div class="col-12 col-md-6 col-lg-3 order-3">
-      <div class="panel d-flex flex-column">
-        <h2 class="section-title">Saved frames</h2>
-
-        <!-- DEFAULT: the frames published by the Blue Studios account (first 8, then "Show all") -->
-        <h3 class="group-label">Default <span v-if="studioFrames.length" class="section-count">{{ studioFrames.length }}</span></h3>
-        <div v-if="loadingStudioFrames" class="frame-grid" role="status" aria-label="Loading frames">
-          <span v-for="n in 4" :key="n" class="skeleton frame-skeleton"></span>
-        </div>
-        <template v-else-if="studioFrames.length">
-          <div class="frame-grid" :class="{ expanded: showAllDefault }">
-            <FrameTile
-              v-for="tpl in shownStudioFrames"
-              :key="tpl.id"
-              :frame="tpl"
-              :cut="cutOf(tpl)"
-              :active="tpl.id === frameStyle.id"
-              @choose="chooseCustomTemplate(tpl)"
-            />
-          </div>
-          <button
-            v-if="studioFrames.length > DEFAULT_VISIBLE"
-            type="button"
-            class="btn btn-link show-all-btn"
-            :aria-expanded="showAllDefault"
-            data-test="default-show-all"
-            @click="showAllDefault = !showAllDefault"
-          >
-            {{ showAllDefault ? 'Show less' : 'Show all ' + studioFrames.length }}
-            <AppIcon :name="showAllDefault ? 'chevron-up' : 'chevron-down'" :size="14" />
-          </button>
-        </template>
-        <!-- No Blue Studios frames could be loaded: the built-in colour frames -->
-        <div v-else class="frame-grid">
-          <FrameTile
-            v-for="st in defaultStyles"
-            :key="st.id"
-            :frame="{ ...st, name: st.caption }"
-            :cut="cutLabel(layout.slots)"
-            :active="st.id === frameStyle.id"
-            @choose="chooseStyle(st.id)"
+    <div class="col-12 col-md-6 col-lg-3 order-3 frames-col">
+      <div class="panel frames-panel d-flex flex-column" :class="{ 'tip-target': pickTip && pickTip.target === 'frames' }">
+        <div class="panel-head">
+          <h2 class="section-title">Saved frames</h2>
+          <PageTip
+            v-if="pickTip && pickTip.target === 'frames'"
+            class="tip-under-head"
+            :title="pickTip.title"
+            :text="pickTip.text"
+            :phone="pickTip.phone"
+            :step="pickTipIndex + 1"
+            :total="PICK_TIPS.length"
+            @next="nextPickTip"
+            @skip="closePickTips"
           />
         </div>
 
-        <!-- MINE: frames this account made. More than 8: 2 rows that scroll sideways, until View all -->
-        <h3 class="group-label d-flex justify-content-between align-items-center">
-          <span>Mine <span v-if="mineTemplates.length" class="section-count">{{ mineTemplates.length }}</span></span>
-          <button
-            v-if="mineTemplates.length > MINE_VISIBLE"
-            type="button"
-            class="btn btn-link show-all-btn mt-0"
-            :aria-expanded="showAllMine"
-            @click="showAllMine = !showAllMine"
-          >{{ showAllMine ? 'Show less' : 'View all' }}</button>
-        </h3>
-        <div
-          v-if="mineTemplates.length"
-          class="frame-grid"
-          :class="{ 'mine-scroll': mineTemplates.length > MINE_VISIBLE && !showAllMine, expanded: showAllMine }"
-        >
-          <FrameTile
-            v-for="tpl in mineTemplates"
-            :key="tpl.id"
-            :frame="tpl"
-            :cut="cutOf(tpl)"
-            :active="tpl.id === frameStyle.id"
-            @choose="chooseCustomTemplate(tpl)"
-          />
-        </div>
-        <p v-else-if="!isAccount" class="group-empty">Log in to use the frames you made.</p>
-        <p v-else-if="loadingTemplates" class="group-empty" role="status">Loading your frames…</p>
-        <p v-else class="group-empty">No frames yet. Frames you make in the Frame Editor show up here.</p>
-
-        <!-- SAVED: templates saved from the marketplace (in My Studio) -->
-        <template v-if="savedTemplates.length">
-          <h3 class="group-label">Saved <span class="section-count">{{ savedTemplates.length }}</span></h3>
-          <div class="frame-grid" :class="{ expanded: showAllSaved }">
-            <FrameTile
-              v-for="tpl in shownSavedFrames"
-              :key="tpl.id"
-              :frame="{ ...tpl, saved: true }"
-              :cut="cutOf(tpl)"
-              :active="tpl.id === frameStyle.id"
-              @choose="chooseCustomTemplate(tpl)"
-            />
-          </div>
-          <button
-            v-if="savedTemplates.length > DEFAULT_VISIBLE"
-            type="button"
-            class="btn btn-link show-all-btn"
-            :aria-expanded="showAllSaved"
-            @click="showAllSaved = !showAllSaved"
-          >
-            {{ showAllSaved ? 'Show less' : 'Show all ' + savedTemplates.length }}
-            <AppIcon :name="showAllSaved ? 'chevron-up' : 'chevron-down'" :size="14" />
-          </button>
-        </template>
-
-        <!-- The frame in use -->
+        <!-- The frame the room is using, at the top so it is easy to see: its picture, name and cut -->
         <div v-if="room.stripCustomTemplate" class="active-frame">
           <img v-if="room.stripCustomTemplate.thumbnailUrl" :src="room.stripCustomTemplate.thumbnailUrl" alt="" class="active-frame-thumb" />
-          <div class="overflow-hidden">
+          <div class="active-frame-text">
             <div class="active-frame-name text-truncate">{{ room.stripCustomTemplate.name }}</div>
-            <div class="active-frame-label">Frame in use · {{ cutLabel(layout.slots) }}</div>
+            <div v-if="activeCut" class="active-frame-cut">{{ activeCut }}</div>
           </div>
         </div>
 
-        <p class="slot-count">
-          <span class="tabular">{{ filledCount }} of {{ layout.slots.length }}</span> slots filled · a photo or video in each
-        </p>
+        <!-- The frames, in 3 dropdowns. On computers the list scrolls inside the panel, so a long list
+             does not stretch the row and the strip in the middle keeps its size. -->
+        <div class="frames-scroll">
+          <!-- DEFAULT: the frames published by the Blue Studios account, a dropdown per category -->
+          <section class="frame-section" :class="{ open: sectionOpen('default') }">
+            <button
+              type="button"
+              class="section-toggle"
+              :aria-expanded="sectionOpen('default')"
+              aria-controls="frames-default"
+              data-test="section-default"
+              @click="toggleSection('default')"
+            >
+              <span>Default</span>
+              <span v-if="studioFrames.length" class="section-count">{{ studioFrames.length }}</span>
+              <AppIcon name="chevron-down" :size="16" class="toggle-chevron" />
+            </button>
+            <div v-if="sectionOpen('default')" id="frames-default" class="section-body">
+              <div v-if="loadingStudioFrames" class="frame-grid" role="status" aria-label="Loading frames">
+                <span v-for="n in 4" :key="n" class="skeleton frame-skeleton"></span>
+              </div>
+              <template v-else-if="studioFrames.length">
+                <div v-for="group in studioGroups" :key="group.id" class="frame-group" :class="{ open: groupOpen(group) }">
+                  <button
+                    type="button"
+                    class="group-toggle"
+                    :aria-expanded="groupOpen(group)"
+                    :aria-controls="'frames-' + group.id"
+                    @click="toggleGroup(group)"
+                  >
+                    <span>{{ group.label }}</span>
+                    <span class="group-count">{{ group.frames.length }}</span>
+                    <AppIcon name="chevron-down" :size="14" class="toggle-chevron" />
+                  </button>
+                  <div v-if="groupOpen(group)" :id="'frames-' + group.id" class="frame-grid group-grid">
+                    <FrameTile
+                      v-for="tpl in group.frames"
+                      :key="tpl.id"
+                      :frame="tpl"
+                      :cut="cutOf(tpl)"
+                      :active="tpl.id === frameStyle.id"
+                      @choose="chooseCustomTemplate(tpl)"
+                    />
+                  </div>
+                </div>
+              </template>
+              <!-- No Blue Studios frames could be loaded: the built-in colour frames -->
+              <div v-else class="frame-grid">
+                <FrameTile
+                  v-for="st in defaultStyles"
+                  :key="st.id"
+                  :frame="{ ...st, name: st.caption }"
+                  :cut="cutLabel(layout.slots)"
+                  :active="st.id === frameStyle.id"
+                  @choose="chooseStyle(st.id)"
+                />
+              </div>
+            </div>
+          </section>
+
+          <!-- MINE: frames this account made -->
+          <section class="frame-section" :class="{ open: sectionOpen('mine') }">
+            <button
+              type="button"
+              class="section-toggle"
+              :aria-expanded="sectionOpen('mine')"
+              aria-controls="frames-mine"
+              data-test="section-mine"
+              @click="toggleSection('mine')"
+            >
+              <span>Mine</span>
+              <span v-if="mineTemplates.length" class="section-count">{{ mineTemplates.length }}</span>
+              <AppIcon name="chevron-down" :size="16" class="toggle-chevron" />
+            </button>
+            <div v-if="sectionOpen('mine')" id="frames-mine" class="section-body">
+              <div v-if="mineTemplates.length" class="frame-grid">
+                <FrameTile
+                  v-for="tpl in mineTemplates"
+                  :key="tpl.id"
+                  :frame="tpl"
+                  :cut="cutOf(tpl)"
+                  :active="tpl.id === frameStyle.id"
+                  @choose="chooseCustomTemplate(tpl)"
+                />
+              </div>
+              <p v-else-if="!isAccount" class="group-empty">Log in to use the frames you made.</p>
+              <p v-else-if="loadingTemplates" class="group-empty" role="status">Loading your frames…</p>
+              <p v-else class="group-empty">No frames yet. Frames you make in the Frame Editor show up here.</p>
+            </div>
+          </section>
+
+          <!-- SAVED: templates saved from the marketplace (in My Studio) -->
+          <section v-if="savedTemplates.length" class="frame-section" :class="{ open: sectionOpen('saved') }">
+            <button
+              type="button"
+              class="section-toggle"
+              :aria-expanded="sectionOpen('saved')"
+              aria-controls="frames-saved"
+              data-test="section-saved"
+              @click="toggleSection('saved')"
+            >
+              <span>Saved</span>
+              <span class="section-count">{{ savedTemplates.length }}</span>
+              <AppIcon name="chevron-down" :size="16" class="toggle-chevron" />
+            </button>
+            <div v-if="sectionOpen('saved')" id="frames-saved" class="section-body">
+              <div class="frame-grid">
+                <FrameTile
+                  v-for="tpl in savedTemplates"
+                  :key="tpl.id"
+                  :frame="{ ...tpl, saved: true }"
+                  :cut="cutOf(tpl)"
+                  :active="tpl.id === frameStyle.id"
+                  @choose="chooseCustomTemplate(tpl)"
+                />
+              </div>
+            </div>
+          </section>
+        </div>
 
         <!-- Next, Quick export and Edit video are in the floating pill (RoomStageNav.vue) -->
       </div>
@@ -768,6 +1106,19 @@ watch(
 /* ---------- Page and panels ---------- */
 .room-page {
   padding-bottom: 24px;
+  /* The same sizes on Pick and Decorate (StripView.vue and DecorateView.vue keep these the same):
+     --stage-h  the most the strip can be tall
+     --panel-h  on computers, all 3 panels are exactly this tall, whatever is in them (the side panels scroll inside),
+                so nothing grows or shrinks when the frame, the photos or the stickers change */
+  --stage-h: min(76vh, 740px);
+  --panel-h: calc(var(--stage-h) + 40px); /* + the panel's padding */
+}
+
+/* Tablets and phones: the panels stack, and the strip is a bit shorter so the panels below are not far away */
+@media (max-width: 991.98px) {
+  .room-page {
+    --stage-h: min(62vh, 560px);
+  }
 }
 
 /* A card: white, 16px corners, a thin line and the soft card shadow */
@@ -783,7 +1134,7 @@ watch(
 /* The middle: the strip on a soft grey well, always the same size whatever frame is chosen
    (the strip is never taller than --stage-h, see PhotoStrip.vue) */
 .canvas-area {
-  --stage-h: min(72vh, 680px);
+  container: stage / inline-size; /* the layout inside switches on the panel's own width (see below) */
   background: var(--soft);
   min-height: calc(var(--stage-h) + 40px); /* + the panel's padding */
   display: flex;
@@ -858,35 +1209,6 @@ watch(
   padding: 3px; /* room for the chosen frame's blue ring */
 }
 
-/* "Show all": every frame, scrolling inside the panel if there are a lot */
-.frame-grid.expanded {
-  max-height: 380px;
-  overflow-y: auto;
-}
-
-/* More than 8 under Mine: 2 rows that run sideways, the next column peeking in at the right edge */
-.frame-grid.mine-scroll {
-  grid-template-columns: none;
-  grid-template-rows: repeat(2, auto);
-  grid-auto-flow: column;
-  grid-auto-columns: min(72px, calc((100% - 3 * 8px) / 4.4));
-  justify-content: start;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  padding-bottom: 10px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--line) transparent;
-}
-
-.frame-grid.mine-scroll::-webkit-scrollbar {
-  height: 6px;
-}
-
-.frame-grid.mine-scroll::-webkit-scrollbar-thumb {
-  background: var(--line);
-  border-radius: 999px;
-}
-
 /* Grey placeholders while the default frames load, the size of a card */
 .frame-skeleton {
   display: block;
@@ -896,27 +1218,15 @@ watch(
   border-radius: 10px;
 }
 
-.show-all-btn {
-  align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-top: 6px;
-  padding: 2px 0;
-  font-size: 0.8rem;
-  font-weight: 600;
-  text-decoration: none;
-}
-
-/* The frame in use, under the lists */
+/* The frame the room is using, at the top of Saved frames: just its picture and name */
 .active-frame {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-top: 16px;
+  margin-bottom: 4px;
   padding: 8px 10px;
-  background: var(--soft);
-  border: 1px solid var(--line);
+  background: var(--brand-tint);
+  border: 1px solid var(--brand-tint);
   border-radius: 10px;
 }
 
@@ -927,83 +1237,467 @@ watch(
   flex-shrink: 0;
 }
 
+.active-frame-text {
+  min-width: 0;
+  line-height: 1.25;
+}
+
 .active-frame-name {
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--ink);
 }
 
-.active-frame-label {
-  font-size: 0.72rem;
-  color: var(--muted);
+/* "4-cut" under the name */
+.active-frame-cut {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--brand);
+  font-variant-numeric: tabular-nums;
 }
 
-/* "2 of 4 frames filled" above the buttons */
-.slot-count {
-  margin: 16px 0 10px;
+/* ---------- The frame list: Default, Mine, Saved dropdowns ---------- */
+/* The list scrolls on its own (on phones and tablets a set height; on computers, see below) */
+.frames-scroll {
+  max-height: 60vh;
+  margin-top: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+.frames-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.frames-scroll::-webkit-scrollbar-thumb {
+  background: var(--line);
+  border-radius: 999px;
+}
+
+/* Computers: the frames panel is exactly as tall as the row (the strip and gallery decide it),
+   and only the list inside it scrolls */
+@media (min-width: 992px) {
+  .frames-col {
+    position: relative;
+  }
+
+  .frames-col > .frames-panel {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(var(--bs-gutter-x) * 0.5);
+    right: calc(var(--bs-gutter-x) * 0.5);
+    height: auto;
+  }
+
+  .frames-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+  }
+}
+
+/* A thin line between the 3 dropdowns */
+.frame-section + .frame-section {
+  border-top: 1px solid var(--line);
+}
+
+/* DEFAULT / MINE / SAVED: black capitals */
+.section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 12px 6px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-align: left;
+  text-transform: uppercase;
+  transition: background-color 150ms ease;
+}
+
+.section-toggle .section-count {
+  margin-left: 0;
+}
+
+/* The categories inside Default: grey, normal case, a little smaller */
+.group-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
   font-size: 0.82rem;
-  color: var(--muted);
+  font-weight: 600;
+  text-align: left;
+  transition: background-color 150ms ease, color 150ms ease;
 }
 
-/* ---------- "Frame 2 picked. Now tap a photo or video for it." ---------- */
-.target-hint {
+.group-count {
+  font-size: 0.75rem;
+  font-weight: 500;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
+/* An open category sits on a soft grey strip, so it is clear which frames belong to it */
+.frame-group.open > .group-toggle {
+  background: var(--soft);
+}
+
+.frame-group + .frame-group {
+  margin-top: 2px;
+}
+
+.section-toggle:focus-visible,
+.group-toggle:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: -2px;
+}
+
+/* The arrow on the right turns over when the dropdown is open */
+.toggle-chevron {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--muted);
+  transition: transform 200ms var(--ease-out);
+}
+
+.frame-section.open > .section-toggle .toggle-chevron,
+.frame-group.open > .group-toggle .toggle-chevron {
+  transform: rotate(180deg);
+}
+
+.section-body {
+  padding: 0 0 12px;
+}
+
+.group-grid {
+  padding: 8px 3px 10px;
+}
+
+/* The frames fade in when a dropdown opens */
+.section-body,
+.group-grid {
+  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+}
+
+@starting-style {
+  .section-body,
+  .group-grid {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .section-toggle:hover,
+  .group-toggle:hover {
+    background: var(--soft);
+  }
+
+  .group-toggle:hover {
+    color: var(--ink);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toggle-chevron,
+  .section-body,
+  .group-grid {
+    transition: none;
+  }
+}
+
+/* ---------- First-time tips (PageTip.vue) ---------- */
+/* A panel heading that a tip can hang under */
+.panel-head {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 12px;
-  padding: 8px 10px;
-  background: var(--brand-tint);
-  color: var(--brand);
-  border-radius: 10px;
-  font-size: 0.8rem;
-  font-weight: 600;
 }
 
-.target-cancel {
+.panel-head .section-title {
+  margin-bottom: 14px;
+}
+
+.panel-head.mb-3 .section-title {
+  margin-bottom: 0;
+}
+
+/* Under the heading, the arrow pointing up at it */
+.tip-under-head {
+  top: calc(100% + 10px);
+  left: 0;
+}
+
+/* On the strip: at the top, the arrow pointing down at it */
+.tip-on-strip {
+  top: 16px;
+  left: 16px;
+}
+
+/* The panel a tip is about gets a soft blue ring (like the Sticker Maker's tips) */
+.panel.tip-target {
+  border-color: var(--brand);
+  box-shadow: 0 0 0 4px rgba(47, 91, 234, 0.15);
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+
+/* The round "?" that shows the tips again (the same as the Sticker Maker's) */
+.tip-help {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 28px;
   height: 28px;
   flex-shrink: 0;
-  border: none;
+  border: 1px solid var(--line);
   border-radius: 999px;
-  background: transparent;
-  color: inherit;
+  background: #ffffff;
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+  transition: color 150ms ease, border-color 150ms ease, transform 160ms var(--ease-out);
 }
 
-/* ---------- The reposition bar (under the strip) ---------- */
-/* A floating card: sticks to the bottom of the screen while the strip is in view */
-.reposition-bar {
-  position: sticky;
-  bottom: 12px;
-  z-index: 30;
-  width: 100%;
-  max-width: 320px;
-  margin: 0 auto;
+.tip-help:active {
+  transform: scale(0.97);
+}
+
+.tip-help:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .tip-help:hover {
+    color: var(--brand);
+    border-color: var(--brand);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tip-help:active {
+    transform: none;
+  }
+}
+
+/* ---------- The middle: reposition card | strip | zoom controls ---------- */
+.stage-layout {
+  display: grid;
+  grid-template-columns: 184px minmax(0, 1fr) 44px;
+  gap: 12px;
+  height: var(--stage-h);
+}
+
+.stage-side {
+  align-self: center;
+  min-width: 0;
+}
+
+/* The strip's box: as big as fits, times the zoom. Zoomed in, the box scrolls.
+   (margin: auto centres the strip but, unlike centring with flex, it can still be scrolled to every edge) */
+.strip-viewport {
+  display: flex;
+  min-width: 0;
+  height: 100%;
+  overflow: auto;
+  overscroll-behavior: contain;
+  container-type: inline-size;
+  scrollbar-width: thin;
+  scrollbar-color: var(--line) transparent;
+}
+
+/* Zoomed in: a hand over the frame and the space around it, to drag the view */
+.strip-viewport.zoomed {
+  cursor: grab;
+}
+
+.strip-viewport.dragging-view {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.strip-stage {
+  --strip-max-w: none;
+  flex: none;
+  width: calc(min(100cqw, (var(--stage-h) - 12px) * var(--strip-aspect, 0.3)) * var(--strip-zoom, 1));
+  margin: auto;
+  padding: 2px 0;
+}
+
+/* The round zoom controls on the right */
+.strip-zoom {
+  align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
   background: #fff;
   border: 1px solid var(--line);
-  border-radius: 16px;
-  padding: 12px 14px;
-  box-shadow: 0 1px 2px rgba(20, 23, 43, 0.04), 0 12px 32px rgba(20, 23, 43, 0.06);
+  border-radius: 999px;
+  box-shadow: 0 1px 2px rgba(20, 23, 43, 0.04), 0 8px 24px rgba(20, 23, 43, 0.06);
 }
 
-/* Icon tile: brand tint background, brand icon */
-.reposition-icon {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--brand-tint);
-  color: var(--brand);
+.strip-zoom-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1;
+  transition: background-color 150ms ease, color 150ms ease, transform 160ms var(--ease-out);
 }
 
-.reposition-tip {
-  font-size: 0.72rem;
+.strip-zoom-btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.strip-zoom-btn:disabled {
+  opacity: 0.35;
+}
+
+.strip-zoom-btn:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}
+
+.strip-zoom-value {
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--brand);
+  font-variant-numeric: tabular-nums;
+}
+
+.strip-zoom-line {
+  width: 18px;
+  height: 1px;
+  margin: 2px 0;
+  background: var(--line);
+}
+
+/* The reposition card, on the left of the strip */
+.reposition-card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 1px 2px rgba(20, 23, 43, 0.04), 0 12px 32px rgba(20, 23, 43, 0.06);
+  transition: opacity 200ms var(--ease-out), transform 200ms var(--ease-out);
+}
+
+@starting-style {
+  .reposition-card {
+    opacity: 0;
+    transform: translateX(-6px);
+  }
+}
+
+.reposition-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.reposition-title {
+  font-size: 0.85rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.reposition-zoom-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* Nothing picked yet: a quiet dashed note in the same place */
+.reposition-empty {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px dashed var(--line);
+  border-radius: 16px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+/* Narrow middle panel (tablets in two columns, phones): the strip and zoom controls side by side,
+   the reposition card under them, sticking to the bottom of the screen while the strip is in view */
+@container stage (max-width: 520px) {
+  .stage-layout {
+    grid-template-columns: minmax(0, 1fr) 44px;
+    grid-template-rows: var(--stage-h) auto;
+    height: auto;
+  }
+
+  .stage-side {
+    grid-column: 1 / -1;
+    grid-row: 2;
+  }
+
+  .reposition-card {
+    position: sticky;
+    bottom: 12px;
+    z-index: 30;
+    max-width: 320px;
+    margin: 0 auto;
+  }
+
+  .reposition-empty {
+    display: none;
+  }
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .strip-zoom-btn:hover:not(:disabled) {
+    background: var(--soft);
+    color: var(--brand);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reposition-card {
+    transition: none;
+  }
+
+  .strip-zoom-btn:active:not(:disabled) {
+    transform: none;
+  }
+}
+
+.reposition-icon.muted {
+  background: var(--soft);
   color: var(--muted);
 }
 
@@ -1163,9 +1857,7 @@ watch(
 }
 
 /* Keyboard focus is always visible */
-.target-cancel:focus-visible,
-.zoom-btn:focus-visible,
-.show-all-btn:focus-visible {
+.zoom-btn:focus-visible {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
 }
@@ -1177,25 +1869,32 @@ watch(
     color: var(--brand);
     border-color: var(--brand);
   }
-
-  .target-cancel:hover {
-    background: rgba(47, 91, 234, 0.12);
-  }
-
-  .show-all-btn:hover {
-    text-decoration: underline;
-  }
 }
 
 /* ---------- Smaller screens ---------- */
 /* Tablets and phones: the panels stack, so the long lists get shorter scroll areas */
 @media (max-width: 991.98px) {
-  .canvas-area {
-    --stage-h: min(62vh, 560px); /* a bit shorter, so the panels below are not far away */
-  }
-
   .gallery-scroll {
     max-height: 55vh; /* leaves room to reach the frames below */
+  }
+}
+
+/* Computers: every panel exactly --panel-h tall. The gallery scrolls inside (the frames panel, see above). */
+@media (min-width: 992px) {
+  .canvas-area {
+    height: var(--panel-h);
+  }
+
+  .gallery-panel {
+    display: flex;
+    flex-direction: column;
+    height: var(--panel-h);
+  }
+
+  .gallery-panel .gallery-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
   }
 }
 

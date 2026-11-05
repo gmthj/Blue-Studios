@@ -14,6 +14,7 @@ import { useRoom, ROOM_STAGES, needsFullStrip } from '../composables/useRoom.js'
 import { useVideoCall } from '../composables/useVideoCall.js'
 import { useFullscreen } from '../composables/useFullscreen.js'
 import { playSound } from '../sounds.js'
+import { rememberRoom, forgetRoom } from '../recentRooms.js'
 import VideoCallCard from '../components/VideoCallCard.vue'
 import RoomStageNav from '../components/RoomStageNav.vue'
 import MessagePage from '../components/MessagePage.vue'
@@ -55,6 +56,7 @@ onMounted(async () => {
   }
   if (roomSnap.data().closed) {
     status.value = 'closed'
+    forgetRoom(code)
     return
   }
   if (await isRoomFull(code, uid)) {
@@ -65,6 +67,7 @@ onMounted(async () => {
   // Join the room (members list, heartbeat, room + photos listeners), then show the child page
   await enterRoom(code, uid, guestName, getDeviceType())
   status.value = 'ready'
+  rememberRoom(code) // so the home page can offer to go back in after leaving (recentRooms.js)
   followStage() // e.g. if the group is already making the photostrip, go straight there
   applyStartTemplate(roomSnap.data())
 
@@ -125,6 +128,7 @@ function followStage() {
   if (status.value !== 'ready' || !room.value) return
 
   if (room.value.closed) {
+    forgetRoom(code) // closed: nothing to go back into
     router.push('/?closed=' + code)
     return
   }
