@@ -12,7 +12,7 @@
   --te-faint: #9AA0AE;
   /* App.vue gives the editor the screen under the Blue Studios bar (editor-main); fill it */
   height: 100%;
-  min-height: 520px;
+  min-height: 560px; /* the same as the Sticker Maker */
   gap: var(--te-gap);
   padding: var(--te-gap);
   padding-bottom: var(--te-gap); /* app-page adds 32px at the bottom; this editor fills the screen */
@@ -40,7 +40,7 @@
   padding: 8px 8px 8px 12px;
   position: relative; z-index: 100;
 }
-.te-brand { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.te-brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .te-brand-title { margin: 0; font-size: 1rem; font-weight: 800; letter-spacing: -0.01em; white-space: nowrap; }
 .te-name {
   width: 170px; min-width: 0;
@@ -58,14 +58,22 @@
   .te-topbar { display: grid; grid-template-columns: 1fr auto 1fr; }
   .te-topbar-actions { justify-self: end; }
 }
-.te-topbar-tools { display: flex; align-items: center; gap: 6px; }
-.te-topbar-actions { display: flex; align-items: center; gap: 6px; }
+/* The same gaps as the Sticker Maker's top bar */
+.te-topbar-tools { display: flex; align-items: center; gap: 8px; }
+.te-topbar-actions { display: flex; align-items: center; gap: 6px; margin-left: 8px; }
 .te-action { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .te-square { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; padding: 0; }
-.te-zoom { position: relative; display: flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--line); border-radius: 12px; }
+.te-topbar .te-action { white-space: nowrap; }
+/* The same as the Sticker Maker's top bar: on smaller laptops "My templates" shows only its icon,
+   and "Save to My Studio" becomes "Save", so the bar never runs out of room */
+.te-show-md { display: none; }
+@media (min-width: 992px) and (max-width: 1599.98px) { .te-hide-lg { display: none; } }
+@media (min-width: 992px) and (max-width: 1365.98px) { .te-hide-md { display: none; } .te-show-md { display: inline; } }
+/* Zoom: a grey group like the Sticker Maker's Sticker / GIF tabs (seg-tabs in pages.css), so both bars are as tall */
+.te-zoom { position: relative; display: flex; align-items: center; gap: 2px; padding: 4px; border-radius: 12px; background: #EDF0F6; }
 .te-zoom-btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 4px;
-  min-width: 32px; height: 32px; padding: 0 8px;
+  min-width: 36px; height: 36px; padding: 0 10px;
   border: 0; border-radius: 9px;
   background: transparent; color: var(--ink);
   font-size: 0.85rem; font-weight: 600; font-variant-numeric: tabular-nums;
@@ -73,11 +81,11 @@
 }
 .te-zoom-btn:disabled { opacity: 0.4; }
 .te-zoom-btn:active:not(:disabled) { transform: scale(0.95); }
-.te-zoom-btn.active { background: var(--brand-tint); color: var(--brand); }
+.te-zoom-btn.active { background: #ffffff; color: var(--ink); box-shadow: 0 1px 3px rgba(20, 23, 43, 0.12); }
 /* On / off switches (Cutouts, Rulers): a pill, tinted blue when on */
 .te-toggle {
   display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
-  height: 36px; padding: 0 12px;
+  height: 38px; padding: 0 12px; /* the same as the Sticker Maker's Rulers */
   border: 1px solid var(--line); border-radius: 999px;
   background: #ffffff; color: var(--muted);
   font-size: 0.85rem; font-weight: 600; white-space: nowrap;
@@ -138,6 +146,9 @@
   min-height: 0;
   overflow: hidden;
 }
+/* The same widths as the Sticker Maker's panels */
+.te-drawer { width: 272px; }
+.te-props { width: 280px; }
 .te-panel-head {
   flex: 0 0 auto;
   display: flex; align-items: center; justify-content: space-between; gap: 8px;
@@ -448,7 +459,7 @@
   .te-font-card:hover { border-color: var(--brand); background: var(--brand-tint); }
   .te-bar-btn:not(.active):not(:disabled):hover { color: var(--ink); background: var(--soft); }
   .te-bar-btn.del:hover { color: var(--danger); background: #FDE4E5; }
-  .te-zoom-btn:not(:disabled):not(.active):hover { background: var(--soft); }
+  .te-zoom-btn:not(:disabled):not(.active):hover { background: rgba(255, 255, 255, 0.6); }
   .te-toggle:not(.active):hover { color: var(--ink); background: var(--soft); }
   .te-name:hover:not(:focus) { background: var(--soft); }
   .te-grip-handle:hover { color: var(--ink); background: var(--soft); }
@@ -472,7 +483,7 @@
   /* Top bar: name and actions on one row, zoom and switches underneath */
   .te-topbar { flex-wrap: wrap; gap: 6px; padding: 6px 6px 6px 10px; }
   .te-brand-title { display: none; }
-  .te-brand { flex: 1 1 120px; }
+  .te-brand { flex: 1 1 0; }
   .te-name { width: 100%; }
   /* Wraps instead of scrolling, so the zoom menu is not cut off */
   .te-topbar-tools { order: 3; width: 100%; margin-left: 0; flex-wrap: wrap; }
@@ -480,7 +491,8 @@
   .te-topbar .te-square,
   .te-topbar .te-action { width: 36px; height: 36px; padding: 0; }
   .te-topbar .te-hide-xs { display: none; }
-  .te-toggle { height: 34px; padding: 0 10px; }
+  /* Icon-only switches, like the Sticker Maker's Rulers on a phone */
+  .te-toggle { width: 36px; height: 36px; padding: 0; justify-content: center; }
 
   /* Tools: a bar pinned to the bottom of the screen, above the sheets */
   .te-rail {
@@ -506,6 +518,12 @@
     border-radius: 20px 20px 0 0;
     border-bottom: 0;
     box-shadow: 0 -12px 32px rgba(20, 23, 43, 0.12);
+  }
+  /* The same place and height as the Sticker Maker's sheets (frame-editor.css has older values with !important) */
+  .te-page .te-panel {
+    bottom: var(--te-rail-h) !important;
+    max-height: 46vh !important;
+    max-height: 46dvh !important;
   }
   .te-props {
     display: flex !important;
@@ -684,7 +702,7 @@ label.te-swatch input { position: absolute; inset: 0; width: 100%; height: 100%;
 
 /* Small laptops: narrower panels, so the strip keeps its room */
 @media (min-width: 992px) and (max-width: 1279.98px) {
-  .te-panel { width: 256px; }
+  .te-panel, .te-drawer, .te-props { width: 256px; }
   .te-rail { width: 68px; }
 }
 

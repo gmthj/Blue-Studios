@@ -21,7 +21,6 @@ const {
   redo,
   resetToActualSize,
   saveFrame,
-  allUserTemplatesCount,
   openMyTemplatesDrawer,
   setZoom,
   showCutouts,
@@ -144,10 +143,11 @@ function startGuide() {
         :class="{ active: showCutouts }"
         :aria-pressed="showCutouts"
         :title="showCutouts ? 'Hide the photo cutouts' : 'Show the photo cutouts'"
+        aria-label="Cutouts"
         @click="toggleCutouts"
       >
         <AppIcon name="layout" :size="15" />
-        <span>Cutouts</span>
+        <span class="te-hide-xs">Cutouts</span>
       </button>
       <button
         type="button"
@@ -155,10 +155,11 @@ function startGuide() {
         :class="{ active: showRulers }"
         :aria-pressed="showRulers"
         :title="showRulers ? 'Hide the rulers and guides (Shift R)' : 'Show the rulers and guides (Shift R)'"
+        aria-label="Rulers"
         @click="handleToggleRulers"
       >
         <svg viewBox="0 0 24 24" class="te-icon" aria-hidden="true" style="width: 15px; height: 15px;"><path d="M3 8h18v8H3z M7 8v3 M11 8v4 M15 8v3 M19 8v4" /></svg>
-        <span>Rulers</span>
+        <span class="te-hide-xs">Rulers</span>
       </button>
     </div>
 
@@ -194,8 +195,7 @@ function startGuide() {
         @click="openMyTemplatesDrawer"
       >
         <AppIcon name="folder" :size="16" />
-        <span class="te-hide-xs">My templates</span>
-        <span v-if="allUserTemplatesCount > 0" class="te-count te-hide-xs">{{ allUserTemplatesCount }}</span>
+        <span class="te-hide-xs te-hide-lg">My templates</span>
       </button>
 
       <!-- Save (accounts) or log in to save (guests) -->
@@ -209,7 +209,10 @@ function startGuide() {
         @click="saveFrame"
       >
         <AppIcon name="save" :size="16" />
-        <span class="te-hide-xs">{{ isSavingFrame ? 'Saving…' : (cloudId && !isOwner ? 'Save a copy' : 'Save to My Studio') }}</span>
+        <span class="te-hide-xs">
+          <span class="te-hide-md">{{ isSavingFrame ? 'Saving…' : (cloudId && !isOwner ? 'Save a copy' : 'Save to My Studio') }}</span>
+          <span class="te-show-md">{{ isSavingFrame ? 'Saving…' : 'Save' }}</span>
+        </span>
       </button>
       <router-link
         v-else
@@ -219,7 +222,7 @@ function startGuide() {
         aria-label="Log in to save"
       >
         <AppIcon name="save" :size="16" />
-        <span class="te-hide-xs">Log in to save</span>
+        <span class="te-hide-xs"><span class="te-hide-md">Log in to save</span><span class="te-show-md">Log in</span></span>
       </router-link>
     </div>
   </header>
