@@ -1,7 +1,7 @@
 <script setup>
 import { updateDoc } from 'firebase/firestore'
-import { playSound } from '../sounds.js'
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { playSound, useLoudAudioSession } from '../sounds.js'
+import { ref, computed, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import axios from 'axios'
 import * as Tone from 'tone'   // NEW: not in syllabus (your X-factor)
 import { useRoom } from '../composables/useRoom.js'
@@ -9,6 +9,7 @@ import { getPeaks, makeWaveform } from '../waveform.js'
 import DeckCard from '../components/DeckCard.vue'
 import WaveformBars from '../components/WaveformBars.vue'
 import StageBar from '../components/StageBar.vue'
+import AppIcon from '../components/AppIcon.vue'
 import { renderMix } from '../mixRender.js'
 import { ref as storageRef, uploadBytes } from 'firebase/storage'
 import { storage } from '../firebase.js'
@@ -42,6 +43,7 @@ const loadingA = ref(false)
 const loadingB = ref(false)
 const rendering = ref(false)   // true while the mix is being rendered
 const previewUrl = ref('')     // a temporary address the <audio> player can play
+const previewEl = ref(null)    // the preview <audio> element (ref="previewEl" in the template)
 let mixBlob = null             // the finished WAV file (plain variable, like playerA)
 const saving = ref(false)   // true while uploading
 const saved = ref(false)    // true after the mix is saved to the room
@@ -84,7 +86,8 @@ function stopAndRemove(player) {
 }
 
 // ----- Deck A -----
-async function loadDeckA(track) {
+// autoPlay: start playing as soon as it has downloaded (only for the person who picked it)
+async function loadDeckA(track, autoPlay = false) {
   stopAndRemove(playerA)
   playerA = null
   playingA.value = false
@@ -100,6 +103,10 @@ async function loadDeckA(track) {
       return
     }
     playerA = player
+    if (autoPlay) {
+      player.start(undefined, startA.value)
+      playingA.value = true
+    }
   } catch (error) {
     console.error(error)
     trackA.value = null
@@ -109,12 +116,14 @@ async function loadDeckA(track) {
 }
 
 async function togglePlayA() {
+  useLoudAudioSession()   // iPhones: play even with the silent switch on (see sounds.js)
   await Tone.start()   // browsers only allow sound after a click
   if (!playerA) return
   if (playingA.value) {
     playerA.stop()
     playingA.value = false
   } else {
+    pausePreview()   // one thing at a time: the deck or the mix preview
     playerA.start(undefined, startA.value)   // start at the chosen part (undefined = "right now")
     playingA.value = true
   }
@@ -155,7 +164,7 @@ function setVolumeA(value) {
 }
 
 // ----- Deck B (same as Deck A) -----
-async function loadDeckB(track) {
+async function loadDeckB(track, autoPlay = false) {
   stopAndRemove(playerB)
   playerB = null
   playingB.value = false
@@ -169,6 +178,10 @@ async function loadDeckB(track) {
       return
     }
     playerB = player
+    if (autoPlay) {
+      player.start(undefined, startB.value)
+      playingB.value = true
+    }
   } catch (error) {
     console.error(error)
     trackB.value = null
@@ -178,12 +191,14 @@ async function loadDeckB(track) {
 }
 
 async function togglePlayB() {
+  useLoudAudioSession()
   await Tone.start()
   if (!playerB) return
   if (playingB.value) {
     playerB.stop()
     playingB.value = false
   } else {
+    pausePreview()
     playerB.start(undefined, startB.value)
     playingB.value = true
   }
@@ -271,6 +286,36 @@ async function makeMix() {
   }
   previewUrl.value = URL.createObjectURL(mixBlob)
   rendering.value = false
+}
+
+// Stop both decks (the songs the mix is made from), e.g. when the mix preview starts playing
+function stopDecks() {
+  if (playerA && playingA.value) playerA.stop()
+  if (playerB && playingB.value) playerB.stop()
+  playingA.value = false
+  playingB.value = false
+}
+
+function pausePreview() {
+  if (previewEl.value && !previewEl.value.paused) previewEl.value.pause()
+}
+
+// The Preview button: stop the decks, make the mix, and play it
+async function previewMix() {
+  stopDecks()
+  // iPhones only let an <audio> play from a tap. Calling play() now, inside the tap, allows it to play
+  // later when the mix is ready (the error from having no song yet is expected, so it's ignored).
+  // pause() straight after: an old preview must not play while the new one is made.
+  if (previewEl.value) {
+    previewEl.value.play().catch(() => {})
+    previewEl.value.pause()
+  }
+  await makeMix()
+  await nextTick()   // wait for the <audio> to get the new mix
+  if (previewEl.value && previewUrl.value) {
+    previewEl.value.currentTime = 0
+    previewEl.value.play().catch((error) => console.error(error))   // blocked? the player's own play button still works
+  }
 }
 
 // Saves the mix for the Export page: uploads the WAV to Firebase Storage,
@@ -531,16 +576,31 @@ function roomTrack(track) {
   }
 }
 
+// Is this song downloading into that deck right now? (for the spinners in the song list)
+function isLoadingOn(deck, track) {
+  const loading = deck === 'A' ? loadingA.value : loadingB.value
+  const onDeck = deck === 'A' ? trackA.value : trackB.value
+  return loading && !!onDeck && onDeck.id === track.id
+}
+
+function isLoadingTrack(track) {
+  return isLoadingOn('A', track) || isLoadingOn('B', track)
+}
+
 // Clicking A or B on a song: load it here straight away, and save it on the room for everyone else
-// A new song starts at 0:00 for everyone.
+// A new song starts at 0:00 for everyone, and starts playing straight away for the person who picked it
+// (only them: play / pause is not shared, see below).
 function pickTrack(deck, track) {
+  // Wake the sound up now, while we are still inside the tap (iPhones only allow it there)
+  useLoudAudioSession()
+  Tone.start()
   const small = roomTrack(track)
   if (deck === 'A') {
     setStartA(0)
-    loadDeckA(small)
+    loadDeckA(small, true)
   } else {
     setStartB(0)
-    loadDeckB(small)
+    loadDeckB(small, true)
   }
 
   // Save the song AND its start together, so nobody gets the new song with the old start
@@ -590,10 +650,30 @@ onMounted(loadTracks)
     <StageBar current="music" />
     <div class="d-flex justify-content-between align-items-center mb-3 gap-2 flex-wrap">
       <h2 class="section-title mb-0">{{ djMode ? 'DJ booth' : 'Music mixer' }}</h2>
-      <div class="d-flex gap-2">
-        <!-- Simple mode / DJ booth: shared, so the whole room switches together -->
-        <button class="btn btn-outline-secondary btn-sm" @click="toggleDjMode">
-          {{ djMode ? 'Simple mode' : 'DJ booth' }}
+      <!-- Simple mode / DJ booth: shared, so the whole room switches together.
+           Both choices are always visible (a segmented switch), so it's clear there are two modes. -->
+      <div class="mode-switch" role="radiogroup" aria-label="Music mode">
+        <button
+          type="button"
+          role="radio"
+          class="mode-option"
+          :class="{ active: !djMode }"
+          :aria-checked="!djMode"
+          @click="djMode && toggleDjMode()"
+        >
+          <AppIcon name="music" :size="16" />
+          Simple
+        </button>
+        <button
+          type="button"
+          role="radio"
+          class="mode-option"
+          :class="{ active: djMode }"
+          :aria-checked="djMode"
+          @click="!djMode && toggleDjMode()"
+        >
+          <AppIcon name="sparkle" :size="16" />
+          DJ booth
         </button>
       </div>
     </div>
@@ -683,12 +763,21 @@ onMounted(loadTracks)
               <p class="small text-muted">{{ MAX_EDIT_SECONDS }} s · the same length as your video</p>
               <WaveformBars :bars="mixBars" class="mb-3" />
               <!-- Shows up after Preview has made the mix. After that it updates by itself when the mix changes. -->
-              <audio v-if="previewUrl" :src="previewUrl" controls class="w-100 mb-1"></audio>
+              <!-- v-show, not v-if: the element is always there, so Preview can start it from the tap (iPhones need that).
+                   Playing it (Preview, or its own play button) stops the decks. -->
+              <audio
+                v-show="previewUrl"
+                ref="previewEl"
+                :src="previewUrl || undefined"
+                controls
+                class="w-100 mb-1"
+                @play="stopDecks"
+              ></audio>
               <p v-if="previewUrl" class="small text-muted mb-3">
                 {{ rendering ? 'Updating preview...' : 'Preview matches your sliders' }}
               </p>
               <div class="d-flex flex-wrap gap-2 justify-content-end">
-                <button class="btn btn-outline-secondary" :disabled="rendering" @click="makeMix">
+                <button class="btn btn-outline-secondary" :disabled="rendering" @click="previewMix">
                   {{ rendering ? 'Rendering...' : '▷ Preview' }}
                 </button>
                 <!-- Blue until the mix is saved, then it steps back so "Export video" becomes the main button
@@ -745,6 +834,7 @@ onMounted(loadTracks)
             v-for="track in allTracks"
             :key="track.id"
             class="track border rounded p-2 mb-2 d-flex align-items-center gap-2"
+            :class="{ 'track-loading': isLoadingTrack(track) }"
           >
             <!-- flex-shrink-0: long names can't squash the icon. min-width 0 + text-break: long names wrap -->
             <div class="track-icon bg-secondary flex-shrink-0">♫</div>
@@ -754,10 +844,21 @@ onMounted(loadTracks)
             </div>
             <!-- Clicking A or B loads this song into that deck, for everyone in the room -->
             <!-- Simple mode: one "Use" button. DJ booth: choose Deck A or Deck B -->
-            <button v-if="!djMode" type="button" class="btn btn-sm btn-outline-secondary flex-shrink-0" @click="pickTrack('A', track)">Use</button>
+            <!-- While that song downloads, its button shows a spinner -->
+            <button v-if="!djMode" type="button" class="btn btn-sm btn-primary btn-use flex-shrink-0" @click="pickTrack('A', track)">
+              <span v-if="isLoadingOn('A', track)" class="spinner-border spinner-border-sm btn-spinner" aria-hidden="true"></span>
+              <AppIcon v-else name="plus" :size="14" :stroke-width="2.5" />
+              {{ isLoadingOn('A', track) ? 'Loading' : 'Use' }}
+            </button>
             <template v-else>
-              <button class="btn btn-sm btn-deck-a flex-shrink-0" @click="pickTrack('A', track)">A</button>
-              <button class="btn btn-sm btn-deck-b flex-shrink-0" @click="pickTrack('B', track)">B</button>
+              <button class="btn btn-sm btn-deck-a flex-shrink-0" :aria-label="isLoadingOn('A', track) ? 'Loading on Deck A' : 'Load on Deck A'" @click="pickTrack('A', track)">
+                <span v-if="isLoadingOn('A', track)" class="spinner-border spinner-border-sm btn-spinner" aria-hidden="true"></span>
+                <template v-else>A</template>
+              </button>
+              <button class="btn btn-sm btn-deck-b flex-shrink-0" :aria-label="isLoadingOn('B', track) ? 'Loading on Deck B' : 'Load on Deck B'" @click="pickTrack('B', track)">
+                <span v-if="isLoadingOn('B', track)" class="spinner-border spinner-border-sm btn-spinner" aria-hidden="true"></span>
+                <template v-else>B</template>
+              </button>
             </template>
           </div>
         </div>
@@ -794,6 +895,75 @@ onMounted(loadTracks)
   --bs-btn-active-color: #fff;
   --bs-btn-active-bg: #D85A0C;
   --bs-btn-active-border-color: #D85A0C;
+}
+
+/* Simple / DJ booth: a two-option switch, the picked one filled blue */
+.mode-switch {
+  display: inline-flex;
+  padding: 4px;
+  gap: 4px;
+  border-radius: 999px;
+  background: var(--brand-tint, #E8EEFF);
+}
+
+.mode-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 38px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  color: var(--brand, #2F5BEA);
+  background: transparent;
+  font-size: 0.9rem;
+  font-weight: 700;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 150ms ease, color 150ms ease, box-shadow 150ms ease, transform 160ms var(--ease-out);
+}
+
+.mode-option.active {
+  color: #fff;
+  background: var(--brand, #2F5BEA);
+  box-shadow: 0 2px 6px rgba(47, 91, 234, 0.3);
+}
+
+.mode-option:active {
+  transform: scale(0.97);
+}
+
+.mode-option:focus-visible {
+  outline: 2px solid var(--brand, #2F5BEA);
+  outline-offset: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .mode-option:not(.active):hover {
+    background: rgba(47, 91, 234, 0.12);
+  }
+}
+
+/* The song being downloaded: a blue outline on its row */
+.track.track-loading {
+  border-color: var(--brand, #2F5BEA) !important;
+  background-color: var(--brand-tint, #E8EEFF);
+}
+
+.btn-spinner {
+  width: 12px;
+  height: 12px;
+  border-width: 2px;
+}
+
+/* The song's "Use" button: filled, so it reads as the thing to tap */
+.btn-use {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0.35rem 0.85rem;
+  border-radius: 999px;
+  font-weight: 700;
 }
 
 .track-icon {
@@ -845,6 +1015,7 @@ onMounted(loadTracks)
 /* People who turned on "Reduce motion" on their device: no movement */
 @media (prefers-reduced-motion: reduce) {
   .track,
+  .mode-option,
   .deck-enter-active,
   .deck-leave-active {
     transition: none;

@@ -984,7 +984,7 @@ watch(
               data-test="section-default"
               @click="toggleSection('default')"
             >
-              <span>Default</span>
+              <span>Blue Studios</span>
               <span v-if="studioFrames.length" class="section-count">{{ studioFrames.length }}</span>
               <AppIcon name="chevron-down" :size="16" class="toggle-chevron" />
             </button>

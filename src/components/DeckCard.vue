@@ -119,7 +119,10 @@ const bars = computed(function () {
         <div class="deck-info">
           <p class="small text-muted mb-0">{{ simple ? 'Your song' : label }}</p>
           <h2 class="section-title mb-0 song-name">{{ track ? track.name : 'No song yet' }}</h2>
-          <p v-if="loading" class="small text-muted mb-0">Loading song...</p>
+          <p v-if="loading" class="small mb-0 loading-text" role="status">
+            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+            Loading song...
+          </p>
           <p v-else-if="track" class="small text-muted mb-0">{{ track.artist_name }}</p>
           <p v-else class="small text-muted mb-0">Press {{ simple ? 'Use' : label.slice(-1) }} on a song to load it here.</p>
         </div>
@@ -169,12 +172,14 @@ const bars = computed(function () {
           class="btn rounded-circle text-white play-btn"
           :style="{ background: color }"
           :disabled="!track || loading"
-          :aria-label="(playing ? 'Pause ' : 'Play ') + label"
+          :aria-label="loading ? 'Loading song' : (playing ? 'Pause ' : 'Play ') + label"
           :aria-pressed="playing"
           @click="emit('toggle-play')"
         >
+          <!-- While the song downloads: a spinner instead of the play icon -->
+          <span v-if="loading" class="spinner-border spinner-border-sm" aria-hidden="true"></span>
           <!-- Drawn icons, not ▶ ❚❚ characters: Windows shows those as coloured emoji -->
-          <svg v-if="playing" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+          <svg v-else-if="playing" width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
             <rect x="3" y="2" width="4" height="12" fill="currentColor" />
             <rect x="9" y="2" width="4" height="12" fill="currentColor" />
           </svg>
@@ -189,6 +194,22 @@ const bars = computed(function () {
 </template>
 
 <style scoped>
+/* "Loading song..." in the deck's own colour, so it's easy to spot */
+.loading-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--brand);
+  font-weight: 600;
+}
+
+.loading-text .spinner-border,
+.play-btn .spinner-border {
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
+}
+
 /* The black record: a square with border-radius 50% becomes a circle.
    Not in syllabus: the gradients draw the grooves (thin rings) and the shine (two light wedges). */
 .vinyl {

@@ -26,6 +26,8 @@ const cameraError = ref('')
 const switchingCamera = ref(false)
 const micOn = ref(false)        // everyone always starts muted
 const micBusy = ref(false)      // true while the mic is being turned on/off
+const camOn = ref(true)         // my camera is on (the others see me). Turned off with toggleCamera.
+const camBusy = ref(false)      // true while the camera is being turned on/off
 const remoteUsers = ref([])     // the others: [{ uid: 'Xk3v9...', hasVideo: true, hasAudio: false }]
 
 // ---------- Agora objects (normal variables: pages never show them directly,
@@ -38,6 +40,49 @@ let wantCall = false        // false once endCall() runs, so a call that is stil
 let cameraStream = null     // the real camera, before the face filter (see useFaceFilter.js)
 
 // ---------- Camera ----------
+
+// Which side of the phone a camera is on: 'user' (front), 'environment' (back), or '' (don't know, e.g. a
+// laptop webcam). Chrome tells us through getCapabilities(); Safari only through the camera's name.
+function cameraSide(camera) {
+  try {
+    const facing = camera.getCapabilities && camera.getCapabilities().facingMode
+    if (facing && facing.length) return facing[0]
+  } catch (error) {
+    // some browsers don't have getCapabilities on the device: use the name below
+  }
+  const name = (camera.label || '').toLowerCase()
+  if (/front|facing front|user|selfie/.test(name)) return 'user'
+  if (/back|rear|facing back|environment/.test(name)) return 'environment'
+  return ''
+}
+
+// How wide a camera sees, from its name (iPhones: "Back Ultra Wide Camera", "Back Telephoto Camera"...).
+// Bigger = wider. Android names don't say, so they all score the same and the first one (the main camera) wins.
+function wideScore(camera) {
+  const name = (camera.label || '').toLowerCase()
+  if (/ultra ?wide/.test(name)) return 3
+  if (/tele|zoom|desk view/.test(name)) return 0
+  if (/dual|triple/.test(name)) return 1 // iPhone "virtual" cameras: start at the normal wide lens
+  return 2 // the plain main camera
+}
+
+// Phones list every lens (ultra wide, telephoto...) as its own camera, so "switch camera" went through
+// 3 or 4 of them. Keep just the widest front one and the widest back one. Cameras we can't place
+// (laptop and USB webcams) are all kept.
+function onePerSide(allCameras) {
+  const best = {}
+  const kept = []
+  for (const camera of allCameras) {
+    const side = cameraSide(camera)
+    if (!side) {
+      kept.push(camera)
+    } else if (!best[side] || wideScore(camera) > wideScore(best[side])) {
+      best[side] = camera
+    }
+  }
+  // Front first, then back, then anything else
+  return [best.user, best.environment, ...kept].filter(Boolean)
+}
 
 async function openCamera() {
   // Browsers only allow the camera on https:// pages (or localhost)
@@ -79,10 +124,17 @@ async function openCamera() {
   // Get the list of cameras once. (Camera names are only available after permission is given.)
   if (cameras.value.length === 0) {
     const devices = await navigator.mediaDevices.enumerateDevices()
-    cameras.value = devices.filter((device) => device.kind === 'videoinput')
+    const allCameras = devices.filter((device) => device.kind === 'videoinput')
+    cameras.value = onePerSide(allCameras)
 
-    // Remember which camera in the list we are using now
-    const currentIndex = cameras.value.findIndex((camera) => camera.deviceId === settings.deviceId)
+    // Remember which camera in the list we are using now. If the browser opened a front/back camera
+    // that onePerSide left out, point at the kept camera on the same side instead.
+    let currentIndex = cameras.value.findIndex((camera) => camera.deviceId === settings.deviceId)
+    if (currentIndex === -1) {
+      const current = allCameras.find((camera) => camera.deviceId === settings.deviceId)
+      const side = settings.facingMode || (current && cameraSide(current))
+      currentIndex = cameras.value.findIndex((camera) => cameraSide(camera) === side)
+    }
     if (currentIndex !== -1) {
       cameraIndex.value = currentIndex
     }
@@ -106,8 +158,9 @@ function closeCamera() {
 
 // Go to the next camera in the list, back to the first one after the last
 async function switchCamera() {
-  // Ignore extra taps while a switch is still happening (two switches at once can break the camera)
-  if (switchingCamera.value) return
+  // Ignore extra taps while a switch is still happening (two switches at once can break the camera).
+  // With the camera turned off there is nothing to switch.
+  if (switchingCamera.value || !camOn.value || camBusy.value) return
   switchingCamera.value = true
 
   // Most phones cannot open two cameras at the same time, so turn the old one off first
@@ -123,6 +176,48 @@ async function switchCamera() {
   }
 
   switchingCamera.value = false
+}
+
+// Send my camera (the face filter's stream) to the others in the call
+async function publishCamera() {
+  if (!agoraClient || !localStream.value || localVideoTrack) return
+  localVideoTrack = AgoraRTC.createCustomVideoTrack({
+    mediaStreamTrack: localStream.value.getVideoTracks()[0],
+  })
+  await agoraClient.publish(localVideoTrack)
+}
+
+// Camera off: stop sending it and turn the real camera fully off (the phone's camera light goes out),
+// so the others see my name instead and the Shoot page shows "Camera off".
+// Camera on: open it again and send it again.
+async function toggleCamera() {
+  if (camBusy.value || switchingCamera.value) return
+  camBusy.value = true
+
+  try {
+    if (camOn.value) {
+      camOn.value = false
+      if (agoraClient && localVideoTrack) {
+        await agoraClient.unpublish(localVideoTrack)
+      }
+      if (localVideoTrack) {
+        localVideoTrack.close()
+        localVideoTrack = null
+      }
+      closeCamera()
+    } else {
+      await openCamera()
+      if (localStream.value) {
+        camOn.value = true
+        await publishCamera()
+      }
+    }
+  } catch (error) {
+    console.error(error)
+    callError.value = 'Could not turn the camera on or off. Please try again.'
+  }
+
+  camBusy.value = false
 }
 
 // ---------- Others in the call ----------
@@ -169,6 +264,7 @@ async function startCall(code, uid) {
   wantCall = true
   callError.value = ''
   micOn.value = false // everyone always starts muted
+  camOn.value = true  // and with the camera on
 
   await openCamera()
   if (!wantCall) return endCall() // left the room while the camera was opening
@@ -233,11 +329,9 @@ async function startCall(code, uid) {
 
     // Send our camera to the others. We use the camera we already opened,
     // instead of letting Agora open the camera again. The microphone is NOT sent (muted).
-    if (localStream.value) {
-      localVideoTrack = AgoraRTC.createCustomVideoTrack({
-        mediaStreamTrack: localStream.value.getVideoTracks()[0],
-      })
-      await agoraClient.publish(localVideoTrack)
+    // (If the camera was turned off while joining, camOn is false and nothing is sent.)
+    if (camOn.value) {
+      await publishCamera()
     }
   } catch (error) {
     console.error(error)
@@ -265,6 +359,7 @@ async function endCall() {
   agoraUsers = {}
   remoteUsers.value = []
   micOn.value = false
+  camOn.value = true
 }
 
 // ---------- Microphone ----------
@@ -305,6 +400,9 @@ export function useVideoCall() {
     switchingCamera,
     micOn,
     micBusy,
+    camOn,
+    camBusy,
+    toggleCamera,
     remoteUsers,
     getRemoteUser,
     getRemoteVideoTrack,
