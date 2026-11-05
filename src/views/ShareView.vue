@@ -10,11 +10,12 @@ import { getGuestName } from '../guest.js'
 import { resolveEditedVideos } from '../clips.js'
 import { roomLayout, roomFrameStyle, safeStickers } from '../stripData.js'
 import { buildExportFile } from '../exportFile.js'
+import { createOverallProgress } from '../exportProgress.js'
 import { newShareId, createShare, getShare } from '../shares.js'
 import { saveStripFile, hasSavedShare } from '../studio.js'
 import StageBar from '../components/StageBar.vue'
-import PhotoStrip from '../components/PhotoStrip.vue'
 import SharedStrip from '../components/SharedStrip.vue'
+import LogoProgress from '../components/LogoProgress.vue'
 import AppIcon from '../components/AppIcon.vue'
 
 // The "Share" page (a child of RoomLayout.vue): the strip is made as a file (PNG, GIF or MP4), uploaded, and given a
@@ -99,6 +100,9 @@ async function build() {
   progress.value = 0
   label.value = 'Getting your strip ready...'
   const { format, name } = job.value
+  const audioPath = room.value.music && room.value.music.audioPath
+  // ONE bar for all the stages (recording, converting, saving...): each stage only says how far it is (see exportProgress.js)
+  const overall = createOverallProgress(format, Boolean(audioPath), (value) => (progress.value = value))
 
   // While working, tell the room how far we are (and that we are still here)
   const beat = setInterval(() => {
@@ -120,16 +124,18 @@ async function build() {
         clips: clips.value,
         editedVideos: editedVideos.value,
       },
-      audioPath: room.value.music && room.value.music.audioPath,
+      audioPath: audioPath,
       onStatus: (text) => (label.value = text),
-      onProgress: (p) => (progress.value = p),
+      progress: overall,
       isCancelled: () => !stillMine(),
     })
     if (!file || !stillMine()) return // cancelled: someone else has the job now, or we left
 
     label.value = 'Saving your link...'
+    overall.creep('save') // uploading does not say how far it is, so the bar creeps on
     const made = await createShare({ id: newShareId(), title: name, format: format, file: file, roomCode: code.value })
     await updateDoc(roomRef(), { 'exportJob.status': 'done', 'exportJob.shareId': made.id, 'exportJob.progress': 1, 'exportJob.updatedAt': Date.now() })
+    overall.finish()
   } catch (error) {
     console.error(error)
     if (stillMine()) {
@@ -137,6 +143,7 @@ async function build() {
     }
   } finally {
     clearInterval(beat)
+    overall.stop()
     building.value = false
   }
 }
@@ -285,27 +292,10 @@ watch(isAccount, (now) => {
     </SharedStrip>
   </div>
 
-  <!-- Still being made, or something went wrong -->
-  <div v-else class="row g-3">
-    <div class="col-12 col-lg-4">
-      <div class="panel">
-        <h2 class="section-title">Your strip</h2>
-        <PhotoStrip
-          mode="view"
-          :layout="layout"
-          :frame-style="frameStyle"
-          :photos-by-id="photosById"
-          :slot-photos="slotPhotos"
-          :edits="edits"
-          :crops="crops"
-          :stickers="stickers"
-          :clips="clips"
-          :edited-videos="editedVideos"
-        />
-      </div>
-    </div>
-    <div class="col-12 col-lg-8">
-      <div class="panel">
+  <!-- Still being made, or something went wrong. Only this: no preview of the strip, and no box around it,
+       in the middle of the page (across and up and down). -->
+  <div v-else class="loader-screen">
+    <div class="loader-content">
         <template v-if="job && job.status === 'failed'">
           <h2 class="section-title">That didn't work</h2>
           <p class="error-box" role="alert">{{ job.error }}</p>
@@ -326,15 +316,11 @@ watch(isAccount, (now) => {
         <template v-else>
           <!-- The same words on every device: which device is making the file is whichever took the job first, so it is not said -->
           <h2 class="section-title">Making your {{ job.format.toUpperCase() }}</h2>
-          <p class="making" role="status">
-            <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>{{ shownLabel || 'Starting...' }}
-          </p>
-          <div class="progress" role="progressbar" aria-label="Making the file" :aria-valuenow="Math.round(shownProgress * 100)" aria-valuemin="0" aria-valuemax="100">
-            <div class="progress-bar" :style="{ width: Math.round(shownProgress * 100) + '%' }"></div>
-          </div>
+          <!-- The logo fills up as the file is made. One bar for all the stages: it only goes up. -->
+          <LogoProgress :progress="shownProgress" />
+          <p class="making" role="status">{{ shownLabel || 'Starting...' }}</p>
           <p class="hint mt-3 mb-0">Keep this page open until it is done. It appears here for everyone in the room.</p>
         </template>
-      </div>
     </div>
   </div>
   </div>
@@ -364,17 +350,37 @@ watch(isAccount, (now) => {
   text-wrap: pretty;
 }
 
-/* "Drawing the photos..." with the spinner next to it */
-.making {
+/* The loading screen: no box, in the middle of the page across and up and down (under the step bar) */
+.loader-screen {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  /* as tall as the space under the step bar, so the logo is in the middle of what is left (dvh: on a phone the
+     address bar moves, so this follows it where the browser knows dvh) */
+  min-height: calc(100vh - 150px);
+  min-height: calc(100dvh - 150px);
+  padding: 16px 0;
+}
+
+.loader-content {
+  width: min(100%, 460px);
+  text-align: center;
+}
+
+.loader-content .section-title {
+  justify-content: center;
+  font-size: clamp(1.3rem, 1.1rem + 0.8vw, 1.7rem);
+}
+
+.loader-content .d-flex {
+  justify-content: center;
+}
+
+/* "Recording the video..." under the logo */
+.making {
   margin: 0 0 8px;
   font-size: 0.9rem;
   font-weight: 600;
-}
-
-.making .spinner-border {
-  color: var(--brand);
+  text-align: center;
 }
 </style>

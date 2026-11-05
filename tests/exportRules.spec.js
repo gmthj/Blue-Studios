@@ -1,45 +1,36 @@
 import { describe, it, expect } from 'vitest'
-import { exportOptions, stripContents, isGifSrc, hasGifSticker } from '../src/exportRules.js'
+import { chooseExportFormat, stripContents, isGifSrc, hasGifSticker } from '../src/exportRules.js'
 
-// The export logic table from the team's design, one row each:
-// [video, music, gifSticker] -> which cards can be picked, and whether music is lost
-// (photos do not matter: a complete strip is made of photos and / or videos)
+// The export logic, one row each: [video, music, moving sticker] -> the format the strip is exported as
+// (nobody chooses it; photos do not matter: a complete strip is made of photos and / or videos)
+//   still strip, no music        -> PNG
+//   anything else                -> MP4 (with the music if there is some, otherwise silent)
 const TABLE = [
-  //  video  music  gif     png    gif    mp4    music lost in
-  [true, true, true, { png: false, gif: true, mp4: true }, ['gif']],
-  [true, true, false, { png: false, gif: true, mp4: true }, ['gif']],
-  [true, false, true, { png: false, gif: true, mp4: false }, []],
-  [true, false, false, { png: false, gif: true, mp4: false }, []],
-  [false, true, true, { png: false, gif: true, mp4: true }, ['gif']],
-  [false, true, false, { png: true, gif: false, mp4: true }, ['png']],
-  [false, false, true, { png: false, gif: true, mp4: false }, []],
-  [false, false, false, { png: true, gif: false, mp4: false }, []],
+  //  video  music  gif     format
+  [true, true, true, 'mp4'],
+  [true, true, false, 'mp4'],
+  [true, false, true, 'mp4'], // a silent MP4: what a GIF used to be
+  [true, false, false, 'mp4'], // a silent MP4
+  [false, true, true, 'mp4'],
+  [false, true, false, 'mp4'], // a still strip with music: a video of it with the music
+  [false, false, true, 'mp4'], // a silent MP4 with the moving sticker
+  [false, false, false, 'png'], // the only case that stays a picture
 ]
 
 describe('Export rules (exportRules.js)', () => {
-  it.each(TABLE)('video %s, music %s, GIF sticker %s', (hasVideo, hasMusic, hasGif, expected, musicLostIn) => {
-    const options = exportOptions({ complete: true, hasVideo, hasMusic, hasGifSticker: hasGif })
-    expect(options.png.available).toBe(expected.png)
-    expect(options.gif.available).toBe(expected.gif)
-    expect(options.mp4.available).toBe(expected.mp4)
-    const lost = ['png', 'gif', 'mp4'].filter((f) => options[f].musicLost)
-    expect(lost).toEqual(musicLostIn)
+  it.each(TABLE)('video %s, music %s, moving sticker %s', (hasVideo, hasMusic, hasGif, expected) => {
+    expect(chooseExportFormat({ complete: true, hasVideo, hasMusic, hasGifSticker: hasGif })).toBe(expected)
   })
 
-  it('gives a reason for every card that cannot be picked, and none for the others', () => {
-    const options = exportOptions({ complete: true, hasVideo: true, hasMusic: false, hasGifSticker: false })
-    expect(options.png.reason).toMatch(/video/)
-    expect(options.mp4.reason).toMatch(/music/i)
-    expect(options.gif.reason).toBe('')
-  })
-
-  it('blurs every card until every slot is filled', () => {
-    const options = exportOptions({ complete: false, hasVideo: true, hasMusic: true, hasGifSticker: true })
-    for (const format of ['png', 'gif', 'mp4']) {
-      expect(options[format].available).toBe(false)
-      expect(options[format].reason).toMatch(/every slot/)
-      expect(options[format].musicLost).toBe(false)
+  it('gives no format until every slot is filled, whatever the strip has', () => {
+    for (const [hasVideo, hasMusic, hasGif] of TABLE) {
+      expect(chooseExportFormat({ complete: false, hasVideo, hasMusic, hasGifSticker: hasGif })).toBeNull()
     }
+  })
+
+  it('is only ever PNG or MP4 (there is no GIF export any more)', () => {
+    const formats = new Set(TABLE.map(([hasVideo, hasMusic, hasGif]) => chooseExportFormat({ complete: true, hasVideo, hasMusic, hasGifSticker: hasGif })))
+    expect([...formats].sort()).toEqual(['mp4', 'png'])
   })
 })
 
