@@ -11,7 +11,6 @@
 // The first visit shows them by itself; after Skip or the last step they only come back
 // from the "?" button. localStorage can be blocked, so every use is wrapped.
 import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
-import AppIcon from './AppIcon.vue'
 
 const props = defineProps({
   steps: { type: Array, required: true },
@@ -19,7 +18,7 @@ const props = defineProps({
 })
 
 const index = ref(-1)
-const box = ref(null) // where the card goes: { top, left, placement } or null for the middle
+const box = ref(null) // where the card goes: { top or bottom, left, placement, arrowX or arrowY } or null for the middle
 const step = computed(() => (index.value >= 0 ? props.steps[index.value] : null))
 let marked = null
 
@@ -44,7 +43,13 @@ function unmark() {
   marked = null
 }
 
-// Find the part this step is about, outline it and put the card beside it
+// Keep a number between two others
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max)
+}
+
+// Find the part this step is about, outline it and put the card beside it, with the little arrow
+// (the same as the Pick page's and the GIF tips') pointing at the middle of the part
 function place() {
   unmark()
   box.value = null
@@ -54,19 +59,39 @@ function place() {
   if (!rect || rect.width === 0 || rect.height === 0) return // not on screen: card in the middle
   el.classList.add('guide-tips-target')
   marked = el
+  const gap = 14 // room for the arrow
   const cardWidth = Math.min(300, window.innerWidth - 24)
   const cardHeight = 170
-  const left = Math.max(12, Math.min(rect.left + rect.width / 2 - cardWidth / 2, window.innerWidth - cardWidth - 12))
+  const middleX = rect.left + rect.width / 2
+  const middleY = rect.top + rect.height / 2
+  const left = clamp(middleX - cardWidth / 2, 12, window.innerWidth - cardWidth - 12)
+  const arrowX = clamp(middleX - left, 22, cardWidth - 22)
   // Below the part if there is room, otherwise above, otherwise beside it
-  if (rect.bottom + 12 + cardHeight < window.innerHeight) {
-    box.value = { top: rect.bottom + 12, left, placement: 'below' }
-  } else if (rect.top - 12 - cardHeight > 0) {
-    box.value = { top: rect.top - 12 - cardHeight, left, placement: 'above' }
+  if (rect.bottom + gap + cardHeight < window.innerHeight) {
+    box.value = { top: rect.bottom + gap, left, placement: 'below', arrowX }
+  } else if (rect.top - gap - cardHeight > 0) {
+    // Placed by its bottom edge, so the arrow touches the part whatever the card's height
+    box.value = { bottom: window.innerHeight - rect.top + gap, left, placement: 'above', arrowX }
   } else {
-    const side = rect.right + 12 + cardWidth < window.innerWidth ? rect.right + 12 : Math.max(12, rect.left - 12 - cardWidth)
-    box.value = { top: Math.max(12, Math.min(rect.top, window.innerHeight - cardHeight - 12)), left: side, placement: 'beside' }
+    const onRight = rect.right + gap + cardWidth < window.innerWidth
+    const sideLeft = onRight ? rect.right + gap : Math.max(12, rect.left - gap - cardWidth)
+    // Next to a tall part (a side panel): level with its middle, as far as the screen allows
+    const top = clamp(middleY - cardHeight / 2, 12, window.innerHeight - cardHeight - 12)
+    box.value = { top, left: sideLeft, placement: onRight ? 'right' : 'left', arrowY: clamp(middleY - top, 22, cardHeight - 22) }
   }
 }
+
+// Where the card and its arrow go, as inline styles
+const cardStyle = computed(() => {
+  const b = box.value
+  if (!b) return null
+  const style = { left: b.left + 'px' }
+  if (b.bottom !== undefined) style.bottom = b.bottom + 'px'
+  else style.top = b.top + 'px'
+  if (b.arrowX !== undefined) style['--arrow-x'] = b.arrowX + 'px'
+  if (b.arrowY !== undefined) style['--arrow-y'] = b.arrowY + 'px'
+  return style
+})
 
 async function start() {
   index.value = 0
@@ -118,7 +143,7 @@ defineExpose({ start })
       <div
         class="guide-tips-card"
         :class="box ? 'is-' + box.placement : 'is-middle'"
-        :style="box ? { top: box.top + 'px', left: box.left + 'px' } : null"
+        :style="cardStyle"
         role="dialog"
         aria-live="polite"
         :aria-label="step.title"
@@ -130,9 +155,8 @@ defineExpose({ start })
         <p class="guide-tips-text">{{ step.text }}</p>
         <div class="guide-tips-actions">
           <button type="button" class="guide-tips-skip" @click="close">Skip</button>
-          <button type="button" class="guide-tips-next" @click="next">
+          <button type="button" class="btn btn-primary btn-sm" @click="next">
             {{ index === steps.length - 1 ? 'Got it' : 'Next' }}
-            <AppIcon v-if="index < steps.length - 1" name="arrow-right" :size="14" />
           </button>
         </div>
       </div>
@@ -170,24 +194,52 @@ defineExpose({ start })
   animation: guide-tips-in 200ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 .guide-tips-card.is-middle { top: 50%; left: 50%; transform: translate(-50%, -50%); }
-@keyframes guide-tips-in { from { opacity: 0; } }
-.guide-tips-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
-.guide-tips-title { font-size: 0.95rem; font-weight: 700; }
-.guide-tips-count { font-size: 0.72rem; color: rgba(255, 255, 255, 0.6); font-variant-numeric: tabular-nums; }
-.guide-tips-text { margin: 0 0 12px; font-size: 0.85rem; line-height: 1.5; color: rgba(255, 255, 255, 0.85); text-wrap: pretty; }
-.guide-tips-actions { display: flex; align-items: center; justify-content: space-between; }
-.guide-tips-skip { border: 0; background: transparent; color: rgba(255, 255, 255, 0.7); font-size: 0.85rem; font-weight: 600; padding: 6px 4px; }
-.guide-tips-next {
-  display: inline-flex; align-items: center; gap: 6px;
-  height: 34px; padding: 0 14px;
-  border: 0; border-radius: 999px;
-  background: #2F5BEA; color: #ffffff;
-  font-size: 0.85rem; font-weight: 700;
+/* The little arrow, pointing at the part the tip is about (the same as PageTip.vue and the GIF tips) */
+.guide-tips-card:not(.is-middle)::after {
+  content: '';
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: #14172B;
+  transform: rotate(45deg);
 }
-.guide-tips-skip:focus-visible, .guide-tips-next:focus-visible { outline: 2px solid #ffffff; outline-offset: 2px; }
+.guide-tips-card.is-below::after { top: -6px; left: calc(var(--arrow-x, 28px) - 6px); }
+.guide-tips-card.is-above::after { bottom: -6px; left: calc(var(--arrow-x, 28px) - 6px); }
+.guide-tips-card.is-right::after { left: -6px; top: calc(var(--arrow-y, 28px) - 6px); }
+.guide-tips-card.is-left::after { right: -6px; top: calc(var(--arrow-y, 28px) - 6px); }
+@keyframes guide-tips-in { from { opacity: 0; } }
+/* The same title, text and buttons as the Pick page's tips (PageTip.vue) */
+.guide-tips-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.guide-tips-title { font-size: 0.95rem; font-weight: 700; text-wrap: balance; }
+.guide-tips-count { flex-shrink: 0; font-size: 0.75rem; color: #B9BECC; font-variant-numeric: tabular-nums; }
+.guide-tips-text { margin: 6px 0 10px; font-size: 0.85rem; line-height: 1.5; color: #E3E6EE; text-wrap: pretty; }
+.guide-tips-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.guide-tips-skip {
+  padding: 4px 8px; border: 0; border-radius: 8px;
+  background: transparent; color: #B9BECC;
+  font-size: 0.85rem; font-weight: 600;
+  transition: color 150ms ease;
+}
+.guide-tips-skip:focus-visible { outline: 2px solid #ffffff; outline-offset: 2px; }
+/* The card is moved to <body>, outside .app-page, so Next gets the app's blue button here (pages.css) */
+.guide-tips-card .btn {
+  --bs-btn-font-weight: 600;
+  --bs-btn-border-radius: 8px;
+  --bs-btn-bg: #2F5BEA;
+  --bs-btn-border-color: #2F5BEA;
+  --bs-btn-hover-bg: #2449C4;
+  --bs-btn-hover-border-color: #2449C4;
+  --bs-btn-active-bg: #2449C4;
+  --bs-btn-active-border-color: #2449C4;
+  --bs-btn-focus-box-shadow: 0 0 0 4px rgba(47, 91, 234, 0.2);
+  transition: background-color 150ms ease, border-color 150ms ease, transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.guide-tips-card .btn:active { transform: scale(0.97); }
+@media (prefers-reduced-motion: reduce) {
+  .guide-tips-card .btn:active { transform: none; }
+}
 @media (hover: hover) and (pointer: fine) {
   .guide-tips-skip:hover { color: #ffffff; }
-  .guide-tips-next:hover { background: #2449C4; }
 }
 @media (prefers-reduced-motion: reduce) {
   .guide-tips-card { animation: none; }

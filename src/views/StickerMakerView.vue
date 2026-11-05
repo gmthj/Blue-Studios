@@ -490,7 +490,7 @@ const selectedKind = computed(() => {
   const layer = selectedLayer.value
   if (!layer) return ''
   if (layer.type === 'text') return layer.emoji ? 'Emoji' : 'Text'
-  if (layer.type === 'image') return layer.source === 'photo' ? 'Photo' : 'Sticker'
+  if (layer.type === 'image') return layer.source === 'photo' ? 'Photo' : 'Element'
   return 'Drawing'
 })
 
