@@ -43,8 +43,8 @@ const options = computed(() => {
     case 'pick':
       return [
         { to: 'shoot', label: 'Shoot', kind: 'back' },
-        { to: 'export', label: 'Quick export', kind: 'skip' },
-        ...(clips.value.length >= 2 ? [{ to: 'video', label: 'Edit video', kind: 'skip' }] : []),
+        { to: 'export', label: 'Quick export', kind: 'skip', icon: 'download' },
+        ...(clips.value.length >= 2 ? [{ to: 'video', label: 'Edit video', kind: 'skip', icon: 'film' }] : []),
         { to: 'decorate', label: 'Decorate', kind: 'next' },
       ]
     case 'video':
@@ -52,7 +52,7 @@ const options = computed(() => {
     case 'decorate':
       return [
         { to: 'pick', label: 'Pick', kind: 'back' },
-        { to: 'export', label: 'Export without music', kind: 'skip' },
+        { to: 'export', label: 'Export without music', kind: 'skip', icon: 'download' },
         { to: 'music', label: 'Add music', kind: 'next' },
       ]
     case 'music':
@@ -140,6 +140,7 @@ onBeforeUnmount(() => {
           :disabled="moving"
           @click="go(option)"
         >
+          <AppIcon :name="option.icon || 'arrow-right'" :size="15" />
           {{ option.label }}
         </button>
       </div>
@@ -254,20 +255,21 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
-/* Shortcuts: grey outline pills. A step quieter than the blue forward button (outline, not filled) and a little
-   shorter than it, so the main way forward still stands out. */
+/* Shortcuts: light blue pills with an icon. Clearly buttons (tinted, blue text), but a step quieter than the
+   filled blue forward button, so the main way forward still stands out. */
 .sn-link {
   display: inline-flex;
   align-items: center;
-  height: 32px;
-  padding: 0 14px;
-  border: 1px solid #D6DAE4;
+  gap: 6px;
+  height: 36px;
+  padding: 0 16px 0 13px;
+  border: 1.5px solid #C9D6FF;
   border-radius: 999px;
-  color: #4A4F5E;
-  background: #ffffff;
+  color: var(--brand);
+  background: var(--brand-tint);
   font: inherit;
-  font-size: 0.82rem;
-  font-weight: 600;
+  font-size: 0.85rem;
+  font-weight: 700;
   white-space: nowrap;
   -webkit-tap-highlight-color: transparent;
   transition: background-color 150ms ease, border-color 150ms ease, color 150ms ease, transform 160ms var(--ease-out);
@@ -285,9 +287,9 @@ onBeforeUnmount(() => {
   }
 
   .sn-link:hover:not(:disabled) {
-    color: var(--ink);
-    border-color: #B9BFCC;
-    background: #F4F6FA;
+    color: var(--brand-dark);
+    border-color: var(--brand);
+    background: #DCE5FF;
   }
 
   .sn-next:hover:not(:disabled) {
@@ -315,9 +317,9 @@ onBeforeUnmount(() => {
 
   /* Slightly smaller pills on their own row, with a little space under them before the main buttons */
   .sn-link {
-    height: 28px;
-    padding: 0 12px;
-    font-size: 0.78rem;
+    height: 32px;
+    padding: 0 14px 0 11px;
+    font-size: 0.8rem;
   }
 
   .sn-mid + .sn-next,

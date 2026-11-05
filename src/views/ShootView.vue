@@ -31,7 +31,7 @@ const uid = getUid()
 const guestName = getGuestName()
 
 const { code, room, roomRef, activeMembers } = useRoom()
-const { localStream, mirrored, cameras, cameraIndex, cameraError, switchingCamera, switchCamera, getRemoteUser, getRemoteVideoTrack } = useVideoCall()
+const { localStream, mirrored, cameras, cameraIndex, cameraError, switchingCamera, switchCamera, camOn, camBusy, toggleCamera, getRemoteUser, getRemoteVideoTrack } = useVideoCall()
 const { faceFilterId, faceFilterLoading, faceFilterError } = useFaceFilter()
 const { fullscreen } = useFullscreen() // fullscreen hides the header, so the page gets its height too
 
@@ -388,7 +388,13 @@ async function copyJoinLink() {
             />
 
             <!-- No camera (yet): a dark box with a camera icon instead of plain black -->
-            <div v-if="!localStream && !cameraError" class="camera-waiting">
+            <!-- Turned off in the video call window: say so, with a button to turn it back on -->
+            <div v-if="!camOn && !cameraError" class="camera-waiting">
+              <AppIcon name="camera" :size="32" />
+              <span>Your camera is off</span>
+              <button type="button" class="glass-btn" :disabled="camBusy" @click="toggleCamera">Turn camera on</button>
+            </div>
+            <div v-else-if="!localStream && !cameraError" class="camera-waiting">
               <AppIcon name="camera" :size="32" />
               <span>Starting your camera...</span>
             </div>
@@ -404,7 +410,7 @@ async function copyJoinLink() {
 
             <!-- Only shown if the device has more than one camera (e.g. phones with front + back) -->
             <button
-              v-if="cameras.length > 1"
+              v-if="cameras.length > 1 && localStream"
               class="glass-btn switch-camera-btn"
               :disabled="capturing || switchingCamera"
               :title="'Switch camera (' + (cameraIndex + 1) + '/' + cameras.length + ')'"

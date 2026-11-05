@@ -59,10 +59,26 @@ function getAudio() {
   return audio
 }
 
+// iPhones: Web Audio (these sounds, and the music page's Tone.js decks) is silenced by the ring/silent switch,
+// unless the page's audio session is "play-and-record". Safari switches to that by itself when the microphone
+// opens, which is why the music was only heard after unmuting in the call once. Setting it ourselves
+// (Safari 16.4+, navigator.audioSession) makes the sound play straight away; it is also the session the call
+// needs for the mic, so unmuting later still works. Other browsers don't have audioSession: nothing happens.
+export function useLoudAudioSession() {
+  try {
+    if (navigator.audioSession && navigator.audioSession.type !== 'play-and-record') {
+      navigator.audioSession.type = 'play-and-record'
+    }
+  } catch (error) {
+    // not supported: nothing to do
+  }
+}
+
 // Browsers only allow sound after the user has clicked or tapped the page once.
 // On the first tap, wake the audio up, so a countdown started by SOMEONE ELSE can still beep here.
 if (typeof window !== 'undefined') {
   const unlock = () => {
+    useLoudAudioSession()
     const ctx = getAudio()
     if (ctx && ctx.state === 'suspended') ctx.resume()
     window.removeEventListener('pointerdown', unlock)

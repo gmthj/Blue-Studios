@@ -16,7 +16,7 @@ import VideoTile from './VideoTile.vue'
 
 const uid = getUid()
 const { room, activeMembers } = useRoom()
-const { micOn, micBusy, toggleMic, callError } = useVideoCall()
+const { micOn, micBusy, toggleMic, camOn, camBusy, toggleCamera, callError } = useVideoCall()
 
 // The position and size are remembered on this device (localStorage), so they stay the same
 // when moving between pages. try/catch because some browsers block localStorage (e.g. private mode).
@@ -352,6 +352,27 @@ onBeforeUnmount(() => {
         <span class="live-dot" aria-hidden="true"></span>
         <span>{{ activeMembers.length }}<span class="people-max">/{{ MAX_PEOPLE }}</span></span>
       </span>
+
+      <!-- Camera: red while off, like the mic. Off = the others see your name instead of your video. -->
+      <button
+        class="bar-btn"
+        :class="{ 'bar-btn-muted': !camOn }"
+        :disabled="camBusy"
+        :title="camOn ? 'Turn camera off' : 'Turn camera on'"
+        :aria-label="camOn ? 'Turn camera off' : 'Turn camera on'"
+        :aria-pressed="!camOn"
+        @click="toggleCamera"
+      >
+        <svg v-if="camOn" class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="m16 13 5.2 3.5a.5.5 0 0 0 .8-.4V7.9a.5.5 0 0 0-.8-.4L16 11" />
+          <rect x="2" y="6" width="14" height="12" rx="2" />
+        </svg>
+        <svg v-else class="icon" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M10.66 6H14a2 2 0 0 1 2 2v2.34l1 1L22 8v8" />
+          <path d="M16 16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2" />
+          <path d="M2 2l20 20" />
+        </svg>
+      </button>
 
       <!-- Mic: red while muted, so it is obvious nobody can hear you -->
       <button

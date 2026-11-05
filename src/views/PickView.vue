@@ -647,7 +647,7 @@ watch(
         <h2 class="section-title">Saved frames</h2>
 
         <!-- DEFAULT: the frames published by the Blue Studios account (first 8, then "Show all") -->
-        <h3 class="group-label">Default <span v-if="studioFrames.length" class="section-count">{{ studioFrames.length }}</span></h3>
+        <h3 class="group-label">Blue Studios <span v-if="studioFrames.length" class="section-count">{{ studioFrames.length }}</span></h3>
         <div v-if="loadingStudioFrames" class="frame-grid" role="status" aria-label="Loading frames">
           <span v-for="n in 4" :key="n" class="skeleton frame-skeleton"></span>
         </div>
