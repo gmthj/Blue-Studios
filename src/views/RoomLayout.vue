@@ -41,6 +41,14 @@ const { room, roomRef, activeMembers, enterRoom, exitRoom, saveProgress, emptySt
 const { startCall, endCall } = useVideoCall()
 const { exitFullscreen } = useFullscreen()
 
+// Joining can fail (no connection, a blocked request, an older browser...). An error used to leave the page on
+// "Joining room..." forever. Now it shows what went wrong with Try again, and after SLOW_MS it says it is taking
+// long (with Try again) while it keeps waiting.
+const SLOW_MS = 15000
+const slow = ref(false)
+const joinError = ref('')
+let slowTimer = 0
+
 onMounted(async () => {
   // People who open a room link without a name are sent to the home page to type one
   if (guestName === '') {
@@ -48,28 +56,37 @@ onMounted(async () => {
     return
   }
 
-  const roomSnap = await getDoc(doc(db, 'rooms', code))
-  if (!roomSnap.exists()) {
-    status.value = 'notFound'
-    return
-  }
-  if (roomSnap.data().closed) {
-    status.value = 'closed'
-    return
-  }
-  if (await isRoomFull(code, uid)) {
-    status.value = 'full'
-    return
-  }
+  slowTimer = setTimeout(() => (slow.value = true), SLOW_MS)
+  try {
+    const roomSnap = await getDoc(doc(db, 'rooms', code))
+    if (!roomSnap.exists()) {
+      status.value = 'notFound'
+      return
+    }
+    if (roomSnap.data().closed) {
+      status.value = 'closed'
+      return
+    }
+    if (await isRoomFull(code, uid)) {
+      status.value = 'full'
+      return
+    }
 
-  // Join the room (members list, heartbeat, room + photos listeners), then show the child page
-  await enterRoom(code, uid, guestName, getDeviceType())
-  status.value = 'ready'
-  followStage() // e.g. if the group is already making the photostrip, go straight there
-  applyStartTemplate(roomSnap.data())
+    // Join the room (members list, heartbeat, room + photos listeners), then show the child page
+    await enterRoom(code, uid, guestName, getDeviceType())
+    status.value = 'ready'
+    followStage() // e.g. if the group is already making the photostrip, go straight there
+    applyStartTemplate(roomSnap.data())
 
-  // Start the video call (not awaited, so the page shows while the call connects)
-  startCall(code, uid)
+    // Start the video call (not awaited, so the page shows while the call connects)
+    startCall(code, uid)
+  } catch (error) {
+    console.error('Could not join the room', error)
+    joinError.value = (error && (error.code || error.message)) || String(error)
+    status.value = 'error'
+  } finally {
+    clearTimeout(slowTimer)
+  }
 })
 
 // The host's new room starts with the template from "Use template", already chosen on the Pick page.
@@ -114,6 +131,7 @@ function tryAgain() {
 // Leaving the room (Leave button, closed room, or going to another website page): end the call,
 // and leave fullscreen so the rest of the website has its header back
 onBeforeUnmount(() => {
+  clearTimeout(slowTimer)
   endCall()
   exitRoom(false)
   exitFullscreen()
@@ -194,7 +212,22 @@ watch(activeMembers, (members) => {
 <template>
   <!-- Joining, or could not join: a message in the middle of the page (MessagePage.vue) -->
   <MessagePage v-if="status === 'loading'" loading :title="'Joining room ' + code">
-    Getting the room and your camera ready...
+    <template v-if="!slow">Getting the room and your camera ready...</template>
+    <template v-else>This is taking longer than usual. Check your internet connection, or try again.</template>
+    <template v-if="slow" #actions>
+      <button class="btn btn-primary" @click="tryAgain">Try again</button>
+      <router-link to="/" class="btn btn-outline-secondary">Back home</router-link>
+    </template>
+  </MessagePage>
+
+  <!-- Joining failed: say so (with the error, so it can be reported), instead of "Joining room..." forever -->
+  <MessagePage v-else-if="status === 'error'" icon="close" :title="'Couldn\'t join room ' + code">
+    Something went wrong while joining. Check your internet connection and try again.
+    <span class="d-block small text-muted mt-2">({{ joinError }})</span>
+    <template #actions>
+      <button class="btn btn-primary" @click="tryAgain">Try again</button>
+      <router-link to="/" class="btn btn-outline-secondary">Back home</router-link>
+    </template>
   </MessagePage>
 
   <MessagePage v-else-if="status === 'notFound'" icon="search" :title="'Room ' + code + ' doesn\'t exist'">
