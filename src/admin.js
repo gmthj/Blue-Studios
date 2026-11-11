@@ -195,6 +195,11 @@ export async function unbanAccount(uid, reason) {
   return await callAdminApi({ action: 'unban', uid: uid, reason: reason })
 }
 
+// Demo group on/off: rooms hosted by the demo group only let the demo group in. Returns { account }
+export async function setDemoGroup(uid, on) {
+  return await callAdminApi({ action: 'demoGroup', uid: uid, on: on })
+}
+
 // What an account has made and reported: { templates, stickers, strips, reportsAgainst, reportsFiled }
 export async function getAccountActivity(uid) {
   const [templates, stickers, strips, reportsAgainst, reportsFiled] = await Promise.all([

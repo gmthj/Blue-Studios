@@ -402,6 +402,26 @@ test('a user cannot join a closed room or a room that does not exist', async () 
   await assertFails(setDoc(doc(dbAs('newbie'), 'rooms/9999/members/newbie'), newMember()))
 })
 
+test('demo group: a room hosted by the demo group only lets the demo group join', async () => {
+  await seedRoom()
+  await seed('users/host', { displayName: 'Host', createdAt: 1, demoGroup: true })
+  await seed('users/teammate', { displayName: 'Teammate', createdAt: 1, demoGroup: true })
+  await seed('users/audience', { displayName: 'Audience', createdAt: 1 })
+  await assertSucceeds(setDoc(doc(dbAsAccount('teammate'), 'rooms/1234/members/teammate'), newMember()))
+  await assertFails(setDoc(doc(dbAsAccount('audience'), 'rooms/1234/members/audience'), newMember()))
+  await assertFails(setDoc(doc(dbAsGuest('newbie'), 'rooms/1234/members/newbie'), newMember()))
+  // People already in the room keep their heartbeat
+  await assertSucceeds(updateDoc(doc(dbAs('guest'), 'rooms/1234/members/guest'), { lastSeen: Date.now() }))
+  // Toggled off: open to everyone again
+  await seed('users/host', { displayName: 'Host', createdAt: 1, demoGroup: false })
+  await assertSucceeds(setDoc(doc(dbAsGuest('newbie'), 'rooms/1234/members/newbie'), newMember()))
+})
+
+test('demo group: people cannot put themselves in it', async () => {
+  await seed('users/audience', { displayName: 'Audience', createdAt: 1 })
+  await assertFails(updateDoc(doc(dbAsAccount('audience'), 'users/audience'), { demoGroup: true }))
+})
+
 test('member documents are checked field by field', async () => {
   await seedRoom()
   await assertFails(setDoc(doc(dbAs('newbie'), 'rooms/1234/members/newbie'), { ...newMember(), name: '' }))

@@ -160,6 +160,22 @@ test('deleteRoom: the room and everything inside it is gone, and it is logged', 
   assert.equal(log.docs[0].data().reason, 'Spam room')
 })
 
+test('demoGroup: admins only, accounts only, saved on the profile and logged', async () => {
+  const db = adminDb()
+  assert.equal((await callApi(aliceToken, { action: 'demoGroup', uid: aliceUid, on: true })).status, 403)
+  assert.equal((await callApi(adminToken, { action: 'demoGroup', uid: guestUid, on: true })).status, 400)
+
+  const on = await callApi(adminToken, { action: 'demoGroup', uid: aliceUid, on: true })
+  assert.equal(on.status, 200)
+  assert.equal(on.body.account.demoGroup, true)
+  assert.equal((await db.doc('users/' + aliceUid).get()).data().demoGroup, true)
+
+  const off = await callApi(adminToken, { action: 'demoGroup', uid: aliceUid, on: false })
+  assert.equal(off.body.account.demoGroup, false)
+  const log = await db.collection('adminLog').where('targetId', '==', aliceUid).get()
+  assert.deepEqual(log.docs.map((d) => d.data().action).sort(), ['demoGroupOff', 'demoGroupOn'])
+})
+
 test('unknown actions are refused', async () => {
   assert.equal((await callApi(adminToken, { action: 'deleteEverything' })).status, 400)
 })

@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { listAccounts, prefetchAccounts, reloadAccounts, lookupAccount, banAccount, unbanAccount, getAccountActivity } from '../../admin.js'
+import { listAccounts, prefetchAccounts, reloadAccounts, lookupAccount, banAccount, unbanAccount, setDemoGroup, getAccountActivity } from '../../admin.js'
 import { useAdminTab, useSort, formatTime } from '../../composables/useAdminTab.js'
 import SortHeader from './SortHeader.vue'
 import { askConfirm } from '../../composables/useDialog.js'
@@ -20,6 +20,7 @@ const FILTERS = [
   { id: 'guests', label: 'Guests', test: (a) => !a.isAccount },
   { id: 'banned', label: 'Banned', test: (a) => a.banned || a.disabled },
   { id: 'admins', label: 'Admins', test: (a) => a.admin },
+  { id: 'demo', label: 'Demo group', test: (a) => a.demoGroup },
 ]
 
 // How each account logs in, for people ('password' = email and password)
@@ -156,6 +157,14 @@ async function ban() {
   }, '')
 }
 
+// Demo group: rooms hosted by someone in it only let people in it join (firestore.rules, inDemoGroup)
+function toggleDemoGroup() {
+  const on = !picked.value.demoGroup
+  run(async () => {
+    showUpdated((await setDemoGroup(picked.value.uid, on)).account)
+  }, on ? 'Added to the demo group.' : 'Removed from the demo group.')
+}
+
 function unban() {
   run(async () => {
     showUpdated((await unbanAccount(picked.value.uid, reason.value)).account)
@@ -174,6 +183,7 @@ function unban() {
           {{ picked.displayName || '(no name)' }}
           <span v-if="picked.admin" class="badge text-bg-primary ms-1">Admin</span>
           <span v-if="picked.banned || picked.disabled" class="badge text-bg-danger ms-1">Banned</span>
+          <span v-if="picked.demoGroup" class="badge text-bg-info ms-1">Demo group</span>
           <span v-if="!picked.isAccount" class="badge text-bg-light border ms-1">Guest</span>
         </p>
         <button type="button" class="btn-close" aria-label="Close" @click="picked = null"></button>
@@ -187,6 +197,20 @@ function unban() {
         &middot; reported {{ activity.reportsAgainst }} time(s) &middot; filed {{ activity.reportsFiled }} report(s)
         <button v-if="activity.templates + activity.stickers > 0" class="btn btn-link btn-sm p-0 ms-1 align-baseline" @click="emit('open-tab', 'items', { owner: picked.uid })">See their items</button>
       </p>
+      <div v-if="picked.isAccount" class="form-check form-switch mb-3">
+        <input
+          id="demo-group-switch"
+          class="form-check-input"
+          type="checkbox"
+          role="switch"
+          :checked="picked.demoGroup"
+          :disabled="busy"
+          @change="toggleDemoGroup"
+        />
+        <label class="form-check-label small" for="demo-group-switch">
+          Demo group <span class="text-muted">(rooms they host only let the demo group in)</span>
+        </label>
+      </div>
       <template v-if="picked.isAccount && !picked.admin">
         <input v-model="reason" type="text" maxlength="300" class="form-control form-control-sm mb-2" placeholder="Reason (required, saved in the log)" />
         <button v-if="!picked.banned" class="btn btn-sm btn-danger" :disabled="busy || !reason.trim()" @click="ban">Ban account</button>
@@ -248,6 +272,7 @@ function unban() {
             <td class="text-nowrap">
               <span v-if="a.admin" class="badge text-bg-primary">Admin</span>
               <span v-if="a.banned || a.disabled" class="badge text-bg-danger">Banned</span>
+              <span v-if="a.demoGroup" class="badge text-bg-info ms-1">Demo</span>
               <span v-if="!a.isAccount" class="badge text-bg-light border">Guest</span>
               <span v-else-if="!a.admin && !a.banned && !a.disabled" class="badge text-bg-light border">Account</span>
             </td>

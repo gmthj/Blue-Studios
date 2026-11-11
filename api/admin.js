@@ -7,6 +7,8 @@
 //   { action: 'ban',    uid: 'Xk3v9...', reason: '...' }  block an account
 //   { action: 'unban',  uid: 'Xk3v9...', reason: '...' }  let them back in
 //   { action: 'deleteRoom', code: '1234', reason: '...' } delete a room and everything in it (video files too)
+//   { action: 'demoGroup', uid: 'Xk3v9...', on: true }    put an account in (or take it out of) the demo group:
+//                                                         rooms hosted by the demo group only let the demo group in
 //
 // Why a server function: banning has to switch off the account's login in Firebase Auth
 // (disable + log out everywhere), which only the Admin SDK can do, and the Admin SDK has full
@@ -49,6 +51,9 @@ export default async function handler(req, res) {
     }
     if (action === 'deleteRoom') {
       return await deleteRoom(body, caller, res)
+    }
+    if (action === 'demoGroup') {
+      return await changeDemoGroup(body, caller, res)
     }
     return res.status(400).json({ error: 'Unknown action' })
   } catch (error) {
@@ -113,6 +118,7 @@ function summary(account, profile) {
     providers: account.providerData.map((provider) => provider.providerId), // e.g. ['google.com', 'password']
     disabled: account.disabled,
     banned: profile.exists && profile.data().banned === true,
+    demoGroup: profile.exists && profile.data().demoGroup === true,
     admin: Boolean(account.customClaims && account.customClaims.admin),
     createdAt: account.metadata.creationTime,
     lastLogin: account.metadata.lastSignInTime || '',
@@ -170,6 +176,34 @@ async function changeBan(action, body, caller, res) {
   })
 
   return res.status(200).json({ ok: true, hiddenCount: hiddenCount, account: await describe(await adminAuth().getUser(uid)) })
+}
+
+// ---------- demo group ----------
+
+// Rooms hosted by a demo-group account only let demo-group accounts in (inDemoGroup() in firestore.rules).
+// Saved on the public profile, which only this server can change (the rules let people change only their
+// own name and picture). Accounts only: guests have no profile.
+async function changeDemoGroup(body, caller, res) {
+  const uid = String(body.uid || '')
+  if (!UID_PATTERN.test(uid)) {
+    return res.status(400).json({ error: 'Invalid user id' })
+  }
+  const account = await adminAuth().getUser(uid)
+  if (account.providerData.length === 0) {
+    return res.status(400).json({ error: 'Only accounts can be in the demo group: ask them to log in first' })
+  }
+  const on = body.on === true
+  const db = adminDb()
+  await db.doc('users/' + uid).set({ demoGroup: on }, { merge: true })
+  await db.collection('adminLog').add({
+    adminId: caller.uid,
+    action: on ? 'demoGroupOn' : 'demoGroupOff',
+    targetType: 'users',
+    targetId: uid,
+    reason: '',
+    createdAt: Date.now(),
+  })
+  return res.status(200).json({ ok: true, account: await describe(account) })
 }
 
 // ---------- deleteRoom ----------

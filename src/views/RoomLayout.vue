@@ -5,7 +5,7 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { getGuestName, getDeviceType } from '../guest.js'
 import { getUid } from '../composables/useAuth.js'
-import { isRoomFull, MAX_PEOPLE } from '../room.js'
+import { isRoomFull, isRoomPrivate, MAX_PEOPLE } from '../room.js'
 import { getItem } from '../marketplace.js'
 import { templateFrameFields } from '../studio.js'
 import { saveFields } from '../stripData.js'
@@ -35,7 +35,7 @@ const guestName = getGuestName()
 // that template becomes the room's photostrip frame (see applyStartTemplate below)
 const startTemplateId = typeof route.query.template === 'string' ? route.query.template : ''
 
-// 'loading' | 'ready' | 'notFound' | 'full' | 'closed'
+// 'loading' | 'ready' | 'notFound' | 'full' | 'closed' | 'private'
 const status = ref('loading')
 
 const { room, roomRef, activeMembers, enterRoom, exitRoom, saveProgress, emptyStripSlots, mediaLoaded } = useRoom()
@@ -67,6 +67,10 @@ onMounted(async () => {
     if (roomSnap.data().closed) {
       status.value = 'closed'
       forgetRoom(code)
+      return
+    }
+    if (await isRoomPrivate(roomSnap.data(), uid)) {
+      status.value = 'private'
       return
     }
     if (await isRoomFull(code, uid)) {
@@ -245,6 +249,13 @@ watch(activeMembers, (members) => {
     The host closed this room, so nobody can join it any more.
     <template #actions>
       <router-link to="/" class="btn btn-primary">Start or join another room</router-link>
+    </template>
+  </MessagePage>
+
+  <MessagePage v-else-if="status === 'private'" icon="lock" :title="'Room ' + code + ' is private'">
+    Only invited people can join this room. You can start your own room instead.
+    <template #actions>
+      <router-link to="/" class="btn btn-primary">Start my own room</router-link>
     </template>
   </MessagePage>
 

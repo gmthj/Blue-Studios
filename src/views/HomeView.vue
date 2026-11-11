@@ -5,7 +5,7 @@ import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore'
 import { db } from '../firebase.js'
 import { getGuestName, saveGuestName } from '../guest.js'
 import { getUid, useAuth } from '../composables/useAuth.js'
-import { isRoomFull, isActive, MAX_PEOPLE } from '../room.js'
+import { isRoomFull, isRoomPrivate, isActive, MAX_PEOPLE } from '../room.js'
 import { recentRooms, forgetRoom } from '../recentRooms.js'
 import { LAYOUTS } from '../stripData.js'
 import { getItem } from '../marketplace.js'
@@ -402,6 +402,8 @@ async function joinRoom() {
       errorMessage.value = 'Room ' + code + ' does not exist.'
     } else if (roomSnap.data().closed) {
       errorMessage.value = 'Room ' + code + ' has been closed.'
+    } else if (await isRoomPrivate(roomSnap.data(), getUid())) {
+      errorMessage.value = 'Room ' + code + ' is private.'
     } else if (await isRoomFull(code, getUid())) {
       errorMessage.value = 'Room ' + code + ' is full (' + MAX_PEOPLE + ' people max).'
     } else {

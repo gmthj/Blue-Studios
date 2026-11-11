@@ -113,4 +113,6 @@ export const LOG_ACTIONS = {
   deleteClip: 'Deleted video clip',
   ban: 'Banned account',
   unban: 'Unbanned account',
+  demoGroupOn: 'Added to demo group',
+  demoGroupOff: 'Removed from demo group',
 }

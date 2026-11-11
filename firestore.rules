@@ -44,6 +44,13 @@ service cloud.firestore {
       return exists(/databases/$(database)/documents/rooms/$(code)/members/$(request.auth.uid));
     }
 
+    // Demo group (toggled on the Accounts tab of the admin page, saved as users/{uid}.demoGroup by /api/admin).
+    // A room hosted by a demo-group account only lets in demo-group accounts. Guests have no profile, so never.
+    function inDemoGroup(uid) {
+      return exists(/databases/$(database)/documents/users/$(uid))
+        && get(/databases/$(database)/documents/users/$(uid)).data.get('demoGroup', false) == true;
+    }
+
     // Only these fields changed in this update
     function onlyChanged(fields) {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(fields);
@@ -430,6 +437,7 @@ service cloud.firestore {
           && memberId == request.auth.uid
           && exists(roomPath(code))
           && get(roomPath(code)).data.closed == false
+          && (!inDemoGroup(get(roomPath(code)).data.hostId) || inDemoGroup(request.auth.uid))
           && request.resource.data.keys().hasOnly(['name', 'deviceType', 'joinedAt', 'lastSeen'])
           && isName(request.resource.data.name)
           && request.resource.data.deviceType in ['Phone', 'Tablet', 'Computer']
